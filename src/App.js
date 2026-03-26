@@ -58,7 +58,12 @@ const GlobalStyles = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { margin: 0; }
+    html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; -webkit-text-size-adjust: 100%; }
+    body { margin: 0; overscroll-behavior: none; }
+    @media screen and (max-width: 768px) {
+      input, select, textarea { font-size: 16px !important; }
+      .sz-page { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important; }
+    }
     input::placeholder { color: #8A9B91; }
     .sz-input:focus { border-color: #16a34a !important; box-shadow: 0 0 0 3px rgba(22,163,74,0.12) !important; outline: none; }
     ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -106,6 +111,36 @@ const SectionHeader = ({ text }) => (
     {text} <span style={{ flex: 1, height: 1, background: "#e2e8f0" }} />
   </h3>
 );
+
+const DashboardCards = ({ isMobile, monthIncome, monthExpenses, totalMonthlyObligations, portfolioValue, assets, accounts, reLoanBalances, scopeFilter }) => {
+  const tvCalc = portfolioValue + assets.filter(scopeFilter).reduce((s, a) => s + Number(a.estimated_value || 0), 0);
+  const tdCalc = reLoanBalances;
+  const netWorth = tvCalc - tdCalc;
+  const totalExp = monthExpenses + totalMonthlyObligations;
+  const netIncome = monthIncome - totalExp;
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
+        <StatCard label="Monthly Income" value={fmtCurrency(monthIncome)} accent="#16a34a" />
+        <StatCard label="Monthly Expenses" value={fmtCurrency(totalExp)} accent="#dc2626" />
+        <StatCard label="Total Value" value={fmtCurrency(tvCalc)} accent="#3b82f6" />
+        <StatCard label="Total Debt" value={fmtCurrency(tdCalc)} accent="#f97316" />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: netWorth >= 0 ? "linear-gradient(135deg, #16a34a, #15803d)" : "linear-gradient(135deg, #dc2626, #b91c1c)", borderRadius: "14px 14px 0 0" }} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "'DM Sans', sans-serif", marginBottom: 6 }}>Net Worth</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: netWorth >= 0 ? "#16a34a" : "#dc2626", fontFamily: "'Playfair Display', serif", letterSpacing: "-0.02em" }}>{fmtCurrency(netWorth)}</div>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: netIncome >= 0 ? "linear-gradient(135deg, #3b82f6, #2563eb)" : "linear-gradient(135deg, #dc2626, #b91c1c)", borderRadius: "14px 14px 0 0" }} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "'DM Sans', sans-serif", marginBottom: 6 }}>Net Income</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: netIncome >= 0 ? "#3b82f6" : "#dc2626", fontFamily: "'Playfair Display', serif", letterSpacing: "-0.02em" }}>{fmtCurrency(netIncome)}</div>
+        </div>
+      </div>
+    </>
+  );
+};
 
 const QuarterPicker = ({ selected, onChange }) => (
   <div style={{ display: "flex", gap: 4 }}>
@@ -387,7 +422,7 @@ function ProfileView({ session, isMobile, onSignOut }) {
   );
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Profile & Settings" subtitle="Account information" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "20px 16px" : "28px 32px", maxWidth: 640 }}>
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "24px 20px" : "28px", marginBottom: 20, position: "relative", overflow: "hidden" }}>
@@ -418,27 +453,56 @@ function ProfileView({ session, isMobile, onSignOut }) {
    OVERVIEW
    ═══════════════════════════════════════════════════════════ */
 
-function OverviewView({ isMobile, session, accounts, uploads, assets, transactions, investments, onNavigate }) {
+function OverviewView({ isMobile, session, accounts, uploads, assets, transactions, investments, lifeExpenses, homes, utilityBills, policies, monthlyBills, onNavigate }) {
+  const [dashScope, setDashScope] = useState("all");
   const userName = session?.user?.user_metadata?.full_name || fmtUserName(session?.user?.email) || "there";
   const firstName = userName.split(" ")[0];
   const quarter = getCurrentQuarter();
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
-  const portfolioValue = investments.reduce((s, i) => s + Number(i.shares || 0) * Number(i.current_price || 0), 0);
   const thisMonth = now.toISOString().slice(0, 7);
-  const monthIncome = transactions.filter((t) => t.type === "income" && t.date?.startsWith(thisMonth)).reduce((s, t) => s + Number(t.amount), 0);
-  const monthExpenses = transactions.filter((t) => t.type === "expense" && t.date?.startsWith(thisMonth)).reduce((s, t) => s + Number(t.amount), 0);
+
+  const scopeFilter = (item) => dashScope === "all" || (item.visibility || "personal") === dashScope;
+
+  const portfolioValue = investments.filter(scopeFilter).reduce((s, i) => {
+    if (i.asset_type === "Real Estate" || i.asset_type === "Business Equity") return s + Number(i.current_price || 0);
+    return s + Number(i.shares || 0) * Number(i.current_price || 0);
+  }, 0);
+  const monthTxnIncome = transactions.filter((t) => t.type === "income" && t.date?.startsWith(thisMonth)).filter(scopeFilter).reduce((s, t) => s + Number(t.amount), 0);
+  const reMonthlyIncome = investments.filter((i) => i.asset_type === "Real Estate").reduce((s, i) => s + Number(i.monthly_income || 0), 0);
+  const bizMonthlyIncome = investments.filter((i) => i.asset_type === "Business Equity").reduce((s, i) => s + Number(i.monthly_income || 0), 0);
+  const monthIncome = monthTxnIncome + reMonthlyIncome + bizMonthlyIncome;
+  const monthTxnExpenses = transactions.filter((t) => t.type === "expense" && t.date?.startsWith(thisMonth)).filter(scopeFilter).reduce((s, t) => s + Number(t.amount), 0);
+  const monthLifeExpenses = (lifeExpenses || []).filter((e) => e.date?.startsWith(thisMonth)).filter(scopeFilter).reduce((s, e) => s + Number(e.amount), 0);
+  const monthExpenses = monthTxnExpenses + monthLifeExpenses;
+
+  // Monthly obligations rollup
+  const debtPayments = accounts.filter((a) => a.active && Number(a.monthly_payment) > 0).filter(scopeFilter);
+  const debtTotal = debtPayments.reduce((s, a) => s + Number(a.monthly_payment), 0);
+  const housingPayments = homes.filter((h) => Number(h.monthly_payment) > 0);
+  const housingTotal = housingPayments.reduce((s, h) => s + Number(h.monthly_payment), 0);
+  const utilityTotal = utilityBills.reduce((s, b) => s + Number(b.amount || 0), 0);
+  const insuranceTotal = (policies || []).filter((p) => p.active).filter(scopeFilter).reduce((s, p) => s + Number(p.monthly_cost || 0), 0);
+  const activeBills = (monthlyBills || []).filter((b) => b.active !== false).filter(scopeFilter);
+  const billsTotal = activeBills.reduce((s, b) => s + Number(b.amount || 0), 0);
+  const reInvestments = investments.filter((i) => i.asset_type === "Real Estate");
+  const reDebtService = reInvestments.reduce((s, i) => s + Number(i.monthly_debt_service || 0), 0);
+  const reMonthlyExp = reInvestments.reduce((s, i) => s + Number(i.monthly_expenses || 0), 0);
+  const bizMonthlyExp = investments.filter((i) => i.asset_type === "Business Equity").reduce((s, i) => s + Number(i.monthly_expenses || 0), 0);
+  const reLoanBalances = reInvestments.reduce((s, i) => s + Number(i.loan_balance || 0), 0);
+  const totalMonthlyObligations = debtTotal + housingTotal + utilityTotal + insuranceTotal + billsTotal + reDebtService + reMonthlyExp + bizMonthlyExp;
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title={`${greeting}, ${firstName}`} subtitle={`${now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })} · ${quarter}`} isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-          <StatCard label="Month Income" value={fmtCurrency(monthIncome)} accent="#16a34a" />
-          <StatCard label="Month Expenses" value={fmtCurrency(monthExpenses)} accent="#dc2626" />
-          <StatCard label="Portfolio Value" value={fmtCurrency(portfolioValue)} accent="#3b82f6" />
-          <StatCard label="Assets Tracked" value={assets.length} accent="#f97316" />
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title={`${greeting}, ${firstName}`} subtitle={`${now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })} · ${quarter}`} isMobile={isMobile}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {["all", "personal", "business"].map((s) => (
+            <button key={s} onClick={() => setDashScope(s)} style={{ padding: "6px 14px", borderRadius: 7, border: `1px solid ${dashScope === s ? "#16a34a" : "#e2e8f0"}`, background: dashScope === s ? "#f0fdf4" : "transparent", color: dashScope === s ? "#16a34a" : "#94a3b8", fontSize: 11, fontWeight: 700, cursor: "pointer", textTransform: "capitalize", fontFamily: "'DM Sans', sans-serif" }}>{s === "all" ? "All" : s}</button>
+          ))}
         </div>
+      </PageHeader>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <DashboardCards isMobile={isMobile} monthIncome={monthIncome} monthExpenses={monthExpenses} totalMonthlyObligations={totalMonthlyObligations} portfolioValue={portfolioValue} assets={assets} accounts={accounts} reLoanBalances={reLoanBalances} scopeFilter={scopeFilter} />
 
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px", marginBottom: 20 }}>
           <SectionHeader text="Quick Actions" />
@@ -504,8 +568,9 @@ const TabBar = ({ tabs, active, onChange, isMobile }) => (
   </div>
 );
 
-function MoneyView({ isMobile, transactions, accounts, uploads, lifeExpenses, onAddAccount, onToggleAccount, onDeleteAccount, onAddTransaction, onDeleteTransaction, onAddLifeExpense, onDeleteLifeExpense, onUpload, onDeleteUpload }) {
-  const [tab, setTab] = useState("bookkeeping");
+function MoneyView({ isMobile, activeTab, onTabChange, transactions, accounts, uploads, lifeExpenses, assets, onAddAccount, onToggleAccount, onDeleteAccount, onAddTransaction, onDeleteTransaction, onAddLifeExpense, onDeleteLifeExpense, onUpload, onDeleteUpload }) {
+  const tab = activeTab || "bookkeeping";
+  const setTab = onTabChange;
   const tabs = [
     { key: "bookkeeping", label: "Bookkeeping" },
     { key: "spending", label: "Spending" },
@@ -514,13 +579,13 @@ function MoneyView({ isMobile, transactions, accounts, uploads, lifeExpenses, on
   ];
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Money" subtitle="Day-to-day finances & bookkeeping" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
         {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={transactions} accounts={accounts} onAdd={onAddTransaction} onDelete={onDeleteTransaction} />}
         {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={lifeExpenses} onAdd={onAddLifeExpense} onDelete={onDeleteLifeExpense} />}
-        {tab === "statements" && <StatementsTab isMobile={isMobile} transactions={transactions} assets={[]} accounts={accounts} />}
+        {tab === "statements" && <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets} accounts={accounts} />}
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={accounts} onAdd={onAddAccount} onToggle={onToggleAccount} onDelete={onDeleteAccount} />}
       </div>
     </div>
@@ -531,26 +596,293 @@ function MoneyView({ isMobile, transactions, accounts, uploads, lifeExpenses, on
    WEALTH (Tabbed: Portfolio, Net Worth, Assets)
    ═══════════════════════════════════════════════════════════ */
 
-function WealthView({ isMobile, investments, assets, accounts, snapshots, uploads, onAddAsset, onUpdateAsset, onDeleteAsset, onAddInvestment, onUpdateInvestment, onDeleteInvestment, onAddSnapshot, onDeleteSnapshot, onUpload, onDeleteUpload }) {
-  const [tab, setTab] = useState("portfolio");
+function WealthView({ isMobile, activeTab, onTabChange, investments, assets, accounts, snapshots, uploads, onAddAsset, onUpdateAsset, onDeleteAsset, onAddInvestment, onUpdateInvestment, onDeleteInvestment, onAddSnapshot, onDeleteSnapshot, onUpload, onDeleteUpload }) {
+  const tab = activeTab || "networth";
+  const setTab = onTabChange;
   const tabs = [
-    { key: "portfolio", label: "Portfolio" },
-    { key: "networth", label: "Net Worth" },
-    { key: "assets", label: "Assets" },
-    { key: "uploader", label: "Uploader" },
+    { key: "networth", label: "💰 Net Worth" },
+    { key: "stocks", label: "📈 Stocks" },
+    { key: "realestate", label: "🏠 Real Estate" },
+    { key: "companies", label: "🏢 Companies" },
+    { key: "assets", label: "🚗 Assets" },
+    { key: "uploader", label: "📤 Uploader" },
   ];
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Wealth" subtitle="Investments, net worth & asset tracking" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "portfolio" && <PortfolioTab isMobile={isMobile} investments={investments} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
-        {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={assets} accounts={accounts} snapshots={snapshots} onAddSnapshot={onAddSnapshot} onDeleteSnapshot={onDeleteSnapshot} />}
+        {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={investments.filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
+        {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Real Estate")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
+        {tab === "companies" && <CompaniesWealthTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Business Equity")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
+        {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={assets} accounts={accounts} investments={investments} snapshots={snapshots} onAddSnapshot={onAddSnapshot} onDeleteSnapshot={onDeleteSnapshot} />}
         {tab === "assets" && <AssetsTab isMobile={isMobile} assets={assets} accounts={accounts} onAdd={onAddAsset} onUpdate={onUpdateAsset} onDelete={onDeleteAsset} />}
         {tab === "uploader" && <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />}
       </div>
     </div>
+  );
+}
+
+/* — Real Estate Tab — */
+function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const emptyForm = { name: "", ticker: "", shares: "", purchase_price: "", current_price: "", date_purchased: "", visibility: "business", monthly_income: "", monthly_expenses: "", loan_balance: "", monthly_debt_service: "", cap_rate: "6.5", ownership_pct: "100", lender: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const resetForm = () => { setForm(emptyForm); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const mIncome = parseFloat(form.monthly_income) || 0;
+    const mExpenses = parseFloat(form.monthly_expenses) || 0;
+    const noi = mIncome - mExpenses;
+    const capRate = parseFloat(form.cap_rate) || 0;
+    const autoValue = capRate > 0 ? Math.round((noi * 12) / (capRate / 100)) : parseFloat(form.current_price) || 0;
+    const payload = {
+      name: form.name, asset_type: "Real Estate", ticker: form.ticker || null,
+      shares: parseFloat(form.shares) || 1, purchase_price: parseFloat(form.purchase_price) || 0,
+      current_price: autoValue, date_purchased: form.date_purchased || null, visibility: form.visibility,
+      monthly_income: mIncome, monthly_expenses: mExpenses, loan_balance: parseFloat(form.loan_balance) || 0,
+      monthly_debt_service: parseFloat(form.monthly_debt_service) || 0, cap_rate: capRate,
+      ownership_pct: parseFloat(form.ownership_pct) || 100, lender: form.lender || null,
+    };
+    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
+    resetForm(); setSaving(false);
+  };
+  const startEdit = (inv) => { setForm({ name: inv.name || "", ticker: inv.ticker || "", shares: inv.shares?.toString() || "1", purchase_price: inv.purchase_price?.toString() || "", current_price: inv.current_price?.toString() || "", date_purchased: inv.date_purchased || "", visibility: inv.visibility || "business", monthly_income: inv.monthly_income?.toString() || "", monthly_expenses: inv.monthly_expenses?.toString() || "", loan_balance: inv.loan_balance?.toString() || "", monthly_debt_service: inv.monthly_debt_service?.toString() || "", cap_rate: inv.cap_rate?.toString() || "6.5", ownership_pct: inv.ownership_pct?.toString() || "100", lender: inv.lender || "" }); setEditingId(inv.id); setShowForm(true); };
+
+  const totalValue = investments.reduce((s, i) => s + Number(i.current_price || 0), 0);
+  const totalDebt = investments.reduce((s, i) => s + Number(i.loan_balance || 0), 0);
+  const totalEquity = totalValue - totalDebt;
+  const totalNOI = investments.reduce((s, i) => s + (Number(i.monthly_income || 0) - Number(i.monthly_expenses || 0)), 0);
+  const totalDebtService = investments.reduce((s, i) => s + Number(i.monthly_debt_service || 0), 0);
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const lbl = (text) => ({ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 });
+
+  // Live preview calculations
+  const previewNOI = (parseFloat(form.monthly_income) || 0) - (parseFloat(form.monthly_expenses) || 0);
+  const previewDS = parseFloat(form.monthly_debt_service) || 0;
+  const previewDSCR = previewDS > 0 ? (previewNOI / previewDS).toFixed(2) : "—";
+  const previewCap = parseFloat(form.cap_rate) || 0;
+  const previewValuation = previewCap > 0 && previewNOI > 0 ? Math.round((previewNOI * 12) / (previewCap / 100)) : null;
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
+        <StatCard label="Portfolio Value" value={fmtCurrency(totalValue)} accent="#16a34a" />
+        <StatCard label="Total Debt" value={fmtCurrency(totalDebt)} accent="#dc2626" />
+        <StatCard label="Total Equity" value={fmtCurrency(totalEquity)} accent="#3b82f6" />
+        <StatCard label="Monthly NOI" value={fmtCurrency(totalNOI)} accent={totalNOI >= 0 ? "#16a34a" : "#dc2626"} />
+        <StatCard label="Debt Service" value={fmtCurrency(totalDebtService)} accent="#f59e0b" />
+        <StatCard label="Properties" value={investments.length} accent="#7c3aed" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Property</GreenButton></div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? "Edit Property" : "New Investment Property"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={lbl()}>Property Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Idlewild Duplex" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Address</label><input value={form.ticker} onChange={(e) => setForm({ ...form, ticker: e.target.value })} placeholder="e.g. 3422 W Idlewild Ave" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Units / Doors</label><input type="number" value={form.shares} onChange={(e) => setForm({ ...form, shares: e.target.value })} placeholder="1" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Ownership %</label><input type="number" value={form.ownership_pct} onChange={(e) => setForm({ ...form, ownership_pct: e.target.value })} placeholder="100" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Purchase Price</label><input type="number" value={form.purchase_price} onChange={(e) => setForm({ ...form, purchase_price: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Date Acquired</label><input type="date" value={form.date_purchased} onChange={(e) => setForm({ ...form, date_purchased: e.target.value })} style={inputStyle} className="sz-input" /></div>
+          </div>
+          <SectionHeader text="Income & Expenses (Monthly)" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={lbl()}>Monthly Income</label><input type="number" step="0.01" value={form.monthly_income} onChange={(e) => setForm({ ...form, monthly_income: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Monthly Expenses</label><input type="number" step="0.01" value={form.monthly_expenses} onChange={(e) => setForm({ ...form, monthly_expenses: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div style={{ background: "#f0fdf4", borderRadius: 8, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}><div style={{ fontSize: 10, color: "#16a34a", fontWeight: 700, textTransform: "uppercase" }}>Monthly NOI</div><div style={{ fontSize: 18, fontWeight: 800, color: previewNOI >= 0 ? "#16a34a" : "#dc2626", fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(previewNOI)}</div></div>
+          </div>
+          <SectionHeader text="Debt Service" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={lbl()}>Loan Balance</label><input type="number" value={form.loan_balance} onChange={(e) => setForm({ ...form, loan_balance: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Monthly Payment</label><input type="number" step="0.01" value={form.monthly_debt_service} onChange={(e) => setForm({ ...form, monthly_debt_service: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Lender</label><input value={form.lender} onChange={(e) => setForm({ ...form, lender: e.target.value })} placeholder="e.g. Navy Federal" style={inputStyle} className="sz-input" /></div>
+            <div style={{ background: "#eff6ff", borderRadius: 8, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}><div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 700, textTransform: "uppercase" }}>DSCR</div><div style={{ fontSize: 18, fontWeight: 800, color: parseFloat(previewDSCR) >= 1.25 ? "#16a34a" : parseFloat(previewDSCR) >= 1 ? "#f59e0b" : "#dc2626", fontFamily: "'Playfair Display', serif" }}>{previewDSCR}x</div></div>
+          </div>
+          <SectionHeader text="Valuation" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <div><label style={lbl()}>Cap Rate %</label><input type="number" step="0.1" value={form.cap_rate} onChange={(e) => setForm({ ...form, cap_rate: e.target.value })} placeholder="6.5" style={inputStyle} className="sz-input" /></div>
+            {previewValuation && <div style={{ background: "#faf5ff", borderRadius: 8, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}><div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase" }}>Auto Valuation</div><div style={{ fontSize: 18, fontWeight: 800, color: "#7c3aed", fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(previewValuation)}</div></div>}
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : editingId ? "Update" : "Add Property"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {investments.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🏠</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Investment Properties</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Track rental properties with income, expenses, NOI, debt service, DSCR, and valuations.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Property</GreenButton>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {investments.map((inv) => {
+            const mIncome = Number(inv.monthly_income || 0);
+            const mExpenses = Number(inv.monthly_expenses || 0);
+            const noi = mIncome - mExpenses;
+            const ds = Number(inv.monthly_debt_service || 0);
+            const dscr = ds > 0 ? (noi / ds).toFixed(2) : "—";
+            const capRate = Number(inv.cap_rate || 0);
+            const loanBal = Number(inv.loan_balance || 0);
+            const value = Number(inv.current_price || 0);
+            const equity = value - loanBal;
+            const ownershipPct = Number(inv.ownership_pct || 100);
+            return (
+              <div key={inv.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "20px 22px", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(135deg, #16a34a, #15803d)" }} />
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 42, height: 42, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏠</div>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{inv.name}</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 2 }}>
+                        {inv.ticker && <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{inv.ticker}</span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", fontFamily: "'DM Mono', monospace" }}>{ownershipPct}% OWNED</span>
+                        {Number(inv.shares || 0) > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{inv.shares} units</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => startEdit(inv)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 10, fontWeight: 600, color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>{Icons.edit} Edit</button>
+                    <button onClick={() => { if (window.confirm("Delete?")) onDelete(inv.id); }} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", cursor: "pointer", display: "flex", alignItems: "center" }}>{Icons.trash}</button>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 10, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Valuation</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#16a34a" }}>{fmtCurrency(value)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Loan Balance</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#dc2626" }}>{fmtCurrency(loanBal)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Equity</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#3b82f6" }}>{fmtCurrency(equity)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Purchased</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(inv.purchase_price)}</div></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(5, 1fr)", gap: 10, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Mo. Income</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#16a34a" }}>{fmtCurrency(mIncome)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Mo. Expenses</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#dc2626" }}>{fmtCurrency(mExpenses)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>NOI</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: noi >= 0 ? "#16a34a" : "#dc2626" }}>{fmtCurrency(noi)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Debt Service</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#f59e0b" }}>{fmtCurrency(ds)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>DSCR</div><div style={{ fontSize: 14, fontWeight: 800, fontFamily: "'DM Mono', monospace", color: parseFloat(dscr) >= 1.25 ? "#16a34a" : parseFloat(dscr) >= 1 ? "#f59e0b" : "#dc2626" }}>{dscr}x</div></div>
+                </div>
+                <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#64748b", flexWrap: "wrap" }}>
+                  {inv.lender && <span>Lender: <strong style={{ color: "#0f172a" }}>{inv.lender}</strong></span>}
+                  {capRate > 0 && <span>Cap Rate: <strong style={{ color: "#7c3aed" }}>{capRate}%</strong></span>}
+                  {inv.date_purchased && <span>Acquired: <strong>{fmtDate(inv.date_purchased)}</strong></span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* — Companies / Equity Tab — */
+function CompaniesWealthTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: "", shares: "", purchase_price: "", current_price: "", date_purchased: "", visibility: "business", ticker: "", monthly_income: "", monthly_expenses: "" });
+  const [saving, setSaving] = useState(false);
+
+  const resetForm = () => { setForm({ name: "", shares: "", purchase_price: "", current_price: "", date_purchased: "", visibility: "business", ticker: "", monthly_income: "", monthly_expenses: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload = { name: form.name, asset_type: "Business Equity", ticker: form.ticker || null, shares: form.shares ? parseFloat(form.shares) : 0, purchase_price: form.purchase_price ? parseFloat(form.purchase_price) : 0, current_price: form.current_price ? parseFloat(form.current_price) : 0, date_purchased: form.date_purchased || null, visibility: form.visibility, monthly_income: parseFloat(form.monthly_income) || 0, monthly_expenses: parseFloat(form.monthly_expenses) || 0 };
+    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
+    resetForm(); setSaving(false);
+  };
+  const startEdit = (inv) => { setForm({ name: inv.name || "", shares: inv.shares?.toString() || "", purchase_price: inv.purchase_price?.toString() || "", current_price: inv.current_price?.toString() || "", date_purchased: inv.date_purchased || "", visibility: inv.visibility || "business", ticker: inv.ticker || "", monthly_income: inv.monthly_income?.toString() || "", monthly_expenses: inv.monthly_expenses?.toString() || "" }); setEditingId(inv.id); setShowForm(true); };
+
+  const totalValue = investments.reduce((s, i) => s + Number(i.current_price || 0), 0);
+  const totalCost = investments.reduce((s, i) => s + Number(i.purchase_price || 0), 0);
+  const totalBizIncome = investments.reduce((s, i) => s + Number(i.monthly_income || 0), 0);
+  const totalBizExpenses = investments.reduce((s, i) => s + Number(i.monthly_expenses || 0), 0);
+  const totalBizNet = totalBizIncome - totalBizExpenses;
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
+        <StatCard label="Companies" value={investments.length} accent="#7c3aed" />
+        <StatCard label="Total Valuation" value={fmtCurrency(totalValue)} accent="#16a34a" />
+        <StatCard label="Mo. Income" value={fmtCurrency(totalBizIncome)} accent="#16a34a" />
+        <StatCard label="Mo. Expenses" value={fmtCurrency(totalBizExpenses)} accent="#dc2626" />
+        <StatCard label="Mo. Net" value={fmtCurrency(totalBizNet)} accent={totalBizNet >= 0 ? "#3b82f6" : "#dc2626"} />
+        <StatCard label="Total Invested" value={fmtCurrency(totalCost)} accent="#94a3b8" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Company</GreenButton></div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? "Edit Company" : "New Company Equity"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Company Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Suarez Global LLC" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Ownership / Equity %</label><input value={form.ticker} onChange={(e) => setForm({ ...form, ticker: e.target.value })} placeholder="e.g. 100% or 50/50" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Shares / Units</label><input type="number" value={form.shares} onChange={(e) => setForm({ ...form, shares: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Capital Invested</label><input type="number" value={form.purchase_price} onChange={(e) => setForm({ ...form, purchase_price: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Current Valuation</label><input type="number" value={form.current_price} onChange={(e) => setForm({ ...form, current_price: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date Acquired</label><input type="date" value={form.date_purchased} onChange={(e) => setForm({ ...form, date_purchased: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Monthly Income</label><input type="number" step="0.01" value={form.monthly_income} onChange={(e) => setForm({ ...form, monthly_income: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Monthly Expenses</label><input type="number" step="0.01" value={form.monthly_expenses} onChange={(e) => setForm({ ...form, monthly_expenses: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : editingId ? "Update" : "Add Company"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {investments.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🏢</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Company Equity</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Track ownership stakes, partnerships, and business equity.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Company</GreenButton>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 14 }}>
+          {investments.map((inv) => {
+            const val = Number(inv.current_price || 0);
+            const cost = Number(inv.purchase_price || 0);
+            const gain = val - cost;
+            return (
+              <div key={inv.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "18px 20px", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(135deg, #7c3aed, #6d28d9)" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "#faf5ff", border: "1px solid #e9d5ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏢</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{inv.name}</div>
+                    {inv.ticker && <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>{inv.ticker}</div>}
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: "10px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Invested</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(cost)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Valuation</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#7c3aed" }}>{fmtCurrency(val)}</div></div>
+                </div>
+                {(Number(inv.monthly_income) > 0 || Number(inv.monthly_expenses) > 0) && (() => { const mI = Number(inv.monthly_income || 0); const mE = Number(inv.monthly_expenses || 0); const net = mI - mE; return (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, padding: "10px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
+                    <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Mo. Income</div><div style={{ fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#16a34a" }}>{fmtCurrency(mI)}</div></div>
+                    <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Mo. Expenses</div><div style={{ fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#dc2626" }}>{fmtCurrency(mE)}</div></div>
+                    <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Mo. Net</div><div style={{ fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: net >= 0 ? "#16a34a" : "#dc2626" }}>{fmtCurrency(net)}</div></div>
+                  </div>
+                ); })()}
+                {inv.date_purchased && <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>Since {fmtDate(inv.date_purchased)}</div>}
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => startEdit(inv)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 10, fontWeight: 600, color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>{Icons.edit} Edit</button>
+                  <button onClick={() => { if (window.confirm("Delete?")) onDelete(inv.id); }} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", cursor: "pointer", display: "flex", alignItems: "center" }}>{Icons.trash}</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 /* — Bookkeeping Tab — */
@@ -783,7 +1115,17 @@ function StatementsTab({ isMobile, transactions, assets, accounts }) {
 function UploaderTab({ isMobile, accounts, uploads, onUpload, onDeleteUpload }) {
   const quarter = getCurrentQuarter();
   const [selectedQ, setSelectedQ] = useState(quarter);
+  const [uploading, setUploading] = useState(null);
   const activeAccounts = accounts.filter((a) => a.active);
+
+  const handleFileSelect = async (acct, month, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(`${acct.id}-${month}`);
+    await onUpload(acct, month, selectedQ, file);
+    setUploading(null);
+    e.target.value = "";
+  };
 
   return (
     <>
@@ -804,16 +1146,20 @@ function UploaderTab({ isMobile, accounts, uploads, onUpload, onDeleteUpload }) 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, padding: 14 }}>
             {QUARTERS[selectedQ].months.map((m) => {
               const existing = uploads.find((u) => u.account_id === acct.id && u.month === m && u.quarter === selectedQ);
+              const isUploading = uploading === `${acct.id}-${m}`;
               return (
                 <div key={m} style={{ padding: 14, borderRadius: 10, border: `1.5px ${existing ? "solid" : "dashed"} ${existing ? "#bbf7d0" : "#e2e8f0"}`, background: existing ? "#f0fdf4" : "#f8fafc", textAlign: "center" }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", marginBottom: 6 }}>{m}</div>
                   {existing ? (<>
                     <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#dcfce7", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>{Icons.check}</div>
-                    <div style={{ fontSize: 10, color: "#16a34a", fontWeight: 600 }}>Uploaded</div>
-                    {existing.file_type && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>{existing.file_type}</div>}
-                    <button onClick={() => onDeleteUpload(existing.id)} style={{ marginTop: 4, padding: "2px 8px", borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", fontSize: 9, fontWeight: 600, color: "#dc2626", cursor: "pointer" }}>Remove</button>
+                    <div style={{ fontSize: 10, color: "#16a34a", fontWeight: 600 }}>{existing.filename}</div>
+                    {existing.file_url && <a href={existing.file_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", marginTop: 4, fontSize: 9, color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>View File ↗</a>}
+                    <div><button onClick={() => onDeleteUpload(existing.id, existing.file_path)} style={{ marginTop: 4, padding: "2px 8px", borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", fontSize: 9, fontWeight: 600, color: "#dc2626", cursor: "pointer" }}>Remove</button></div>
                   </>) : (
-                    <button onClick={() => onUpload(acct, m, selectedQ)} style={{ marginTop: 2, padding: "5px 14px", borderRadius: 7, border: "1px solid #e2e8f0", background: "#fff", fontSize: 11, fontWeight: 600, color: "#16a34a", cursor: "pointer" }}>Upload</button>
+                    <label style={{ display: "inline-block", marginTop: 2, padding: "5px 14px", borderRadius: 7, border: "1px solid #e2e8f0", background: "#fff", fontSize: 11, fontWeight: 600, color: isUploading ? "#94a3b8" : "#16a34a", cursor: isUploading ? "not-allowed" : "pointer" }}>
+                      {isUploading ? "Uploading..." : "📎 Upload File"}
+                      <input type="file" accept=".pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.doc,.docx" style={{ display: "none" }} onChange={(e) => handleFileSelect(acct, m, e)} disabled={isUploading} />
+                    </label>
                   )}
                 </div>
               );
@@ -867,11 +1213,11 @@ function FinOverviewTab({ isMobile, accounts, uploads }) {
 /* — Accounts Tab (table view) — */
 function AccountsTab({ isMobile, accounts, onAdd, onToggle, onDelete }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "Checking", institution: "", visibility: "business" });
+  const [form, setForm] = useState({ name: "", type: "Checking", institution: "", visibility: "business", monthly_payment: "" });
   const [saving, setSaving] = useState(false);
   const types = ["Checking", "Savings", "Credit Card", "Loan", "Investment", "Business", "Other"];
 
-  const handleSubmit = async () => { if (!form.name.trim()) return; setSaving(true); await onAdd(form); setForm({ name: "", type: "Checking", institution: "", visibility: "business" }); setShowForm(false); setSaving(false); };
+  const handleSubmit = async () => { if (!form.name.trim()) return; setSaving(true); await onAdd({ ...form, monthly_payment: form.monthly_payment ? parseFloat(form.monthly_payment) : 0 }); setForm({ name: "", type: "Checking", institution: "", visibility: "business", monthly_payment: "" }); setShowForm(false); setSaving(false); };
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
@@ -888,6 +1234,7 @@ function AccountsTab({ isMobile, accounts, onAdd, onToggle, onDelete }) {
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Institution</label><input value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} placeholder="e.g. Chase" style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Visibility</label><select value={form.visibility} onChange={(e) => setForm({ ...form, visibility: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="business">Business</option><option value="personal">Personal</option></select></div>
+            {["Loan", "Credit Card"].includes(form.type) && <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Monthly Payment</label><input type="number" step="0.01" value={form.monthly_payment} onChange={(e) => setForm({ ...form, monthly_payment: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>}
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={() => setShowForm(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
@@ -904,6 +1251,7 @@ function AccountsTab({ isMobile, accounts, onAdd, onToggle, onDelete }) {
                 <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Institution</th>
                 <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Type</th>
                 <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Scope</th>
+                <th style={{ textAlign: "right", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Mo. Payment</th>
                 <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Status</th>
                 <th style={{ width: 60 }}></th>
               </tr></thead>
@@ -912,6 +1260,7 @@ function AccountsTab({ isMobile, accounts, onAdd, onToggle, onDelete }) {
                   <td style={{ padding: "10px 14px", fontWeight: 600, color: "#0f172a" }}>{acct.name}</td>
                   <td style={{ padding: "10px 14px", color: "#64748b" }}>{acct.institution || "—"}</td>
                   <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{acct.type}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'DM Mono', monospace", fontWeight: 600, color: Number(acct.monthly_payment) > 0 ? "#dc2626" : "#cbd5e1" }}>{Number(acct.monthly_payment) > 0 ? fmtCurrencyExact(acct.monthly_payment) : "—"}</td>
                   <td style={{ padding: "10px 14px", textAlign: "center" }}><VisibilityBadge visibility={acct.visibility} /></td>
                   <td style={{ padding: "10px 14px", textAlign: "center" }}><button onClick={() => onToggle(acct.id, !acct.active)} style={{ padding: "3px 10px", borderRadius: 5, border: "1px solid #e2e8f0", background: acct.active ? "#f0fdf4" : "#f8fafc", fontSize: 10, fontWeight: 600, color: acct.active ? "#16a34a" : "#94a3b8", cursor: "pointer" }}>{acct.active ? "● Active" : "○ Off"}</button></td>
                   <td style={{ padding: "10px 14px", textAlign: "center" }}><button onClick={() => { if (window.confirm("Delete?")) onDelete(acct.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></td>
@@ -1003,7 +1352,7 @@ function PortfolioTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
   const [saving, setSaving] = useState(false);
   const [forecastYears, setForecastYears] = useState(5);
   const [forecastRate, setForecastRate] = useState(8);
-  const assetTypes = ["Stock", "ETF", "Bond", "Crypto", "Mutual Fund", "Real Estate", "Other"];
+  const assetTypes = ["Stock", "ETF", "Bond", "Crypto", "Mutual Fund", "Real Estate", "Business Equity", "Other"];
 
   const resetForm = () => { setForm({ name: "", ticker: "", asset_type: "Stock", shares: "", purchase_price: "", current_price: "", date_purchased: "", visibility: "personal" }); setEditingId(null); setShowForm(false); };
   const handleSubmit = async () => { if (!form.name.trim()) return; setSaving(true); const payload = { name: form.name, ticker: form.ticker || null, asset_type: form.asset_type, shares: form.shares ? parseFloat(form.shares) : 0, purchase_price: form.purchase_price ? parseFloat(form.purchase_price) : 0, current_price: form.current_price ? parseFloat(form.current_price) : 0, date_purchased: form.date_purchased || null, visibility: form.visibility }; if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); } resetForm(); setSaving(false); };
@@ -1070,12 +1419,17 @@ function PortfolioTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
 }
 
 /* — Net Worth Tab — */
-function NetWorthTab({ isMobile, assets, accounts, snapshots, onAddSnapshot, onDeleteSnapshot }) {
+function NetWorthTab({ isMobile, assets, accounts, investments, snapshots, onAddSnapshot, onDeleteSnapshot }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ snapshot_date: new Date().toISOString().split("T")[0], total_assets: "", total_liabilities: "", notes: "" });
   const [saving, setSaving] = useState(false);
 
-  const assetTotal = assets.reduce((s, a) => s + Number(a.estimated_value || 0), 0);
+  const physicalAssetTotal = assets.reduce((s, a) => s + Number(a.estimated_value || 0), 0);
+  const investmentTotal = (investments || []).reduce((s, i) => {
+    if (i.asset_type === "Real Estate" || i.asset_type === "Business Equity") return s + Number(i.current_price || 0);
+    return s + Number(i.shares || 0) * Number(i.current_price || 0);
+  }, 0);
+  const assetTotal = physicalAssetTotal + investmentTotal;
   const handleSubmit = async () => { const ta = parseFloat(form.total_assets) || 0; const tl = parseFloat(form.total_liabilities) || 0; setSaving(true); await onAddSnapshot({ snapshot_date: form.snapshot_date, total_assets: ta, total_liabilities: tl, net_worth: ta - tl, notes: form.notes || null }); setForm({ snapshot_date: new Date().toISOString().split("T")[0], total_assets: "", total_liabilities: "", notes: "" }); setShowForm(false); setSaving(false); };
 
   const latestNW = snapshots.length > 0 ? snapshots[0] : null;
@@ -1086,7 +1440,7 @@ function NetWorthTab({ isMobile, assets, accounts, snapshots, onAddSnapshot, onD
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-        <StatCard label="Asset Value" value={fmtCurrency(assetTotal)} accent="#16a34a" />
+        <StatCard label="Total Assets (Live)" value={fmtCurrency(assetTotal)} accent="#16a34a" />
         <StatCard label="Latest NW" value={latestNW ? fmtCurrency(latestNW.net_worth) : "—"} accent="#3b82f6" />
         <StatCard label="Assets (Snapshot)" value={latestNW ? fmtCurrency(latestNW.total_assets) : "—"} accent="#7c3aed" />
         <StatCard label="Change" value={nwChange != null ? `${nwChange >= 0 ? "+" : ""}${fmtCurrency(nwChange)}` : "—"} accent={nwChange >= 0 ? "#16a34a" : "#f59e0b"} />
@@ -1181,7 +1535,7 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   return (
-    <>{!asTab && <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Businesses" subtitle={`${businesses.length} entit${businesses.length !== 1 ? "ies" : "y"} managed`} isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Business"}</GreenButton></PageHeader></div>}
+    <>{!asTab && <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Businesses" subtitle={`${businesses.length} entit${businesses.length !== 1 ? "ies" : "y"} managed`} isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Business"}</GreenButton></PageHeader></div>}
       <div style={{ padding: asTab ? 0 : (isMobile ? "16px 12px" : "24px 32px") }}>
         {asTab && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Business</GreenButton></div>}
         {showForm && (
@@ -1234,46 +1588,31 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
             <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add Your First Business</GreenButton>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 16 }}>
-            {businesses.map((biz) => {
-              const bizTxns = transactions.filter((t) => t.visibility === "business");
-              const bizIncome = bizTxns.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-              const bizExpenses = bizTxns.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
-              return (
-                <div key={biz.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-                  <div style={{ position: "relative", padding: "20px 22px 16px" }}>
-                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: biz.active ? "linear-gradient(135deg, #16a34a, #15803d)" : "#94a3b8", borderRadius: "16px 16px 0 0" }} />
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ width: 42, height: 42, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a", flexShrink: 0 }}>{Icons.briefcase}</div>
-                        <div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: "'DM Sans', sans-serif", marginBottom: 2 }}>{biz.name}</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.entity_type}</span>
-                            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: biz.active ? "#f0fdf4" : "#f8fafc", color: biz.active ? "#16a34a" : "#94a3b8", border: `1px solid ${biz.active ? "#bbf7d0" : "#e2e8f0"}` }}>{biz.active ? "ACTIVE" : "INACTIVE"}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 16, marginTop: 14, padding: "10px 14px", background: "#f8fafc", borderRadius: 10, flexWrap: "wrap" }}>
-                      {biz.ein && <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>EIN</div><div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{biz.ein}</div></div>}
-                      {biz.state_of_formation && <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>State</div><div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{biz.state_of_formation}</div></div>}
-                      {biz.industry && <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Industry</div><div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{biz.industry}</div></div>}
-                      {biz.date_formed && <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Formed</div><div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtDate(biz.date_formed)}</div></div>}
-                    </div>
-
-                    {biz.description && <p style={{ fontSize: 12, color: "#64748b", fontFamily: "'DM Sans', sans-serif", marginTop: 10, lineHeight: 1.5 }}>{biz.description}</p>}
-
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-                      <button onClick={() => startEdit(biz)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 11, fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", gap: 4 }}>{Icons.edit} Edit</button>
-                      <button onClick={() => onUpdate(biz.id, { active: !biz.active })} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #e2e8f0", background: biz.active ? "#f0fdf4" : "#f8fafc", fontSize: 11, fontWeight: 600, color: biz.active ? "#16a34a" : "#94a3b8", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{biz.active ? "● Active" : "○ Inactive"}</button>
-                      <button onClick={() => { if (window.confirm("Delete this business?")) onDelete(biz.id); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icons.trash}</button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+                <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Business</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Type</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>EIN</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>State</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Industry</th>
+                  <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Status</th>
+                  <th style={{ width: 80 }}></th>
+                </tr></thead>
+                <tbody>{businesses.map((biz) => (
+                  <tr key={biz.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                    <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600, color: "#0f172a" }}>{biz.name}</div>{biz.description && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{biz.description}</div>}</td>
+                    <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.entity_type}</td>
+                    <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.ein || "—"}</td>
+                    <td style={{ padding: "10px 14px", color: "#64748b" }}>{biz.state_of_formation || "—"}</td>
+                    <td style={{ padding: "10px 14px", color: "#64748b" }}>{biz.industry || "—"}</td>
+                    <td style={{ padding: "10px 14px", textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: biz.active ? "#f0fdf4" : "#f8fafc", color: biz.active ? "#16a34a" : "#94a3b8", border: `1px solid ${biz.active ? "#bbf7d0" : "#e2e8f0"}` }}>{biz.active ? "ACTIVE" : "INACTIVE"}</span></td>
+                    <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, justifyContent: "center" }}><button onClick={() => startEdit(biz)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button><button onClick={() => { if (window.confirm("Delete " + biz.name + "?")) onDelete(biz.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -1311,7 +1650,7 @@ function ContactsView({ isMobile, companies, onAdd, onUpdate, onDelete, asTab })
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   return (
-    <>{!asTab && <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Contacts" subtitle={`${companies.length} contact${companies.length !== 1 ? "s" : ""} saved`} isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Contact"}</GreenButton></PageHeader></div>}
+    <>{!asTab && <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Contacts" subtitle={`${companies.length} contact${companies.length !== 1 ? "s" : ""} saved`} isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Contact"}</GreenButton></PageHeader></div>}
       <div style={{ padding: asTab ? 0 : (isMobile ? "16px 12px" : "24px 32px") }}>
         {asTab && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Contact</GreenButton></div>}
         <div style={{ marginBottom: 16 }}>
@@ -1442,7 +1781,7 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   return (
-    <>{!asTab && <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Insurance" subtitle={`${policies.length} polic${policies.length !== 1 ? "ies" : "y"} tracked`} isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Policy"}</GreenButton></PageHeader></div>}
+    <>{!asTab && <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Insurance" subtitle={`${policies.length} polic${policies.length !== 1 ? "ies" : "y"} tracked`} isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Policy"}</GreenButton></PageHeader></div>}
       <div style={{ padding: asTab ? 0 : (isMobile ? "16px 12px" : "24px 32px") }}>
         {asTab && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Policy</GreenButton></div>}
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
@@ -1571,7 +1910,7 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1580,8 +1919,9 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
    BUSINESS (Tabbed wrapper: Entities, Contacts, Insurance)
    ═══════════════════════════════════════════════════════════ */
 
-function BusinessView({ isMobile, businesses, transactions, companies, policies, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy }) {
-  const [tab, setTab] = useState("entities");
+function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy }) {
+  const tab = activeTab || "entities";
+  const setTab = onTabChange;
   const tabs = [
     { key: "entities", label: "Entities" },
     { key: "contacts", label: "Contacts" },
@@ -1589,7 +1929,7 @@ function BusinessView({ isMobile, businesses, transactions, companies, policies,
   ];
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Business" subtitle="Entities, contacts & insurance" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
@@ -1615,28 +1955,28 @@ function InsuranceContentTab(props) {
    HOME TRACKER (Tabbed: Homes, Utilities)
    ═══════════════════════════════════════════════════════════ */
 
-const UTILITY_TYPES = ["Electric", "Water", "Gas", "Internet", "Phone", "Sewer", "Trash", "HOA", "Other"];
+const UTILITY_TYPES = ["Electric", "Water", "Gas", "Internet", "Phone", "Sewer", "Trash", "Lawn Care", "Pest Control", "HOA", "Other"];
 const MONTHS_LIST = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 
 function HomesTab({ isMobile, homes, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name: "", address: "", home_type: "Primary", purchase_date: "", purchase_price: "", current_value: "", notes: "" });
+  const [form, setForm] = useState({ name: "", address: "", home_type: "Primary", purchase_date: "", purchase_price: "", current_value: "", notes: "", ownership_type: "own", monthly_payment: "" });
   const [saving, setSaving] = useState(false);
   const homeTypes = ["Primary", "Rental", "Vacation", "Investment", "Other"];
 
-  const resetForm = () => { setForm({ name: "", address: "", home_type: "Primary", purchase_date: "", purchase_price: "", current_value: "", notes: "" }); setEditingId(null); setShowForm(false); };
+  const resetForm = () => { setForm({ name: "", address: "", home_type: "Primary", purchase_date: "", purchase_price: "", current_value: "", notes: "", ownership_type: "own", monthly_payment: "" }); setEditingId(null); setShowForm(false); };
 
   const handleSubmit = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    const payload = { name: form.name, address: form.address || null, home_type: form.home_type, purchase_date: form.purchase_date || null, purchase_price: form.purchase_price ? parseFloat(form.purchase_price) : null, current_value: form.current_value ? parseFloat(form.current_value) : null, notes: form.notes || null };
+    const payload = { name: form.name, address: form.address || null, home_type: form.home_type, purchase_date: form.purchase_date || null, purchase_price: form.purchase_price ? parseFloat(form.purchase_price) : null, current_value: form.current_value ? parseFloat(form.current_value) : null, notes: form.notes || null, ownership_type: form.ownership_type, monthly_payment: form.monthly_payment ? parseFloat(form.monthly_payment) : 0 };
     if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
     resetForm(); setSaving(false);
   };
 
-  const startEdit = (h) => { setForm({ name: h.name || "", address: h.address || "", home_type: h.home_type || "Primary", purchase_date: h.purchase_date || "", purchase_price: h.purchase_price?.toString() || "", current_value: h.current_value?.toString() || "", notes: h.notes || "" }); setEditingId(h.id); setShowForm(true); };
+  const startEdit = (h) => { setForm({ name: h.name || "", address: h.address || "", home_type: h.home_type || "Primary", purchase_date: h.purchase_date || "", purchase_price: h.purchase_price?.toString() || "", current_value: h.current_value?.toString() || "", notes: h.notes || "", ownership_type: h.ownership_type || "own", monthly_payment: h.monthly_payment?.toString() || "" }); setEditingId(h.id); setShowForm(true); };
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
@@ -1654,6 +1994,8 @@ function HomesTab({ isMobile, homes, onAdd, onUpdate, onDelete }) {
             <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Address</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Full address" style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Purchase Price</label><input type="number" value={form.purchase_price} onChange={(e) => setForm({ ...form, purchase_price: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Current Value</label><input type="number" value={form.current_value} onChange={(e) => setForm({ ...form, current_value: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Own or Rent</label><select value={form.ownership_type} onChange={(e) => setForm({ ...form, ownership_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="own">Own (Mortgage)</option><option value="rent">Rent</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>{form.ownership_type === "rent" ? "Monthly Rent" : "Mortgage Payment"}</label><input type="number" step="0.01" value={form.monthly_payment} onChange={(e) => setForm({ ...form, monthly_payment: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
@@ -1678,10 +2020,12 @@ function HomesTab({ isMobile, homes, onAdd, onUpdate, onDelete }) {
                 <div><div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{h.name}</div><span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{h.home_type}</span></div>
               </div>
               {h.address && <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{h.address}</p>}
-              <div style={{ display: "flex", gap: 16 }}>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                 {h.purchase_price && <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Purchased</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(h.purchase_price)}</div></div>}
                 {h.current_value && <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Value</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#16a34a" }}>{fmtCurrency(h.current_value)}</div></div>}
+                <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>{h.ownership_type === "rent" ? "Monthly Rent" : "Mortgage"}</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#dc2626" }}>{Number(h.monthly_payment) > 0 ? fmtCurrency(h.monthly_payment) : "—"}</div></div>
               </div>
+              <span style={{ display: "inline-block", marginTop: 8, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: h.ownership_type === "rent" ? "#faf5ff" : "#f0fdf4", color: h.ownership_type === "rent" ? "#7c3aed" : "#16a34a", border: "1px solid " + (h.ownership_type === "rent" ? "#e9d5ff" : "#bbf7d0"), fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h.ownership_type === "rent" ? "RENTING" : "OWNER"}</span>
               <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
                 <button onClick={() => startEdit(h)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 11, fontWeight: 600, color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>{Icons.edit} Edit</button>
                 <button onClick={() => { if (window.confirm("Delete?")) onDelete(h.id); }} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", cursor: "pointer", display: "flex", alignItems: "center" }}>{Icons.trash}</button>
@@ -1696,72 +2040,129 @@ function HomesTab({ isMobile, homes, onAdd, onUpdate, onDelete }) {
 
 function UtilitiesTab({ isMobile, homes, utilityBills, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
-  const curYear = new Date().getFullYear();
-  const [filterYear, setFilterYear] = useState(curYear);
-  const [filterHome, setFilterHome] = useState("all");
-  const [form, setForm] = useState({ utility_type: "Electric", provider: "", amount: "", month: MONTHS_LIST[new Date().getMonth()], year: curYear, home_id: "", due_date: "" });
+  const [editingId, setEditingId] = useState(null);
+  const [chartMode, setChartMode] = useState("donut");
+  const [form, setForm] = useState({ utility_type: "Electric", provider: "", amount: "", home_id: "" });
   const [saving, setSaving] = useState(false);
 
-  const resetForm = () => { setForm({ utility_type: "Electric", provider: "", amount: "", month: MONTHS_LIST[new Date().getMonth()], year: curYear, home_id: homes[0]?.id || "", due_date: "" }); setShowForm(false); };
+  const resetForm = () => { setForm({ utility_type: "Electric", provider: "", amount: "", home_id: homes[0]?.id || "" }); setEditingId(null); setShowForm(false); };
 
   const handleSubmit = async () => {
     if (!form.amount) return;
     setSaving(true);
-    await onAdd({ utility_type: form.utility_type, provider: form.provider || null, amount: parseFloat(form.amount), month: form.month, year: form.year, home_id: form.home_id || null, due_date: form.due_date || null });
+    const payload = { utility_type: form.utility_type, provider: form.provider || null, amount: parseFloat(form.amount), home_id: form.home_id || null, month: "Budget", year: new Date().getFullYear() };
+    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
     resetForm(); setSaving(false);
   };
 
-  const yearBills = utilityBills.filter((b) => b.year === filterYear && (filterHome === "all" || b.home_id === filterHome));
-  const totalYear = yearBills.reduce((s, b) => s + Number(b.amount), 0);
+  const startEdit = (b) => { setForm({ utility_type: b.utility_type || "Electric", provider: b.provider || "", amount: b.amount?.toString() || "", home_id: b.home_id || "" }); setEditingId(b.id); setShowForm(true); };
+
+  const totalMonthly = utilityBills.reduce((s, b) => s + Number(b.amount || 0), 0);
   const byType = {};
-  yearBills.forEach((b) => { byType[b.utility_type] = (byType[b.utility_type] || 0) + Number(b.amount); });
+  utilityBills.forEach((b) => { byType[b.utility_type] = (byType[b.utility_type] || 0) + Number(b.amount); });
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={filterYear} onChange={(e) => setFilterYear(parseInt(e.target.value))} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Mono', monospace" }}>{[curYear - 1, curYear, curYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}</select>
-        {homes.length > 0 && <select value={filterHome} onChange={(e) => setFilterHome(e.target.value)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 12 }}><option value="all">All Homes</option>{homes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}</select>}
-        <div style={{ flex: 1 }} />
-        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Bill</GreenButton>
-      </div>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
-        <StatCard label={`${filterYear} Total`} value={fmtCurrency(totalYear)} accent="#16a34a" />
-        <StatCard label="Avg / Month" value={fmtCurrency(yearBills.length > 0 ? totalYear / Math.max(1, [...new Set(yearBills.map((b) => b.month))].length) : 0)} accent="#3b82f6" />
-        <StatCard label="Bills" value={yearBills.length} accent="#7c3aed" />
+        <StatCard label="Monthly Budget" value={fmtCurrency(totalMonthly)} accent="#16a34a" />
+        <StatCard label="Utilities Tracked" value={utilityBills.length} accent="#3b82f6" />
+        <StatCard label="Annual Estimate" value={fmtCurrency(totalMonthly * 12)} accent="#7c3aed" />
       </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Utility</GreenButton></div>
       {showForm && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? "Edit Utility" : "New Utility"} />
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Type</label><select value={form.utility_type} onChange={(e) => setForm({ ...form, utility_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{UTILITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Amount *</label><input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Avg Monthly Cost *</label><input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Provider</label><input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} placeholder="e.g. Duke Energy" style={inputStyle} className="sz-input" /></div>
             {homes.length > 0 && <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Home</label><select value={form.home_id} onChange={(e) => setForm({ ...form, home_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">None</option>{homes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}</select></div>}
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Provider</label><input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} placeholder="e.g. TXU Energy" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Month</label><select value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{MONTHS_LIST.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Year</label><input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: parseInt(e.target.value) || curYear })} style={inputStyle} className="sz-input" /></div>
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
-            <GreenButton small onClick={handleSubmit} disabled={saving || !form.amount}>{saving ? "..." : "Add Bill"}</GreenButton>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.amount}>{saving ? "..." : editingId ? "Update" : "Add Utility"}</GreenButton>
           </div>
         </div>
       )}
-      {Object.keys(byType).length > 0 && (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
-          <SectionHeader text="Cost Breakdown" />
-          {Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, amt]) => { const pct = totalYear > 0 ? Math.round((amt / totalYear) * 100) : 0; return (<div key={type} style={{ marginBottom: 8 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: "#475569", fontWeight: 600 }}>{type}</span><span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{fmtCurrency(amt)} ({pct}%)</span></div><div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(135deg, #16a34a, #15803d)", borderRadius: 3 }} /></div></div>); })}
+      {Object.keys(byType).length > 0 && (() => {
+        const entries = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+        const colors = ["#16a34a", "#3b82f6", "#7c3aed", "#f59e0b", "#dc2626", "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1", "#14b8a6"];
+        // Donut chart math
+        const size = isMobile ? 180 : 200;
+        const cx = size / 2, cy = size / 2, r = size * 0.35, strokeW = size * 0.18;
+        let cumPct = 0;
+        const segments = entries.map(([type, amt], i) => {
+          const pct = totalMonthly > 0 ? amt / totalMonthly : 0;
+          const dashArray = `${pct * 2 * Math.PI * r} ${(1 - pct) * 2 * Math.PI * r}`;
+          const dashOffset = -cumPct * 2 * Math.PI * r;
+          cumPct += pct;
+          return { type, amt, pct, color: colors[i % colors.length], dashArray, dashOffset };
+        });
+        return (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <SectionHeader text="Budget Breakdown" />
+              <div style={{ display: "flex", gap: 4 }}>
+                {["donut", "bars"].map((m) => (
+                  <button key={m} onClick={() => setChartMode(m)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${chartMode === m ? "#16a34a" : "#e2e8f0"}`, background: chartMode === m ? "#f0fdf4" : "transparent", color: chartMode === m ? "#16a34a" : "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{m === "donut" ? "🍩" : "📊"}</button>
+                ))}
+              </div>
+            </div>
+            {chartMode === "donut" ? (
+              <div style={{ display: "flex", alignItems: isMobile ? "center" : "flex-start", gap: isMobile ? 16 : 32, flexDirection: isMobile ? "column" : "row" }}>
+                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0, transform: "rotate(-90deg)" }}>
+                  {segments.map((seg, i) => (
+                    <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={strokeW} strokeDasharray={seg.dashArray} strokeDashoffset={seg.dashOffset} strokeLinecap="butt" />
+                  ))}
+                  <text x={cx} y={cy - 8} textAnchor="middle" dominantBaseline="middle" style={{ fontSize: 22, fontWeight: 700, fontFamily: "'Playfair Display', serif", fill: "#0f172a", transform: "rotate(90deg)", transformOrigin: `${cx}px ${cy}px` }}>{fmtCurrency(totalMonthly)}</text>
+                  <text x={cx} y={cy + 14} textAnchor="middle" dominantBaseline="middle" style={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8", fontFamily: "'DM Sans', sans-serif", transform: "rotate(90deg)", transformOrigin: `${cx}px ${cy}px` }}>per month</text>
+                </svg>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, width: isMobile ? "100%" : "auto" }}>
+                  {segments.map((seg, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: "#475569", fontWeight: 600, flex: 1 }}>{seg.type}</span>
+                      <span style={{ fontSize: 12, color: "#0f172a", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>{fmtCurrencyExact(seg.amt)}</span>
+                      <span style={{ fontSize: 10, color: "#94a3b8", fontFamily: "'DM Mono', monospace", minWidth: 32, textAlign: "right" }}>{Math.round(seg.pct * 100)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                {entries.map(([type, amt], i) => { const pct = totalMonthly > 0 ? Math.round((amt / totalMonthly) * 100) : 0; return (<div key={type} style={{ marginBottom: 8 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: "#475569", fontWeight: 600 }}>{type}</span><span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{fmtCurrencyExact(amt)}/mo ({pct}%)</span></div><div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: colors[i % colors.length], borderRadius: 3 }} /></div></div>); })}
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {utilityBills.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>💡</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Utilities Budgeted</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>List your recurring utilities with average monthly costs — electric, water, internet, etc.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Utility</GreenButton>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {utilityBills.map((b) => { const home = homes.find((h) => h.id === b.home_id); return (
+            <div key={b.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>💡</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{b.utility_type}{b.provider && <span style={{ color: "#64748b", fontWeight: 400 }}> — {b.provider}</span>}</div>
+                {home && <div style={{ fontSize: 11, color: "#94a3b8" }}>{home.name}</div>}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#dc2626", flexShrink: 0 }}>{fmtCurrencyExact(b.amount)}<span style={{ fontSize: 10, fontWeight: 400, color: "#94a3b8" }}>/mo</span></div>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button onClick={() => startEdit(b)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button>
+                <button onClick={() => { if (window.confirm("Delete?")) onDelete(b.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+              </div>
+            </div>
+          ); })}
         </div>
       )}
-      <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Bills · {yearBills.length}</div>
-        {yearBills.length === 0 ? (<div style={{ padding: "32px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No bills for {filterYear}</div>) : (
-          <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
-            <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}><th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Month</th><th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Type</th>{homes.length > 0 && <th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Home</th>}<th style={{ textAlign: "right", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Amount</th><th style={{ textAlign: "center", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Paid</th><th style={{ width: 36 }}></th></tr></thead>
-            <tbody>{yearBills.sort((a, b) => MONTHS_LIST.indexOf(a.month) - MONTHS_LIST.indexOf(b.month)).map((b) => { const h = homes.find((hm) => hm.id === b.home_id); return (<tr key={b.id} style={{ borderBottom: "1px solid #f8fafc" }}><td style={{ padding: "8px 14px", fontWeight: 600, color: "#0f172a" }}>{b.month}</td><td style={{ padding: "8px 14px", color: "#64748b" }}>{b.utility_type}</td>{homes.length > 0 && <td style={{ padding: "8px 14px", color: "#64748b" }}>{h?.name || "—"}</td>}<td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>{fmtCurrencyExact(b.amount)}</td><td style={{ padding: "8px 14px", textAlign: "center" }}><button onClick={() => onUpdate(b.id, { paid: !b.paid })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>{b.paid ? "✅" : "⬜"}</button></td><td style={{ padding: "8px 14px" }}><button onClick={() => { if (window.confirm("Delete?")) onDelete(b.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></td></tr>); })}</tbody>
-          </table></div>
-        )}
-      </div>
     </>
   );
 }
@@ -1802,7 +2203,7 @@ function PlannerView({ isMobile, tasks, onAdd, onUpdate, onDelete, asTab }) {
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   return (
-    <>{!asTab && <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Planner" subtitle="Tasks & goals" isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Task"}</GreenButton></PageHeader></div>}
+    <>{!asTab && <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Planner" subtitle="Tasks & goals" isMobile={isMobile}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} {isMobile ? "Add" : "Add Task"}</GreenButton></PageHeader></div>}
       <div style={{ padding: asTab ? 0 : (isMobile ? "16px 12px" : "24px 32px") }}>
         {asTab && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Task</GreenButton></div>}
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
@@ -1910,7 +2311,7 @@ function CalendarView({ isMobile, events, onAdd, onDelete, asTab }) {
   for (let d = 1; d <= daysInMonth; d++) days.push(d);
 
   return (
-    <>{!asTab && <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle={`${monthEvents.length} event${monthEvents.length !== 1 ? "s" : ""} this month`} isMobile={isMobile}><GreenButton small onClick={() => { setSelectedDate(today); setForm({ ...form, event_date: today }); setShowForm(!showForm); }}>{Icons.plus} Event</GreenButton></PageHeader></div>}
+    <>{!asTab && <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle={`${monthEvents.length} event${monthEvents.length !== 1 ? "s" : ""} this month`} isMobile={isMobile}><GreenButton small onClick={() => { setSelectedDate(today); setForm({ ...form, event_date: today }); setShowForm(!showForm); }}>{Icons.plus} Event</GreenButton></PageHeader></div>}
       <div style={{ padding: asTab ? 0 : (isMobile ? "16px 12px" : "24px 32px") }}>
         {asTab && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><GreenButton small onClick={() => { setSelectedDate(today); setForm({ ...form, event_date: today }); setShowForm(!showForm); }}>{Icons.plus} Add Event</GreenButton></div>}
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 20 }}>
@@ -1972,7 +2373,7 @@ function CalendarView({ isMobile, events, onAdd, onDelete, asTab }) {
         )}
 
         {selectedDate && (
-          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px" }}>
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px", marginBottom: 16 }}>
             <SectionHeader text={`Events · ${fmtDate(selectedDate)}`} />
             {selectedEvents.length === 0 ? (
               <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No events on this day</div>
@@ -1992,8 +2393,123 @@ function CalendarView({ isMobile, events, onAdd, onDelete, asTab }) {
             ))}
           </div>
         )}
+
+        {(() => {
+          const upcoming = events.filter((e) => e.event_date >= today).sort((a, b) => a.event_date.localeCompare(b.event_date));
+          if (upcoming.length === 0) return null;
+          return (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px" }}>
+              <SectionHeader text={`Upcoming Events · ${upcoming.length}`} />
+              {upcoming.map((ev) => (
+                <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
+                  <div style={{ width: 4, borderRadius: 2, background: ev.color || "#16a34a", alignSelf: "stretch", flexShrink: 0 }} />
+                  <div style={{ minWidth: 48, textAlign: "center", flexShrink: 0 }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", lineHeight: 1 }}>{new Date(ev.event_date + "T12:00").getDate()}</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase" }}>{new Date(ev.event_date + "T12:00").toLocaleDateString("en-US", { month: "short" })}</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{ev.title}</div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>
+                      {ev.start_time && <span>{ev.start_time}{ev.end_time && ` – ${ev.end_time}`} · </span>}
+                      {ev.event_date === today ? <span style={{ color: "#16a34a", fontWeight: 700 }}>Today</span> : fmtDate(ev.event_date)}
+                    </div>
+                  </div>
+                  {ev.category && <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", flexShrink: 0 }}>{ev.category}</span>}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
-    </div>
+    </>
+  );
+}
+
+
+/* — Monthly Bills Tab — */
+function MonthlyBillsTab({ isMobile, bills, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: "", amount: "", category: "Education", visibility: "personal", active: true, notes: "" });
+  const [saving, setSaving] = useState(false);
+  const categories = ["Education", "Childcare", "Food & Groceries", "Gas & Fuel", "Subscriptions", "Memberships", "Transportation", "Phone Plans", "Storage", "Donations", "Alimony/Support", "Other"];
+
+  const resetForm = () => { setForm({ name: "", amount: "", category: "Education", visibility: "personal", active: true, notes: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim() || !form.amount) return;
+    setSaving(true);
+    const payload = { name: form.name, amount: parseFloat(form.amount), category: form.category, visibility: form.visibility, active: form.active, notes: form.notes || null };
+    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
+    resetForm(); setSaving(false);
+  };
+  const startEdit = (b) => { setForm({ name: b.name || "", amount: b.amount?.toString() || "", category: b.category || "Other", visibility: b.visibility || "personal", active: b.active !== false, notes: b.notes || "" }); setEditingId(b.id); setShowForm(true); };
+
+  const activeBills = bills.filter((b) => b.active !== false);
+  const totalMonthly = activeBills.reduce((s, b) => s + Number(b.amount || 0), 0);
+  const byCategory = {};
+  activeBills.forEach((b) => { byCategory[b.category || "Other"] = (byCategory[b.category || "Other"] || 0) + Number(b.amount || 0); });
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+        <StatCard label="Monthly Total" value={fmtCurrency(totalMonthly)} accent="#dc2626" />
+        <StatCard label="Active Bills" value={activeBills.length} accent="#3b82f6" />
+        <StatCard label="Categories" value={Object.keys(byCategory).length} accent="#7c3aed" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Bill</GreenButton></div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? "Edit Monthly Bill" : "New Monthly Bill"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Kids Tuition — Academy Prep" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Amount *</label><input type="number" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Visibility</label><select value={form.visibility} onChange={(e) => setForm({ ...form, visibility: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="personal">Personal</option><option value="business">Business</option></select></div>
+            <div style={{ gridColumn: isMobile ? "1" : "2 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional details" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim() || !form.amount}>{saving ? "..." : editingId ? "Update" : "Add Bill"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {Object.keys(byCategory).length > 0 && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+          <SectionHeader text="Category Breakdown" />
+          {Object.entries(byCategory).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => { const pct = totalMonthly > 0 ? Math.round((amt / totalMonthly) * 100) : 0; return (<div key={cat} style={{ marginBottom: 8 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: "#475569", fontWeight: 600 }}>{cat}</span><span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{fmtCurrencyExact(amt)} ({pct}%)</span></div><div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(135deg, #7c3aed, #6d28d9)", borderRadius: 3 }} /></div></div>); })}
+        </div>
+      )}
+      {bills.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Monthly Bills</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Track recurring expenses like tuition, subscriptions, memberships, and more.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Bill</GreenButton>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {bills.map((b) => (
+            <div key={b.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${b.active !== false ? "#e2e8f0" : "#f1f5f9"}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, opacity: b.active !== false ? 1 : 0.5 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{b.name}</div>
+                <div style={{ display: "flex", gap: 6, marginTop: 3, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: "#faf5ff", color: "#7c3aed", border: "1px solid #e9d5ff" }}>{b.category}</span>
+                  <VisibilityBadge visibility={b.visibility || "personal"} />
+                </div>
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#dc2626", flexShrink: 0 }}>{fmtCurrencyExact(b.amount)}<span style={{ fontSize: 10, fontWeight: 400, color: "#94a3b8" }}>/mo</span></div>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button onClick={() => onUpdate(b.id, { active: !b.active })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 2 }}>{b.active !== false ? "✅" : "⬜"}</button>
+                <button onClick={() => startEdit(b)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button>
+                <button onClick={() => { if (window.confirm("Delete?")) onDelete(b.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2002,22 +2518,25 @@ function CalendarView({ isMobile, events, onAdd, onDelete, asTab }) {
    HOME & LIFE (Tabbed: Properties, Utilities, Calendar, Planner)
    ═══════════════════════════════════════════════════════════ */
 
-function HomeLifeView({ isMobile, homes, utilityBills, calendarEvents, plannerTasks, onAddHome, onUpdateHome, onDeleteHome, onAddBill, onUpdateBill, onDeleteBill, onAddEvent, onDeleteEvent, onAddTask, onUpdateTask, onDeleteTask }) {
-  const [tab, setTab] = useState("homes");
+function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, calendarEvents, plannerTasks, monthlyBills, onAddHome, onUpdateHome, onDeleteHome, onAddBill, onUpdateBill, onDeleteBill, onAddEvent, onDeleteEvent, onAddTask, onUpdateTask, onDeleteTask, onAddMonthlyBill, onUpdateMonthlyBill, onDeleteMonthlyBill }) {
+  const tab = activeTab || "homes";
+  const setTab = onTabChange;
   const tabs = [
     { key: "homes", label: "Properties" },
     { key: "utilities", label: "Utilities" },
+    { key: "bills", label: "Monthly Bills" },
     { key: "calendar", label: "Calendar" },
     { key: "planner", label: "Planner" },
   ];
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Home & Life" subtitle="Properties, utilities & planning" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
         {tab === "homes" && <HomesTab isMobile={isMobile} homes={homes} onAdd={onAddHome} onUpdate={onUpdateHome} onDelete={onDeleteHome} />}
         {tab === "utilities" && <UtilitiesTab isMobile={isMobile} homes={homes} utilityBills={utilityBills} onAdd={onAddBill} onUpdate={onUpdateBill} onDelete={onDeleteBill} />}
+        {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={monthlyBills} onAdd={onAddMonthlyBill} onUpdate={onUpdateMonthlyBill} onDelete={onDeleteMonthlyBill} />}
         {tab === "calendar" && <CalendarView isMobile={isMobile} events={calendarEvents} onAdd={onAddEvent} onDelete={onDeleteEvent} asTab />}
         {tab === "planner" && <PlannerView isMobile={isMobile} tasks={plannerTasks} onAdd={onAddTask} onUpdate={onUpdateTask} onDelete={onDeleteTask} asTab />}
       </div>
@@ -2029,15 +2548,16 @@ function HomeLifeView({ isMobile, homes, utilityBills, calendarEvents, plannerTa
    FAMILY (Tabbed: Members, Grades, Life Events, Prayer Wall)
    ═══════════════════════════════════════════════════════════ */
 
-function FamilyView({ isMobile, kids, grades, milestones, prayers, onAddKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer }) {
-  const [tab, setTab] = useState("members");
+function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer }) {
+  const tab = activeTab || "members";
+  const setTab = onTabChange;
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Family" subtitle="Members, milestones & prayer wall" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }, { key: "events", label: "Life Events" }, { key: "prayer", label: "Prayer Wall" }]} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onDelete={onDeleteKid} />}
+        {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} />}
         {tab === "grades" && <GradesTab isMobile={isMobile} kids={kids} grades={grades} onAdd={onAddGrade} onDelete={onDeleteGrade} />}
         {tab === "events" && <LifeEventsTab isMobile={isMobile} kids={kids} milestones={milestones} onAdd={onAddMilestone} onDelete={onDeleteMilestone} />}
         {tab === "prayer" && <PrayerWallTab isMobile={isMobile} prayers={prayers} onAdd={onAddPrayer} onUpdate={onUpdatePrayer} onDelete={onDeletePrayer} />}
@@ -2047,19 +2567,22 @@ function FamilyView({ isMobile, kids, grades, milestones, prayers, onAddKid, onD
 }
 
 /* — Family Members Tab (replaces old Kids-only tab) — */
-function FamilyMembersTab({ isMobile, kids, onAdd, onDelete }) {
+function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" });
   const [saving, setSaving] = useState(false);
 
   const roles = ["Parent", "Child", "Spouse", "Grandparent", "Other"];
-  const resetForm = () => { setForm({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" }); setShowForm(false); };
+  const resetForm = () => { setForm({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" }); setEditingId(null); setShowForm(false); };
   const handleSubmit = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    await onAdd({ name: form.name, date_of_birth: form.date_of_birth || null, school: form.school || null, grade_level: form.grade_level || null, notes: form.notes || null });
+    const payload = { name: form.name, role: form.role, date_of_birth: form.date_of_birth || null, school: form.school || null, grade_level: form.grade_level || null, notes: form.notes || null };
+    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
     resetForm(); setSaving(false);
   };
+  const startEdit = (kid) => { setForm({ name: kid.name || "", role: kid.role || "Child", date_of_birth: kid.date_of_birth || "", school: kid.school || "", grade_level: kid.grade_level || "", notes: kid.notes || "" }); setEditingId(kid.id); setShowForm(true); };
 
   const getAge = (dob) => { if (!dob) return null; const d = new Date(dob); const now = new Date(); let age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; return age; };
 
@@ -2081,7 +2604,7 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onDelete }) {
       </div>
       {showForm && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
-          <SectionHeader text="New Family Member" />
+          <SectionHeader text={editingId ? "Edit Family Member" : "New Family Member"} />
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
@@ -2092,7 +2615,7 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onDelete }) {
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
-            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : "Add Member"}</GreenButton>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : editingId ? "Update" : "Add Member"}</GreenButton>
           </div>
         </div>
       )}
@@ -2122,7 +2645,10 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onDelete }) {
                       {kid.school && <span style={{ fontSize: 11, color: "#94a3b8" }}>· {kid.school}</span>}
                     </div>
                   </div>
-                  <button onClick={() => { if (window.confirm("Remove " + kid.name + "?")) onDelete(kid.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => startEdit(kid)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button>
+                    <button onClick={() => { if (window.confirm("Remove " + kid.name + "?")) onDelete(kid.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  </div>
                 </div>
                 {kid.notes && <p style={{ fontSize: 12, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>{kid.notes}</p>}
               </div>
@@ -2348,28 +2874,37 @@ function PrayerWallTab({ isMobile, prayers, onAdd, onUpdate, onDelete }) {
    HEALTH (Tabbed: Check-in, Supplements, Meal Planning, Blood Work)
    ═══════════════════════════════════════════════════════════ */
 
-const MemberPicker = ({ members, selected, onChange, onAddMember, isMobile }) => {
+const MemberPicker = ({ members, selected, onChange, onAddMember, isMobile, currentEmail }) => {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("Self");
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState("Spouse");
   const [saving, setSaving] = useState(false);
   const roles = ["Self", "Spouse", "Child", "Parent", "Other"];
-  const handleAdd = async () => { if (!newName.trim()) return; setSaving(true); await onAddMember({ name: newName, role: newRole }); setNewName(""); setNewRole("Self"); setAdding(false); setSaving(false); };
+  const handleAdd = async () => { if (!newName.trim()) return; setSaving(true); await onAddMember({ name: newName, role: newRole, email: newEmail || null }); setNewName(""); setNewEmail(""); setNewRole("Spouse"); setAdding(false); setSaving(false); };
+
+  const currentMember = members.find((m) => m.id === selected);
+
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {members.map((m) => (
-          <button key={m.id} onClick={() => onChange(m.id)} style={{ padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${selected === m.id ? "#16a34a" : "#e2e8f0"}`, background: selected === m.id ? "#f0fdf4" : "#fff", color: selected === m.id ? "#16a34a" : "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 22, height: 22, borderRadius: 7, background: selected === m.id ? "#16a34a" : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: selected === m.id ? "#fff" : "#94a3b8" }}>{m.name.charAt(0)}</div>
-            {m.name}
-            <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{m.role}</span>
-          </button>
-        ))}
-        <button onClick={() => setAdding(!adding)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px dashed #bbf7d0", background: "transparent", color: "#16a34a", fontSize: 16, cursor: "pointer", fontWeight: 700 }}>+</button>
+        {members.map((m) => {
+          const isMe = m.email === currentEmail;
+          return (
+            <button key={m.id} onClick={() => onChange(m.id)} style={{ padding: "8px 16px", borderRadius: 10, border: `1.5px solid ${selected === m.id ? "#16a34a" : "#e2e8f0"}`, background: selected === m.id ? "#f0fdf4" : "#fff", color: selected === m.id ? "#16a34a" : "#64748b", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: selected === m.id ? "#16a34a" : "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: selected === m.id ? "#fff" : "#94a3b8" }}>{m.name.charAt(0)}</div>
+              {m.name}
+              {isMe && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "#eff6ff", color: "#3b82f6", fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>YOU</span>}
+            </button>
+          );
+        })}
+        <button onClick={() => setAdding(!adding)} style={{ padding: "8px 12px", borderRadius: 10, border: "1.5px dashed #bbf7d0", background: "transparent", color: "#16a34a", fontSize: 16, cursor: "pointer", fontWeight: 700 }}>+</button>
       </div>
+      {currentMember && <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 6, fontFamily: "'DM Sans', sans-serif" }}>Viewing data for <strong style={{ color: "#0f172a" }}>{currentMember.name}</strong>{currentMember.email && <span> · {currentMember.email}</span>}</p>}
       {adding && (
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name" style={{ padding: "7px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 7, outline: "none", width: 140, fontFamily: "'DM Sans', sans-serif" }} className="sz-input" />
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name" style={{ padding: "7px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 7, outline: "none", width: 130, fontFamily: "'DM Sans', sans-serif" }} className="sz-input" />
+          <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Email (to link login)" style={{ padding: "7px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 7, outline: "none", width: 190, fontFamily: "'DM Sans', sans-serif" }} className="sz-input" />
           <select value={newRole} onChange={(e) => setNewRole(e.target.value)} style={{ padding: "7px 10px", fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 7, cursor: "pointer" }}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select>
           <GreenButton small onClick={handleAdd} disabled={saving || !newName.trim()}>{saving ? "..." : "Add"}</GreenButton>
           <button onClick={() => setAdding(false)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 12 }}>Cancel</button>
@@ -2380,35 +2915,294 @@ const MemberPicker = ({ members, selected, onChange, onAddMember, isMobile }) =>
 };
 
 
-function HealthView({ isMobile, familyMembers, checkins, supplements, meals, bloodWork, scorecards, onAddMember, onAddCheckin, onDeleteCheckin, onAddSupplement, onUpdateSupplement, onDeleteSupplement, onAddMeal, onDeleteMeal, onAddBloodWork, onDeleteBloodWork, onAddScorecard, onDeleteScorecard }) {
-  const [tab, setTab] = useState("checkin");
-  const [selectedMember, setSelectedMember] = useState(familyMembers[0]?.id || null);
+function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, checkins, supplements, meals, bloodWork, scorecards, doseLogs, bodyLogs, onAddMember, onAddCheckin, onDeleteCheckin, onAddSupplement, onUpdateSupplement, onDeleteSupplement, onAddMeal, onDeleteMeal, onAddBloodWork, onDeleteBloodWork, onAddScorecard, onDeleteScorecard, onAddDoseLog, onDeleteDoseLog, onAddBodyLog, onDeleteBodyLog }) {
+  const tab = activeTab || "scorecard";
+  const setTab = onTabChange;
+  const currentEmail = session?.user?.email || "";
 
-  useEffect(() => { if (!selectedMember && familyMembers.length > 0) setSelectedMember(familyMembers[0].id); }, [familyMembers, selectedMember]);
+  // Auto-detect current user's family member by email, or fall back to first member
+  const myMember = familyMembers.find((m) => m.email === currentEmail);
+  const [selectedMember, setSelectedMember] = useState(myMember?.id || familyMembers[0]?.id || null);
+
+  useEffect(() => {
+    const me = familyMembers.find((m) => m.email === currentEmail);
+    if (me && !selectedMember) setSelectedMember(me.id);
+    else if (!selectedMember && familyMembers.length > 0) setSelectedMember(familyMembers[0].id);
+  }, [familyMembers, currentEmail, selectedMember]);
+
+  // Auto-create a family_member for the logged-in user if none exists with their email
+  useEffect(() => {
+    if (!familyMembers.some((m) => m.email === currentEmail) && currentEmail) {
+      const userName = session?.user?.user_metadata?.full_name || fmtUserName(currentEmail);
+      onAddMember({ name: userName, role: "Self", email: currentEmail });
+    }
+  }, [familyMembers.length, currentEmail]);
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Health" subtitle="Wellness tracking for the whole family" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <MemberPicker members={familyMembers} selected={selectedMember} onChange={setSelectedMember} onAddMember={onAddMember} isMobile={isMobile} />
+        <MemberPicker members={familyMembers} selected={selectedMember} onChange={setSelectedMember} onAddMember={onAddMember} isMobile={isMobile} currentEmail={currentEmail} />
         {familyMembers.length === 0 ? (
           <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>💪</div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Add a Family Member</h3>
-            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Use the + button above to add yourself or family members to start tracking.</p>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Setting Up Health Tracking</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>We're creating your profile automatically — refresh in a moment.</p>
           </div>
         ) : (
           <>
-            <TabBar tabs={[{ key: "checkin", label: "Check-in" }, { key: "supplements", label: "Supplements" }, { key: "meals", label: "Meal Planning" }, { key: "bloodwork", label: "Blood Work" }, { key: "scorecard", label: "Scorecard" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+            <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+            {tab === "dosing" && <DosingTab isMobile={isMobile} memberId={selectedMember} supplements={supplements.filter((s) => s.member_id === selectedMember && s.active)} doseLogs={doseLogs.filter((d) => d.member_id === selectedMember)} onAddLog={onAddDoseLog} onDeleteLog={onDeleteDoseLog} />}
+            {tab === "body" && <BodyPerformanceTab isMobile={isMobile} memberId={selectedMember} bodyLogs={bodyLogs.filter((b) => b.member_id === selectedMember)} onAdd={onAddBodyLog} onDelete={onDeleteBodyLog} />}
             {tab === "checkin" && <HealthCheckinTab isMobile={isMobile} memberId={selectedMember} checkins={checkins.filter((c) => c.member_id === selectedMember)} onAdd={onAddCheckin} onDelete={onDeleteCheckin} />}
-            {tab === "supplements" && <SupplementsTab isMobile={isMobile} memberId={selectedMember} supplements={supplements.filter((s) => s.member_id === selectedMember)} onAdd={onAddSupplement} onUpdate={onUpdateSupplement} onDelete={onDeleteSupplement} />}
+            {tab === "supplements" && <SupplementsTab isMobile={isMobile} memberId={selectedMember} familyMembers={familyMembers} supplements={supplements.filter((s) => s.member_id === selectedMember)} onAdd={onAddSupplement} onUpdate={onUpdateSupplement} onDelete={onDeleteSupplement} />}
             {tab === "meals" && <MealPlanningTab isMobile={isMobile} memberId={selectedMember} meals={meals.filter((m) => m.member_id === selectedMember)} onAdd={onAddMeal} onDelete={onDeleteMeal} />}
             {tab === "bloodwork" && <BloodWorkTab isMobile={isMobile} memberId={selectedMember} bloodWork={bloodWork.filter((b) => b.member_id === selectedMember)} onAdd={onAddBloodWork} onDelete={onDeleteBloodWork} />}
-            {tab === "scorecard" && <ScorecardTab isMobile={isMobile} scorecards={scorecards} onAdd={onAddScorecard} onDelete={onDeleteScorecard} />}
+            {tab === "scorecard" && <ScorecardTab isMobile={isMobile} memberId={selectedMember} scorecards={scorecards.filter((s) => s.member_id === selectedMember || !s.member_id)} onAdd={onAddScorecard} onDelete={onDeleteScorecard} />}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+
+/* — Dosing Schedule Tab — */
+function DosingTab({ isMobile, memberId, supplements, doseLogs, onAddLog, onDeleteLog }) {
+  const today = new Date().toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customDosage, setCustomDosage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const dayLogs = doseLogs.filter((d) => d.date === selectedDate);
+
+  const isDue = (supp) => {
+    const freq = supp.frequency;
+    if (freq === "Daily" || freq === "Twice Daily") return true;
+    if (freq === "As Needed") return true;
+    if (freq === "Weekly") {
+      const dow = new Date(selectedDate + "T12:00").getDay();
+      return dow === 1; // Monday default for weekly
+    }
+    if (freq === "Every Other Day") {
+      const start = new Date("2026-01-01");
+      const sel = new Date(selectedDate + "T12:00");
+      const diff = Math.floor((sel - start) / (1000 * 60 * 60 * 24));
+      return diff % 2 === 0;
+    }
+    return true;
+  };
+
+  const dueSupplements = supplements.filter(isDue);
+
+  const isLogged = (suppId, timeSlot) => dayLogs.some((l) => l.supplement_id === suppId && (l.time_slot || "dose") === timeSlot);
+
+  const toggleDose = async (supp, timeSlot) => {
+    const existing = dayLogs.find((l) => l.supplement_id === supp.id && (l.time_slot || "dose") === timeSlot);
+    if (existing) {
+      await onDeleteLog(existing.id);
+    } else {
+      setSaving(true);
+      await onAddLog({ member_id: memberId, supplement_id: supp.id, supplement_name: supp.name, dosage: supp.dosage, date: selectedDate, time_slot: timeSlot, time_taken: new Date().toISOString() });
+      setSaving(false);
+    }
+  };
+
+  const addCustomDose = async () => {
+    if (!customName.trim()) return;
+    setSaving(true);
+    await onAddLog({ member_id: memberId, supplement_id: null, supplement_name: customName, dosage: customDosage || null, date: selectedDate, time_slot: "dose", time_taken: new Date().toISOString() });
+    setCustomName(""); setCustomDosage(""); setShowAddItem(false); setSaving(false);
+  };
+
+  const totalDue = dueSupplements.reduce((s, sup) => s + (sup.frequency === "Twice Daily" ? 2 : 1), 0);
+  const totalLogged = dueSupplements.reduce((s, sup) => {
+    if (sup.frequency === "Twice Daily") return s + (isLogged(sup.id, "morning") ? 1 : 0) + (isLogged(sup.id, "evening") ? 1 : 0);
+    return s + (isLogged(sup.id, "dose") ? 1 : 0);
+  }, 0);
+  const completionPct = totalDue > 0 ? Math.round((totalLogged / totalDue) * 100) : 0;
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "'DM Mono', monospace" }} />
+        {selectedDate === today && <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", padding: "4px 10px", borderRadius: 6, background: "#f0fdf4" }}>Today</span>}
+        <div style={{ flex: 1 }} />
+        <GreenButton small onClick={() => setShowAddItem(!showAddItem)}>{Icons.plus} Custom Dose</GreenButton>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        <StatCard label="Completion" value={`${completionPct}%`} accent={completionPct === 100 ? "#16a34a" : completionPct >= 50 ? "#f59e0b" : "#dc2626"} />
+        <StatCard label="Logged" value={`${totalLogged}/${totalDue}`} accent="#3b82f6" />
+        <StatCard label="Scheduled" value={dueSupplements.length} accent="#7c3aed" />
+      </div>
+      {showAddItem && (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 12, display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", animation: "fadeUp 0.2s ease" }}>
+          <div style={{ flex: 1, minWidth: 120 }}><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Name</label><input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Peptide injection" style={inputStyle} className="sz-input" /></div>
+          <div style={{ width: 100 }}><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Dosage</label><input value={customDosage} onChange={(e) => setCustomDosage(e.target.value)} placeholder="e.g. 1ml" style={inputStyle} className="sz-input" /></div>
+          <GreenButton small onClick={addCustomDose} disabled={saving || !customName.trim()}>{saving ? "..." : "Log"}</GreenButton>
+        </div>
+      )}
+      {dueSupplements.length === 0 && dayLogs.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>💉</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Doses Scheduled</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Add supplements in the 💊 Supplements tab, or log a custom dose above.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {dueSupplements.map((supp) => {
+            const slots = supp.frequency === "Twice Daily" ? [{ key: "morning", label: "AM" }, { key: "evening", label: "PM" }] : [{ key: "dose", label: supp.time_of_day || "Dose" }];
+            return (
+              <div key={supp.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>💊</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{supp.name}{supp.dosage && <span style={{ color: "#64748b", fontWeight: 400 }}> · {supp.dosage}</span>}</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{supp.frequency}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {slots.map((slot) => {
+                      const done = isLogged(supp.id, slot.key);
+                      return (
+                        <button key={slot.key} onClick={() => toggleDose(supp, slot.key)} style={{ padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${done ? "#16a34a" : "#e2e8f0"}`, background: done ? "#f0fdf4" : "#fff", color: done ? "#16a34a" : "#94a3b8", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                          {done ? "✓" : "○"} {slot.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {dayLogs.filter((l) => !l.supplement_id).map((l) => (
+            <div key={l.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #bbf7d0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>💉</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{l.supplement_name}{l.dosage && <span style={{ color: "#64748b", fontWeight: 400 }}> · {l.dosage}</span>}</div>
+                <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 600 }}>Logged {new Date(l.time_taken).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</div>
+              </div>
+              <button onClick={() => { if (window.confirm("Remove?")) onDeleteLog(l.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* — Body & Performance Tab — */
+function BodyPerformanceTab({ isMobile, memberId, bodyLogs, onAdd, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const emptyForm = { date: new Date().toISOString().split("T")[0], weight: "", body_fat: "", vascularity: 5, energy: 5, sleep_quality: 5, mental_sharpness: 5, mood: 5, workout_type: "", workout_rating: 5, notes: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const resetForm = () => { setForm(emptyForm); setShowForm(false); };
+  const handleSubmit = async () => {
+    setSaving(true);
+    await onAdd({ member_id: memberId, date: form.date, weight: form.weight ? parseFloat(form.weight) : null, body_fat: form.body_fat ? parseFloat(form.body_fat) : null, vascularity: form.vascularity, energy: form.energy, sleep_quality: form.sleep_quality, mental_sharpness: form.mental_sharpness, mood: form.mood, workout_type: form.workout_type || null, workout_rating: form.workout_rating, notes: form.notes || null });
+    resetForm(); setSaving(false);
+  };
+
+  const latest = bodyLogs[0];
+  const prev = bodyLogs[1];
+  const weightChange = latest?.weight && prev?.weight ? (Number(latest.weight) - Number(prev.weight)).toFixed(1) : null;
+  const scoreColor = (s) => s >= 8 ? "#16a34a" : s >= 6 ? "#3b82f6" : s >= 4 ? "#f59e0b" : "#dc2626";
+  const workoutTypes = ["Weights", "Cardio", "HIIT", "Yoga", "Sports", "Walking", "Calisthenics", "Rest Day", "Other"];
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const SliderField = ({ label, emoji, value, onChange }) => (
+    <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>{emoji} {label}</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: scoreColor(value), fontFamily: "'Playfair Display', serif" }}>{value}</span>
+      </div>
+      <input type="range" min={1} max={10} value={value} onChange={(e) => onChange(parseInt(e.target.value))} style={{ width: "100%", accentColor: scoreColor(value) }} />
+    </div>
+  );
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 16 }}>
+        <StatCard label="Weight" value={latest?.weight ? `${latest.weight} lbs` : "—"} accent="#16a34a" />
+        <StatCard label="Body Fat" value={latest?.body_fat ? `${latest.body_fat}%` : "—"} accent="#3b82f6" />
+        <StatCard label="Energy" value={latest ? `${latest.energy}/10` : "—"} accent="#f59e0b" />
+        <StatCard label="Sharpness" value={latest ? `${latest.mental_sharpness}/10` : "—"} accent="#7c3aed" />
+        {weightChange && <StatCard label="Weight Δ" value={`${Number(weightChange) > 0 ? "+" : ""}${weightChange} lbs`} accent={Number(weightChange) <= 0 ? "#16a34a" : "#f59e0b"} />}
+        <StatCard label="Check-ins" value={bodyLogs.length} accent="#94a3b8" />
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Log Check-in</GreenButton></div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text="Body & Performance Check-in" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Weight (lbs)</label><input type="number" step="0.1" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} placeholder="e.g. 185" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Body Fat %</label><input type="number" step="0.1" value={form.body_fat} onChange={(e) => setForm({ ...form, body_fat: e.target.value })} placeholder="e.g. 12.5" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Workout Type</label><select value={form.workout_type} onChange={(e) => setForm({ ...form, workout_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option>{workoutTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+          </div>
+          <SectionHeader text="Performance Ratings" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <SliderField label="Vascularity" emoji="💪" value={form.vascularity} onChange={(v) => setForm({ ...form, vascularity: v })} />
+            <SliderField label="Energy" emoji="⚡" value={form.energy} onChange={(v) => setForm({ ...form, energy: v })} />
+            <SliderField label="Sleep Quality" emoji="😴" value={form.sleep_quality} onChange={(v) => setForm({ ...form, sleep_quality: v })} />
+            <SliderField label="Mental Sharpness" emoji="🧠" value={form.mental_sharpness} onChange={(v) => setForm({ ...form, mental_sharpness: v })} />
+            <SliderField label="Mood" emoji="😎" value={form.mood} onChange={(v) => setForm({ ...form, mood: v })} />
+            <SliderField label="Workout" emoji="🏋️" value={form.workout_rating} onChange={(v) => setForm({ ...form, workout_rating: v })} />
+          </div>
+          <div style={{ marginBottom: 14 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="How are you feeling? Any observations?" style={inputStyle} className="sz-input" /></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving}>{saving ? "..." : "Log Check-in"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {bodyLogs.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🏋️</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Track Peak Performance</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Log weight, body fat, vascularity, energy, sleep, mental sharpness, and mood.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} First Check-in</GreenButton>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {bodyLogs.map((log) => {
+            const avg = Math.round((Number(log.vascularity || 0) + Number(log.energy || 0) + Number(log.sleep_quality || 0) + Number(log.mental_sharpness || 0) + Number(log.mood || 0) + Number(log.workout_rating || 0)) / 6);
+            return (
+              <div key={log.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: `${scoreColor(avg)}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: scoreColor(avg), fontFamily: "'Playfair Display', serif" }}>{avg}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtDate(log.date)}{log.workout_type && <span style={{ color: "#64748b", fontWeight: 400 }}> · {log.workout_type}</span>}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 3, fontSize: 11, color: "#64748b" }}>
+                      {log.weight && <span>⚖️ {log.weight} lbs</span>}
+                      {log.body_fat && <span>📊 {log.body_fat}%</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => { if (window.confirm("Delete?")) onDelete(log.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}>{Icons.trash}</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
+                  {[{ l: "💪", v: log.vascularity }, { l: "⚡", v: log.energy }, { l: "😴", v: log.sleep_quality }, { l: "🧠", v: log.mental_sharpness }, { l: "😎", v: log.mood }, { l: "🏋️", v: log.workout_rating }].map((m, i) => (
+                    <div key={i} style={{ textAlign: "center", padding: "4px 0" }}>
+                      <div style={{ fontSize: 12 }}>{m.l}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: scoreColor(m.v), fontFamily: "'DM Mono', monospace" }}>{m.v}</div>
+                    </div>
+                  ))}
+                </div>
+                {log.notes && <div style={{ fontSize: 11, color: "#64748b", marginTop: 8, fontStyle: "italic" }}>{log.notes}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2482,7 +3276,7 @@ function HealthCheckinTab({ isMobile, memberId, checkins, onAdd, onDelete }) {
 }
 
 /* — Supplements Tab — */
-function SupplementsTab({ isMobile, memberId, supplements, onAdd, onUpdate, onDelete }) {
+function SupplementsTab({ isMobile, memberId, familyMembers, supplements, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", dosage: "", frequency: "Daily", time_of_day: "Morning", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -2525,6 +3319,7 @@ function SupplementsTab({ isMobile, memberId, supplements, onAdd, onUpdate, onDe
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{s.name}{s.dosage && <span style={{ color: "#64748b", fontWeight: 400 }}> · {s.dosage}</span>}</div>
                 <div style={{ fontSize: 11, color: "#94a3b8" }}>{s.frequency} · {s.time_of_day}</div>
               </div>
+              <select value={s.member_id || ""} onChange={(e) => onUpdate(s.id, { member_id: e.target.value })} style={{ padding: "3px 6px", borderRadius: 5, border: "1px solid #e2e8f0", fontSize: 10, fontWeight: 600, color: "#64748b", cursor: "pointer", background: "#f8fafc", maxWidth: 80 }}>{(familyMembers || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
               <button onClick={() => onUpdate(s.id, { active: !s.active })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: s.active ? "#f0fdf4" : "#f8fafc", fontSize: 10, fontWeight: 600, color: s.active ? "#16a34a" : "#94a3b8", cursor: "pointer" }}>{s.active ? "Active" : "Paused"}</button>
               <button onClick={() => { if (window.confirm("Delete?")) onDelete(s.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
             </div>
@@ -2664,7 +3459,7 @@ function BloodWorkTab({ isMobile, memberId, bloodWork, onAdd, onDelete }) {
    LIFE SCORECARD (Grade It)
    ═══════════════════════════════════════════════════════════ */
 
-function ScorecardTab({ isMobile, scorecards, onAdd, onDelete }) {
+function ScorecardTab({ isMobile, memberId, scorecards, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const curMonth = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const [form, setForm] = useState({ period: curMonth, health_score: 5, spirit_score: 5, finance_score: 5, health_notes: "", spirit_notes: "", finance_notes: "", overall_notes: "" });
@@ -2675,7 +3470,7 @@ function ScorecardTab({ isMobile, scorecards, onAdd, onDelete }) {
   const handleSubmit = async () => {
     if (!form.period.trim()) return;
     setSaving(true);
-    await onAdd({ period: form.period, health_score: form.health_score, spirit_score: form.spirit_score, finance_score: form.finance_score, health_notes: form.health_notes || null, spirit_notes: form.spirit_notes || null, finance_notes: form.finance_notes || null, overall_notes: form.overall_notes || null });
+    await onAdd({ period: form.period, health_score: form.health_score, spirit_score: form.spirit_score, finance_score: form.finance_score, health_notes: form.health_notes || null, spirit_notes: form.spirit_notes || null, finance_notes: form.finance_notes || null, overall_notes: form.overall_notes || null, member_id: memberId || null });
     resetForm(); setSaving(false);
   };
 
@@ -2816,8 +3611,9 @@ function ScorecardTab({ isMobile, scorecards, onAdd, onDelete }) {
    SETTINGS (Tabbed: Status, Organization, Users)
    ═══════════════════════════════════════════════════════════ */
 
-function SettingsView({ isMobile, session }) {
-  const [tab, setTab] = useState("status");
+function SettingsView({ isMobile, session, activeTab, onTabChange }) {
+  const tab = activeTab || "status";
+  const setTab = onTabChange || (() => {});
   const [orgMembers, setOrgMembers] = useState([]);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", name: "", org: "family", role: "member" });
@@ -2894,7 +3690,7 @@ function SettingsView({ isMobile, session }) {
   );
 
   return (
-    <div style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Settings" subtitle="App configuration & organization" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", maxWidth: 800 }}>
         <TabBar tabs={[{ key: "status", label: "Status" }, { key: "organization", label: "Organization" }]} active={tab} onChange={setTab} isMobile={isMobile} />
@@ -2990,11 +3786,18 @@ function SettingsView({ isMobile, session }) {
    ═══════════════════════════════════════════════════════════ */
 
 export default function SuarezApp() {
+  const parseHash = () => {
+    const hash = window.location.hash.replace("#/", "").split("/");
+    return { page: hash[0] || "overview", tab: hash[1] || null };
+  };
+
+  const initialHash = parseHash();
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeNav, setActiveNav] = useState("overview");
+  const [activeNav, setActiveNav] = useState(initialHash.page || "overview");
+  const [activeTab, setActiveTab] = useState(initialHash.tab || null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [showProfile, setShowProfile] = useState(false);
+  const [showProfile, setShowProfile] = useState(initialHash.page === "profile");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [uploads, setUploads] = useState([]);
@@ -3020,12 +3823,21 @@ export default function SuarezApp() {
   const [supplements, setSupplements] = useState([]);
   const [mealEntries, setMealEntries] = useState([]);
   const [bloodWork, setBloodWork] = useState([]);
+  const [doseLogs, setDoseLogs] = useState([]);
+  const [bodyLogs, setBodyLogs] = useState([]);
+  const [monthlyBills, setMonthlyBills] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
+  }, []);
+
+  useEffect(() => {
+    let meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) { meta = document.createElement("meta"); meta.name = "viewport"; document.head.appendChild(meta); }
+    meta.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
   }, []);
 
   useEffect(() => {
@@ -3037,7 +3849,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -3062,6 +3874,9 @@ export default function SuarezApp() {
       supabase.from("supplements").select("*").order("created_at", { ascending: true }),
       supabase.from("meal_entries").select("*").order("date", { ascending: false }),
       supabase.from("blood_work").select("*").order("date", { ascending: false }),
+      supabase.from("monthly_bills").select("*").order("created_at", { ascending: true }),
+      supabase.from("dose_logs").select("*").order("created_at", { ascending: false }),
+      supabase.from("body_logs").select("*").order("date", { ascending: false }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -3087,17 +3902,37 @@ export default function SuarezApp() {
     if (suppRes.data) setSupplements(suppRes.data);
     if (mealRes.data) setMealEntries(mealRes.data);
     if (bwRes.data) setBloodWork(bwRes.data);
+    if (mbRes.data) setMonthlyBills(mbRes.data);
+    if (dlRes.data) setDoseLogs(dlRes.data);
+    if (blRes.data) setBodyLogs(blRes.data);
     setDataLoading(false);
   }, [session]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   // === CRUD ===
-  const handleAddAccount = async (form) => { const { data, error } = await supabase.from("accounts").insert({ name: form.name, type: form.type, institution: form.institution || null, visibility: form.visibility, user_id: session.user.id }).select().single(); if (!error && data) setAccounts((p) => [...p, data]); };
+  const handleAddAccount = async (form) => { const { data, error } = await supabase.from("accounts").insert({ name: form.name, type: form.type, institution: form.institution || null, visibility: form.visibility, monthly_payment: form.monthly_payment || 0, user_id: session.user.id }).select().single(); if (!error && data) setAccounts((p) => [...p, data]); };
   const handleToggleAccount = async (id, active) => { const { error } = await supabase.from("accounts").update({ active }).eq("id", id); if (!error) setAccounts((p) => p.map((a) => a.id === id ? { ...a, active } : a)); };
+  const handleUpdateAccount = async (id, form) => { const { data, error } = await supabase.from("accounts").update(form).eq("id", id).select().single(); if (!error && data) setAccounts((p) => p.map((a) => a.id === id ? data : a)); };
   const handleDeleteAccount = async (id) => { const { error } = await supabase.from("accounts").delete().eq("id", id); if (!error) { setAccounts((p) => p.filter((a) => a.id !== id)); setUploads((p) => p.filter((u) => u.account_id !== id)); } };
-  const handleUpload = async (acct, month, quarter) => { const fn = `${acct.institution?.toLowerCase() || "stmt"}_${month.toLowerCase().slice(0, 3)}_${new Date().getFullYear()}.pdf`; const { data, error } = await supabase.from("statement_uploads").insert({ account_id: acct.id, month, quarter, year: new Date().getFullYear(), filename: fn }).select().single(); if (!error && data) setUploads((p) => [data, ...p]); };
-  const handleDeleteUpload = async (id) => { const { error } = await supabase.from("statement_uploads").delete().eq("id", id); if (!error) setUploads((p) => p.filter((u) => u.id !== id)); };
+  const handleUpload = async (acct, month, quarter, file) => {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "pdf";
+    const filePath = `${session.user.id}/statements/${acct.id}/${quarter}_${month.toLowerCase().slice(0, 3)}_${new Date().getFullYear()}.${ext}`;
+    const { error: storageErr } = await supabase.storage.from("uploads").upload(filePath, file, { upsert: true });
+    let fileUrl = null;
+    if (!storageErr) {
+      const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(filePath);
+      fileUrl = urlData?.publicUrl || null;
+    }
+    const fn = file.name;
+    const { data, error } = await supabase.from("statement_uploads").insert({ account_id: acct.id, month, quarter, year: new Date().getFullYear(), filename: fn, file_type: ext, file_path: filePath, file_url: fileUrl }).select().single();
+    if (!error && data) setUploads((p) => [data, ...p]);
+  };
+  const handleDeleteUpload = async (id, filePath) => {
+    if (filePath) await supabase.storage.from("uploads").remove([filePath]);
+    const { error } = await supabase.from("statement_uploads").delete().eq("id", id);
+    if (!error) setUploads((p) => p.filter((u) => u.id !== id));
+  };
   const handleAddAsset = async (form) => { const { data, error } = await supabase.from("assets").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setAssets((p) => [...p, data]); };
   const handleUpdateAsset = async (id, form) => { const { data, error } = await supabase.from("assets").update(form).eq("id", id).select().single(); if (!error && data) setAssets((p) => p.map((a) => a.id === id ? data : a)); };
   const handleDeleteAsset = async (id) => { const { error } = await supabase.from("assets").delete().eq("id", id); if (!error) setAssets((p) => p.filter((a) => a.id !== id)); };
@@ -3131,6 +3966,7 @@ export default function SuarezApp() {
   const handleAddEvent = async (form) => { const { data, error } = await supabase.from("calendar_events").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCalendarEvents((p) => [...p, data].sort((a, b) => a.event_date?.localeCompare(b.event_date))); };
   const handleDeleteEvent = async (id) => { const { error } = await supabase.from("calendar_events").delete().eq("id", id); if (!error) setCalendarEvents((p) => p.filter((e) => e.id !== id)); };
   const handleAddKid = async (form) => { const { data, error } = await supabase.from("kids").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setKids((p) => [...p, data]); };
+  const handleUpdateKid = async (id, form) => { const { data, error } = await supabase.from("kids").update(form).eq("id", id).select().single(); if (!error && data) setKids((p) => p.map((k) => k.id === id ? data : k)); };
   const handleDeleteKid = async (id) => { const { error } = await supabase.from("kids").delete().eq("id", id); if (!error) { setKids((p) => p.filter((k) => k.id !== id)); setKidGrades((p) => p.filter((g) => g.kid_id !== id)); setKidMilestones((p) => p.filter((m) => m.kid_id !== id)); } };
   const handleAddKidGrade = async (form) => { const { data, error } = await supabase.from("kid_grades").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setKidGrades((p) => [data, ...p]); };
   const handleDeleteKidGrade = async (id) => { const { error } = await supabase.from("kid_grades").delete().eq("id", id); if (!error) setKidGrades((p) => p.filter((g) => g.id !== id)); };
@@ -3155,6 +3991,16 @@ export default function SuarezApp() {
   const handleAddMeal = async (form) => { const { data, error } = await supabase.from("meal_entries").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setMealEntries((p) => [data, ...p]); };
   const handleDeleteMeal = async (id) => { const { error } = await supabase.from("meal_entries").delete().eq("id", id); if (!error) setMealEntries((p) => p.filter((m) => m.id !== id)); };
   // Blood Work CRUD
+  // Monthly Bills CRUD
+  const handleAddMonthlyBill = async (form) => { const { data, error } = await supabase.from("monthly_bills").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setMonthlyBills((p) => [...p, data]); };
+  const handleUpdateMonthlyBill = async (id, form) => { const { data, error } = await supabase.from("monthly_bills").update(form).eq("id", id).select().single(); if (!error && data) setMonthlyBills((p) => p.map((b) => b.id === id ? data : b)); };
+  const handleDeleteMonthlyBill = async (id) => { const { error } = await supabase.from("monthly_bills").delete().eq("id", id); if (!error) setMonthlyBills((p) => p.filter((b) => b.id !== id)); };
+  // Dose Logs CRUD
+  const handleAddDoseLog = async (form) => { const { data, error } = await supabase.from("dose_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setDoseLogs((p) => [data, ...p]); };
+  const handleDeleteDoseLog = async (id) => { const { error } = await supabase.from("dose_logs").delete().eq("id", id); if (!error) setDoseLogs((p) => p.filter((d) => d.id !== id)); };
+  // Body Logs CRUD
+  const handleAddBodyLog = async (form) => { const { data, error } = await supabase.from("body_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBodyLogs((p) => [data, ...p]); };
+  const handleDeleteBodyLog = async (id) => { const { error } = await supabase.from("body_logs").delete().eq("id", id); if (!error) setBodyLogs((p) => p.filter((b) => b.id !== id)); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -3163,10 +4009,37 @@ export default function SuarezApp() {
     setSession(null); setAccounts([]); setUploads([]); setAssets([]); setTransactions([]); setInvestments([]); setSnapshots([]);
     setBusinesses([]); setCompanies([]); setPolicies([]); setHomes([]); setUtilityBills([]); setLifeExpenses([]);
     setPlannerTasks([]); setCalendarEvents([]); setKids([]); setKidGrades([]); setKidMilestones([]); setScorecards([]); setPrayers([]);
-    setFamilyMembers([]); setHealthCheckins([]); setSupplements([]); setMealEntries([]); setBloodWork([]);
+    setFamilyMembers([]); setHealthCheckins([]); setSupplements([]); setMealEntries([]); setBloodWork([]); setMonthlyBills([]); setDoseLogs([]); setBodyLogs([]);
   };
 
-  const navigate = (page) => { setActiveNav(page); setShowProfile(false); };
+  const navigate = (page, tab) => {
+    const hash = tab ? `#/${page}/${tab}` : `#/${page}`;
+    window.location.hash = hash;
+    setActiveNav(page);
+    setActiveTab(tab || null);
+    setShowProfile(page === "profile");
+  };
+
+  const handleTabChange = (tab) => {
+    window.location.hash = `#/${activeNav}/${tab}`;
+    setActiveTab(tab);
+  };
+
+  useEffect(() => {
+    const onHash = () => {
+      const { page, tab } = parseHash();
+      if (page === "profile") {
+        setShowProfile(true);
+      } else {
+        setShowProfile(false);
+        setActiveNav(page);
+        setActiveTab(tab || null);
+      }
+    };
+    window.addEventListener("hashchange", onHash);
+    if (!window.location.hash) window.location.hash = "#/overview";
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   if (authLoading) return (<><GlobalStyles /><div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", flexDirection: "column", gap: 16 }}><Spinner /><p style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif" }}>Loading...</p></div></>);
   if (!session) return (<><GlobalStyles /><AuthScreen /></>);
@@ -3187,9 +4060,9 @@ export default function SuarezApp() {
   ];
 
   const mobileNavItems = [
-    { id: "overview", label: "Home", icon: Icons.grid },
+    { id: "family", label: "Family", icon: Icons.users },
     { id: "money", label: "Money", icon: Icons.dollar },
-    { id: "family", label: "Family", featured: true, icon: Icons.users },
+    { id: "overview", label: "Dashboard", featured: true, icon: Icons.grid },
     { id: "health", label: "Health", icon: Icons.heart },
     { id: "homelife", label: "Life", icon: Icons.home },
   ];
@@ -3198,14 +4071,14 @@ export default function SuarezApp() {
     if (dataLoading) return (<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}><Spinner /></div>);
     if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} />;
     switch (activeNav) {
-      case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} onNavigate={navigate} />;
-      case "money": return <MoneyView isMobile={isMobile} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} />;
-      case "wealth": return <WealthView isMobile={isMobile} investments={investments} assets={assets} accounts={accounts} snapshots={snapshots} uploads={uploads} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} />;
-      case "business": return <BusinessView isMobile={isMobile} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
-      case "homelife": return <HomeLifeView isMobile={isMobile} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} />;
-      case "family": return <FamilyView isMobile={isMobile} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} onAddKid={handleAddKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} />;
-      case "health": return <HealthView isMobile={isMobile} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} />;
-      case "settings": return <SettingsView isMobile={isMobile} session={session} />;
+      case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
+      case "money": return <MoneyView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} />;
+      case "wealth": return <WealthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} investments={investments} assets={assets} accounts={accounts} snapshots={snapshots} uploads={uploads} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} />;
+      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
+      case "homelife": return <HomeLifeView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} />;
+      case "family": return <FamilyView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} />;
+      case "health": return <HealthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
+      case "settings": return <SettingsView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       default: return null;
     }
   };
@@ -3228,7 +4101,7 @@ export default function SuarezApp() {
               }}>{item.icon}</button>
             ))}
             <div style={{ flex: 1 }} />
-            <button onClick={() => setShowProfile(true)} title="Profile" style={{
+            <button onClick={() => navigate("profile")} title="Profile" style={{
               width: 32, height: 32, borderRadius: "50%",
               background: showProfile ? "linear-gradient(135deg, #16a34a, #15803d)" : "linear-gradient(135deg, #3b82f6, #2563eb)",
               border: "none", display: "flex", alignItems: "center", justifyContent: "center",
@@ -3236,18 +4109,17 @@ export default function SuarezApp() {
             }}>{initials}</button>
           </div>
         )}
-        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", paddingBottom: isMobile ? 70 : 0, paddingTop: isMobile ? 56 : 0 }}>
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", paddingTop: isMobile ? 56 : 0 }}>
           {renderPage()}
         </div>
         {isMobile && (
-          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 70, background: "#fff", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "flex-end", justifyContent: "space-around", padding: "0 4px 6px", zIndex: 100, boxShadow: "0 -2px 12px rgba(0,0,0,0.06)" }}>
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "flex-end", justifyContent: "space-around", padding: "0 4px 6px", paddingBottom: "max(6px, env(safe-area-inset-bottom))", zIndex: 100, boxShadow: "0 -2px 12px rgba(0,0,0,0.06)" }}>
             {mobileNavItems.map((item) => {
               const isActive = activeNav === item.id && !showProfile;
               if (item.featured) {
                 return (
                   <button key={item.id} onClick={() => navigate(item.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: -18, WebkitTapHighlightColor: "transparent" }}>
                     <div style={{ width: 48, height: 48, borderRadius: 16, background: isActive ? "linear-gradient(135deg, #16a34a, #15803d)" : "linear-gradient(135deg, #22c55e, #16a34a)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 12px rgba(22,163,74,0.3)", color: "#fff", border: "3px solid #fff", transform: isActive ? "scale(1.08)" : "scale(1)", transition: "transform 0.2s" }}>{item.icon}</div>
-                    <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", color: "#16a34a" }}>{item.label}</span>
                   </button>
                 );
               }
@@ -3291,7 +4163,7 @@ export default function SuarezApp() {
               })}
             </div>
             <div style={{ padding: "16px", borderTop: "1px solid #f1f5f9" }}>
-              <button onClick={() => { setShowProfile(true); setShowMobileMenu(false); }} style={{
+              <button onClick={() => { navigate("profile"); setShowMobileMenu(false); }} style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 12, border: "none",
                 background: showProfile ? "#f0fdf4" : "#f8fafc", cursor: "pointer",
               }}>
