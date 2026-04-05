@@ -3148,7 +3148,7 @@ function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones
 
   const content = (
     <>
-      <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }, { key: "events", label: "Life Events" }, { key: "prayer", label: "Prayer Wall" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+      <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }, { key: "events", label: "Chess" }, { key: "prayer", label: "Prayer Wall" }]} active={tab} onChange={setTab} isMobile={isMobile} />
       {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} />}
       {tab === "grades" && <GradesTab isMobile={isMobile} kids={kids} grades={grades} onAdd={onAddGrade} onDelete={onDeleteGrade} />}
       {tab === "events" && <LifeEventsTab isMobile={isMobile} kids={kids} milestones={milestones} onAdd={onAddMilestone} onDelete={onDeleteMilestone} />}
