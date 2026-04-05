@@ -401,7 +401,7 @@ function AuthScreen() {
    PROFILE VIEW
    ═══════════════════════════════════════════════════════════ */
 
-function ProfileView({ session, isMobile, onSignOut }) {
+function ProfileView({ session, isMobile, onSignOut, uploadLogs }) {
   const [profileTab, setProfileTab] = useState("profile");
   const user = session?.user || {};
   const email = user.email || "—";
@@ -426,6 +426,7 @@ function ProfileView({ session, isMobile, onSignOut }) {
 
   const tabs = [
     { key: "profile", label: "Profile" },
+    { key: "uploads", label: "Upload Log" },
     { key: "settings", label: "Settings" },
   ];
 
@@ -455,6 +456,34 @@ function ProfileView({ session, isMobile, onSignOut }) {
             <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px" }}>
               <Row icon={Icons.signout} label="Sign Out" value="End your current session" action={onSignOut} actionLabel="Sign Out" danger />
             </div>
+          </div>
+        )}
+        {profileTab === "uploads" && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>{(uploadLogs || []).length} upload{(uploadLogs || []).length !== 1 ? "s" : ""} logged</div>
+            {(uploadLogs || []).length === 0 ? (
+              <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>📤</div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Uploads Yet</h3>
+                <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Import transactions in Finance → Bookkeeping → Uploader</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(uploadLogs || []).map((log) => (
+                  <div key={log.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>📄</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.filename}</div>
+                      <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{log.account_name} · {fmtDate(log.created_at)}</div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>{log.rows_imported} imported</div>
+                      {log.rows_skipped > 0 && <div style={{ fontSize: 10, color: "#f59e0b" }}>{log.rows_skipped} skipped</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {profileTab === "settings" && <SettingsView isMobile={isMobile} session={session} />}
@@ -914,7 +943,7 @@ function CompaniesWealthTab({ isMobile, investments, onAdd, onUpdate, onDelete }
   );
 }
 /* — Bookkeeping Tab — */
-function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onAdd, onDelete, onUpload, onDeleteUpload }) {
+function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onAdd, onDelete, onUpload, onDeleteUpload, onLogUpload }) {
   const [subView, setSubView] = useState("ledger");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" });
@@ -959,7 +988,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
       {subView === "statements" ? (
         <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets || []} accounts={accounts} />
       ) : subView === "uploader" ? (
-        <UploaderTab isMobile={isMobile} accounts={accounts} onAddTransaction={onAdd} />
+        <UploaderTab isMobile={isMobile} accounts={accounts} onAddTransaction={onAdd} transactions={transactions} onLogUpload={onLogUpload} />
       ) : (
       <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -1275,7 +1304,7 @@ function StatementsTab({ isMobile, transactions, assets, accounts }) {
 }
 
 /* — Uploader Tab — */
-function UploaderTab({ isMobile, accounts, onAddTransaction }) {
+function UploaderTab({ isMobile, accounts, onAddTransaction, transactions, onLogUpload }) {
   const [selectedAccount, setSelectedAccount] = useState("");
   const [file, setFile] = useState(null);
   const [parsedRows, setParsedRows] = useState([]);
@@ -1286,7 +1315,7 @@ function UploaderTab({ isMobile, accounts, onAddTransaction }) {
   const [typeCol, setTypeCol] = useState("");
   const [skipRows, setSkipRows] = useState(0);
   const [importing, setImporting] = useState(false);
-  const [imported, setImported] = useState(0);
+  const [importResult, setImportResult] = useState(null);
   const [step, setStep] = useState(1); // 1=upload, 2=map, 3=preview
 
   const activeAccounts = accounts.filter((a) => a.active !== false);
@@ -1331,8 +1360,10 @@ function UploaderTab({ isMobile, accounts, onAddTransaction }) {
     if (!selectedAccount || !dateCol || !descCol || !amountCol) return;
     setImporting(true);
     saveTemplate();
-    let count = 0;
+    let imported = 0, skipped = 0;
     const acct = accounts.find((a) => a.id === selectedAccount);
+    const existingTxns = (transactions || []).filter((t) => t.account_id === selectedAccount);
+
     for (const row of allDataRows) {
       const date = row[parseInt(dateCol)] || "";
       const desc = row[parseInt(descCol)] || "";
@@ -1349,17 +1380,23 @@ function UploaderTab({ isMobile, accounts, onAddTransaction }) {
         if (numVal > 0) type = "income";
       }
 
-      // Parse date
       let parsedDate = date;
-      try {
-        const d = new Date(date);
-        if (!isNaN(d.getTime())) parsedDate = d.toISOString().split("T")[0];
-      } catch {}
+      try { const d = new Date(date); if (!isNaN(d.getTime())) parsedDate = d.toISOString().split("T")[0]; } catch {}
+
+      // Duplicate check: same date + description + amount + account
+      const isDup = existingTxns.some((t) => t.date === parsedDate && t.description === desc.trim() && Math.abs(Number(t.amount) - amount) < 0.01);
+      if (isDup) { skipped++; continue; }
 
       await onAddTransaction({ description: desc.trim(), amount, type, category: null, account_id: selectedAccount, date: parsedDate, visibility: acct?.visibility || "personal" });
-      count++;
+      imported++;
     }
-    setImported(count);
+
+    // Log the upload
+    if (onLogUpload) {
+      await onLogUpload({ account_id: selectedAccount, account_name: acct?.name || "", filename: file?.name || "", rows_imported: imported, rows_skipped: skipped, rows_total: allDataRows.length });
+    }
+
+    setImportResult({ imported, skipped });
     setImporting(false);
     setStep(1);
     setFile(null);
@@ -1372,10 +1409,10 @@ function UploaderTab({ isMobile, accounts, onAddTransaction }) {
 
   return (
     <>
-      {imported > 0 && (
+      {importResult && (
         <div style={{ background: "#f0fdf4", borderRadius: 12, border: "1px solid #bbf7d0", padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
           {Icons.check}
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#16a34a" }}>{imported} transactions imported successfully</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#16a34a" }}>{importResult.imported} imported{importResult.skipped > 0 ? ` · ${importResult.skipped} duplicates skipped` : ""}</span>
         </div>
       )}
 
@@ -4122,7 +4159,7 @@ function FinanceView(props) {
       <PageHeader title="Finance" subtitle="Money, wealth, bills & insurance" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} />}
+        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} />}
         {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={props.lifeExpenses} onAdd={props.onAddLifeExpense} onDelete={props.onDeleteLifeExpense} />}
         {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
@@ -4491,6 +4528,7 @@ export default function SuarezApp() {
   const [habits, setHabits] = useState([]);
   const [habitLogs, setHabitLogs] = useState([]);
   const [learningItems, setLearningItems] = useState([]);
+  const [uploadLogs, setUploadLogs] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
@@ -4514,7 +4552,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -4547,6 +4585,7 @@ export default function SuarezApp() {
       supabase.from("habits").select("*").order("created_at", { ascending: true }),
       supabase.from("habit_logs").select("*").order("date", { ascending: false }),
       supabase.from("learning_items").select("*").order("created_at", { ascending: false }),
+      supabase.from("upload_logs").select("*").order("created_at", { ascending: false }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -4580,6 +4619,7 @@ export default function SuarezApp() {
     if (habitsRes.data) setHabits(habitsRes.data);
     if (habitLogsRes.data) setHabitLogs(habitLogsRes.data);
     if (learningRes.data) setLearningItems(learningRes.data);
+    if (uploadLogsRes.data) setUploadLogs(uploadLogsRes.data);
     setDataLoading(false);
   }, [session]);
 
@@ -4688,6 +4728,7 @@ export default function SuarezApp() {
   const handleAddLearning = async (form) => { const { data, error } = await supabase.from("learning_items").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setLearningItems((p) => [data, ...p]); };
   const handleUpdateLearning = async (id, form) => { const { data, error } = await supabase.from("learning_items").update(form).eq("id", id).select().single(); if (!error && data) setLearningItems((p) => p.map((l) => l.id === id ? data : l)); };
   const handleDeleteLearning = async (id) => { const { error } = await supabase.from("learning_items").delete().eq("id", id); if (!error) setLearningItems((p) => p.filter((l) => l.id !== id)); };
+  const handleLogUpload = async (form) => { const { data, error } = await supabase.from("upload_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setUploadLogs((p) => [data, ...p]); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -4753,10 +4794,10 @@ export default function SuarezApp() {
 
   const renderPage = () => {
     if (dataLoading) return (<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}><Spinner /></div>);
-    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} />;
+    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
-      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} />;
+      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
       case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
