@@ -4474,10 +4474,10 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
 function FinanceView(props) {
   const { isMobile, activeTab, onTabChange } = props;
   const tab = activeTab || "dashboard";
-  const [wealthTab, setWealthTab] = useState(null);
   const tabs = [
     { key: "dashboard", label: "📊 Dashboard" },
-    { key: "wealth", label: "💰 Wealth" },
+    { key: "networth", label: "💰 Net Worth" },
+    { key: "stocks", label: "📈 Stocks" },
     { key: "bookkeeping", label: "📒 Bookkeeping" },
     { key: "accounts", label: "🏦 Accounts" },
     { key: "realestate", label: "🏠 Real Estate" },
@@ -4491,8 +4491,9 @@ function FinanceView(props) {
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
+        {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} investments={props.investments} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
+        {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={(props.investments || []).filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
         {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} />}
-        {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
         {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={props.investments?.filter((i) => i.asset_type === "Real Estate") || []} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
         {tab === "assets" && <AssetsTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} onAdd={props.onAddAsset} onUpdate={props.onUpdateAsset} onDelete={props.onDeleteAsset} />}
