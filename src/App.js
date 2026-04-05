@@ -96,11 +96,11 @@ const PageHeader = ({ title, subtitle, isMobile, children }) => (
   </div>
 );
 
-const StatCard = ({ label, value, accent }) => (
-  <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", position: "relative", overflow: "hidden" }}>
-    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent, borderRadius: "14px 14px 0 0" }} />
-    <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "'DM Sans', sans-serif", marginBottom: 6 }}>{label}</div>
-    <div style={{ fontSize: 28, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", letterSpacing: "-0.02em" }}>{value}</div>
+const StatCard = ({ label, value, accent, compact }) => (
+  <div style={{ background: "#fff", borderRadius: compact ? 10 : 14, border: "1px solid #e2e8f0", padding: compact ? "12px 10px" : "18px 22px", position: "relative", overflow: "hidden" }}>
+    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent, borderRadius: compact ? "10px 10px 0 0" : "14px 14px 0 0" }} />
+    <div style={{ fontSize: compact ? 9 : 11, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: "'DM Sans', sans-serif", marginBottom: compact ? 4 : 6 }}>{label}</div>
+    <div style={{ fontSize: compact ? 18 : 28, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", letterSpacing: "-0.02em" }}>{value}</div>
   </div>
 );
 
@@ -946,10 +946,10 @@ function BookkeepingTab({ isMobile, transactions, accounts, onAdd, onDelete }) {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
-        <StatCard label="Income" value={fmtCurrency(totalIncome)} accent="#16a34a" />
-        <StatCard label="Expenses" value={fmtCurrency(totalExpenses)} accent="#dc2626" />
-        <StatCard label="Net Flow" value={fmtCurrency(totalIncome - totalExpenses)} accent={totalIncome - totalExpenses >= 0 ? "#3b82f6" : "#f59e0b"} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        <StatCard label="Income" value={fmtCurrency(totalIncome)} accent="#16a34a" compact />
+        <StatCard label="Expenses" value={fmtCurrency(totalExpenses)} accent="#dc2626" compact />
+        <StatCard label="Net Flow" value={fmtCurrency(totalIncome - totalExpenses)} accent={totalIncome - totalExpenses >= 0 ? "#3b82f6" : "#f59e0b"} compact />
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         {["all", "income", "expense"].map((t) => (
