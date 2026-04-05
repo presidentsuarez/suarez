@@ -3951,11 +3951,192 @@ function LinksTab({ isMobile, links, onAdd, onDelete }) {
   );
 }
 
+
 /* ═══════════════════════════════════════════════════════════
-   GROWTH (Tabbed: Links, Two)
+   GOALS TAB
    ═══════════════════════════════════════════════════════════ */
 
-function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, onDeleteLink }) {
+function GoalsTab({ isMobile, goals, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", target_date: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const resetForm = () => { setForm({ title: "", target_date: "", notes: "" }); setShowForm(false); };
+  const handleSubmit = async () => { if (!form.title.trim()) return; setSaving(true); await onAdd({ title: form.title, target_date: form.target_date || null, notes: form.notes || null, status: "active" }); resetForm(); setSaving(false); };
+  const toggleStatus = (goal) => onUpdate(goal.id, { status: goal.status === "active" ? "done" : "active" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const active = goals.filter((g) => g.status === "active");
+  const done = goals.filter((g) => g.status === "done");
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{active.length} active · {done.length} completed</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Goal</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Goal *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Close 3 deals this quarter" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Target Date</label><input type="date" value={form.target_date} onChange={(e) => setForm({ ...form, target_date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim()}>{saving ? "..." : "Save"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {goals.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Goals Yet</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Set goals and track them to completion.</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[...active, ...done].map((goal) => { const isDone = goal.status === "done"; return (
+            <div key={goal.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${isDone ? "#bbf7d0" : "#e2e8f0"}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, opacity: isDone ? 0.7 : 1 }}>
+              <button onClick={() => toggleStatus(goal)} style={{ width: 28, height: 28, borderRadius: 8, border: `2px solid ${isDone ? "#16a34a" : "#cbd5e1"}`, background: isDone ? "#f0fdf4" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>{isDone && Icons.check}</button>
+              <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", textDecoration: isDone ? "line-through" : "none" }}>{goal.title}</div><div style={{ display: "flex", gap: 8, marginTop: 3, fontSize: 11, color: "#64748b" }}>{goal.target_date && <span style={{ fontFamily: "'DM Mono', monospace" }}>Due {fmtDate(goal.target_date)}</span>}{goal.notes && <span>· {goal.notes}</span>}</div></div>
+              <button onClick={() => { if (window.confirm("Delete?")) onDelete(goal.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+            </div>); })}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HABITS TAB
+   ═══════════════════════════════════════════════════════════ */
+
+function HabitsTab({ isMobile, habits, habitLogs, onAddHabit, onDeleteHabit, onAddLog, onDeleteLog }) {
+  const today = new Date().toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", frequency: "Daily", impact: "High" });
+  const [saving, setSaving] = useState(false);
+  const resetForm = () => { setForm({ name: "", frequency: "Daily", impact: "High" }); setShowForm(false); };
+  const handleAddHabit = async () => { if (!form.name.trim()) return; setSaving(true); await onAddHabit({ name: form.name, frequency: form.frequency, impact: form.impact, active: true }); resetForm(); setSaving(false); };
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const impactColors = { High: "#dc2626", Medium: "#f59e0b", Low: "#22c55e" };
+  const dayLogs = habitLogs.filter((l) => l.date === selectedDate);
+  const activeHabits = habits.filter((h) => h.active !== false);
+  const getLog = (habitId) => dayLogs.find((l) => l.habit_id === habitId);
+  const handleGrade = async (habitId, grade) => { const existing = getLog(habitId); if (existing) await onDeleteLog(existing.id); await onAddLog({ habit_id: habitId, date: selectedDate, grade }); };
+  const avgGrade = dayLogs.length > 0 ? (dayLogs.reduce((s, l) => s + (l.grade || 0), 0) / dayLogs.length).toFixed(1) : "—";
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: "6px 10px", fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+          <span style={{ fontSize: 13, color: "#64748b" }}>Avg: <strong style={{ color: "#0f172a" }}>{avgGrade}/10</strong></span>
+        </div>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Habit</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Habit Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Morning workout" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Frequency</label><select value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="Daily">Daily</option><option value="Weekly">Weekly</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Impact Level</label><select value={form.impact} onChange={(e) => setForm({ ...form, impact: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleAddHabit} disabled={saving || !form.name.trim()}>{saving ? "..." : "Save"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {activeHabits.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>⚡</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Habits Yet</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add habits you want to track and grade yourself daily.</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {activeHabits.map((habit) => { const log = getLog(habit.id); const graded = !!log; return (
+            <div key={habit.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${graded ? "#bbf7d0" : "#e2e8f0"}`, padding: "14px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: graded ? 0 : 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{habit.name}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${impactColors[habit.impact] || "#64748b"}15`, color: impactColors[habit.impact] || "#64748b" }}>{habit.impact?.toUpperCase()}</span>
+                  <span style={{ fontSize: 9, color: "#94a3b8" }}>{habit.frequency}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {graded && <span style={{ fontSize: 16, fontWeight: 700, color: "#16a34a", fontFamily: "'Playfair Display', serif" }}>{log.grade}/10</span>}
+                  <button onClick={() => { if (window.confirm("Delete habit?")) onDeleteHabit(habit.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                </div>
+              </div>
+              {!graded && (<div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{[1,2,3,4,5,6,7,8,9,10].map((n) => (<button key={n} onClick={() => handleGrade(habit.id, n)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #e2e8f0", background: n >= 8 ? "#f0fdf4" : n >= 5 ? "#fffbeb" : "#fef2f2", color: n >= 8 ? "#16a34a" : n >= 5 ? "#f59e0b" : "#dc2626", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{n}</button>))}</div>)}
+            </div>); })}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LEARNING TAB
+   ═══════════════════════════════════════════════════════════ */
+
+function LearningTab({ isMobile, items, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ title: "", author: "", type: "Course", status: "queued", progress: 0, notes: "" });
+  const [saving, setSaving] = useState(false);
+  const types = ["Course", "Book", "Podcast", "Article", "Video", "Other"];
+  const statuses = ["queued", "in_progress", "completed"];
+  const statusLabels = { queued: "Queued", in_progress: "In Progress", completed: "Completed" };
+  const statusColors = { queued: "#64748b", in_progress: "#f59e0b", completed: "#16a34a" };
+  const resetForm = () => { setForm({ title: "", author: "", type: "Course", status: "queued", progress: 0, notes: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => { if (!form.title.trim()) return; setSaving(true); if (editingId) { await onUpdate(editingId, form); } else { await onAdd(form); } resetForm(); setSaving(false); };
+  const startEdit = (item) => { setForm({ title: item.title || "", author: item.author || "", type: item.type || "Course", status: item.status || "queued", progress: item.progress || 0, notes: item.notes || "" }); setEditingId(item.id); setShowForm(true); };
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const inProgress = items.filter((i) => i.status === "in_progress");
+  const queued = items.filter((i) => i.status === "queued");
+  const completed = items.filter((i) => i.status === "completed");
+  const sorted = [...inProgress, ...queued, ...completed];
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{inProgress.length} active · {queued.length} queued · {completed.length} done</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. AI In Real Estate" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Author / Instructor</label><input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{statuses.map((s) => <option key={s} value={s}>{statusLabels[s]}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Progress: {form.progress}%</label><input type="range" min="0" max="100" step="5" value={form.progress} onChange={(e) => setForm({ ...form, progress: parseInt(e.target.value) })} style={{ width: "100%", marginTop: 8 }} /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Key takeaways..." style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim()}>{saving ? "..." : editingId ? "Update" : "Save"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {items.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📚</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Learning Items</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Track courses, books, and anything you're learning.</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sorted.map((item) => (
+            <div key={item.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ flex: 1 }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{item.title}</span><span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f1f5f9", color: "#64748b" }}>{item.type?.toUpperCase()}</span></div>{item.author && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>by {item.author}</div>}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${statusColors[item.status]}15`, color: statusColors[item.status] }}>{statusLabels[item.status]?.toUpperCase()}</span><button onClick={() => startEdit(item)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button><button onClick={() => { if (window.confirm("Delete?")) onDelete(item.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${item.progress || 0}%`, borderRadius: 3, background: item.progress >= 100 ? "#16a34a" : item.progress >= 50 ? "#f59e0b" : "#3b82f6", transition: "width 0.3s" }} /></div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}><span style={{ fontSize: 11, color: "#94a3b8" }}>{item.progress || 0}% complete</span>{item.notes && <span style={{ fontSize: 11, color: "#64748b", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.notes}</span>}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GROWTH (Tabbed: Links, Goals, Habits, Learning)
+   ═══════════════════════════════════════════════════════════ */
+
+function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, onDeleteLink, goals, onAddGoal, onUpdateGoal, onDeleteGoal, habits, habitLogs, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, learningItems, onAddLearning, onUpdateLearning, onDeleteLearning }) {
   const tab = activeTab || "links";
   const tabs = [
     { key: "links", label: "🔗 Links" },
@@ -3963,24 +4144,15 @@ function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, o
     { key: "habits", label: "⚡ Habits" },
     { key: "learning", label: "📚 Learning" },
   ];
-
-  const PlaceholderTab = ({ emoji, label }) => (
-    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "40px 20px" : "60px 32px", textAlign: "center", marginTop: 16 }}>
-      <div style={{ fontSize: 36, marginBottom: 12 }}>{emoji}</div>
-      <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>{label}</h3>
-      <p style={{ fontSize: 14, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif" }}>This section is coming soon.</p>
-    </div>
-  );
-
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Growth" subtitle="Track your growth journey" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "links" && <LinksTab isMobile={isMobile} links={savedLinks || []} onAdd={onAddLink} onDelete={onDeleteLink} />}
-        {tab === "goals" && <PlaceholderTab emoji="🎯" label="Goals" />}
-        {tab === "habits" && <PlaceholderTab emoji="⚡" label="Habits" />}
-        {tab === "learning" && <PlaceholderTab emoji="📚" label="Learning" />}
+        {tab === "goals" && <GoalsTab isMobile={isMobile} goals={goals || []} onAdd={onAddGoal} onUpdate={onUpdateGoal} onDelete={onDeleteGoal} />}
+        {tab === "habits" && <HabitsTab isMobile={isMobile} habits={habits || []} habitLogs={habitLogs || []} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddLog={onAddHabitLog} onDeleteLog={onDeleteHabitLog} />}
+        {tab === "learning" && <LearningTab isMobile={isMobile} items={learningItems || []} onAdd={onAddLearning} onUpdate={onUpdateLearning} onDelete={onDeleteLearning} />}
       </div>
     </div>
   );
@@ -4032,6 +4204,10 @@ export default function SuarezApp() {
   const [bodyLogs, setBodyLogs] = useState([]);
   const [monthlyBills, setMonthlyBills] = useState([]);
   const [savedLinks, setSavedLinks] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [habits, setHabits] = useState([]);
+  const [habitLogs, setHabitLogs] = useState([]);
+  const [learningItems, setLearningItems] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
@@ -4055,7 +4231,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -4084,6 +4260,10 @@ export default function SuarezApp() {
       supabase.from("dose_logs").select("*").order("created_at", { ascending: false }),
       supabase.from("body_logs").select("*").order("date", { ascending: false }),
       supabase.from("saved_links").select("*").order("created_at", { ascending: false }),
+      supabase.from("goals").select("*").order("created_at", { ascending: false }),
+      supabase.from("habits").select("*").order("created_at", { ascending: true }),
+      supabase.from("habit_logs").select("*").order("date", { ascending: false }),
+      supabase.from("learning_items").select("*").order("created_at", { ascending: false }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -4113,6 +4293,10 @@ export default function SuarezApp() {
     if (dlRes.data) setDoseLogs(dlRes.data);
     if (blRes.data) setBodyLogs(blRes.data);
     if (linksRes.data) setSavedLinks(linksRes.data);
+    if (goalsRes.data) setGoals(goalsRes.data);
+    if (habitsRes.data) setHabits(habitsRes.data);
+    if (habitLogsRes.data) setHabitLogs(habitLogsRes.data);
+    if (learningRes.data) setLearningItems(learningRes.data);
     setDataLoading(false);
   }, [session]);
 
@@ -4211,6 +4395,16 @@ export default function SuarezApp() {
   const handleDeleteBodyLog = async (id) => { const { error } = await supabase.from("body_logs").delete().eq("id", id); if (!error) setBodyLogs((p) => p.filter((b) => b.id !== id)); };
   const handleAddLink = async (form) => { const { data, error } = await supabase.from("saved_links").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setSavedLinks((p) => [data, ...p]); };
   const handleDeleteLink = async (id) => { const { error } = await supabase.from("saved_links").delete().eq("id", id); if (!error) setSavedLinks((p) => p.filter((l) => l.id !== id)); };
+  const handleAddGoal = async (form) => { const { data, error } = await supabase.from("goals").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setGoals((p) => [data, ...p]); };
+  const handleUpdateGoal = async (id, form) => { const { data, error } = await supabase.from("goals").update(form).eq("id", id).select().single(); if (!error && data) setGoals((p) => p.map((g) => g.id === id ? data : g)); };
+  const handleDeleteGoal = async (id) => { const { error } = await supabase.from("goals").delete().eq("id", id); if (!error) setGoals((p) => p.filter((g) => g.id !== id)); };
+  const handleAddHabit = async (form) => { const { data, error } = await supabase.from("habits").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setHabits((p) => [...p, data]); };
+  const handleDeleteHabit = async (id) => { const { error } = await supabase.from("habits").delete().eq("id", id); if (!error) setHabits((p) => p.filter((h) => h.id !== id)); };
+  const handleAddHabitLog = async (form) => { const { data, error } = await supabase.from("habit_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setHabitLogs((p) => [data, ...p]); };
+  const handleDeleteHabitLog = async (id) => { const { error } = await supabase.from("habit_logs").delete().eq("id", id); if (!error) setHabitLogs((p) => p.filter((l) => l.id !== id)); };
+  const handleAddLearning = async (form) => { const { data, error } = await supabase.from("learning_items").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setLearningItems((p) => [data, ...p]); };
+  const handleUpdateLearning = async (id, form) => { const { data, error } = await supabase.from("learning_items").update(form).eq("id", id).select().single(); if (!error && data) setLearningItems((p) => p.map((l) => l.id === id ? data : l)); };
+  const handleDeleteLearning = async (id) => { const { error } = await supabase.from("learning_items").delete().eq("id", id); if (!error) setLearningItems((p) => p.filter((l) => l.id !== id)); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -4282,7 +4476,7 @@ export default function SuarezApp() {
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
-      case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} />;
+      case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       default: return null;
     }
   };
