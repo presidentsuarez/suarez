@@ -3148,10 +3148,9 @@ function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones
 
   const content = (
     <>
-      <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }, { key: "prayer", label: "Prayer Wall" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+      <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }]} active={tab} onChange={setTab} isMobile={isMobile} />
       {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} />}
       {tab === "grades" && <GradesTab isMobile={isMobile} kids={kids} grades={grades} onAdd={onAddGrade} onDelete={onDeleteGrade} />}
-      {tab === "prayer" && <PrayerWallTab isMobile={isMobile} prayers={prayers} onAdd={onAddPrayer} onUpdate={onUpdatePrayer} onDelete={onDeletePrayer} />}
     </>
   );
 
@@ -4522,6 +4521,7 @@ function LifeConsolidatedView(props) {
     { key: "habits", label: "⚡ Habits" },
     { key: "learning", label: "📚 Learning" },
     { key: "chess", label: "♟️ Chess" },
+    { key: "faith", label: "✝️ Faith" },
   ];
 
   return (
@@ -4538,6 +4538,7 @@ function LifeConsolidatedView(props) {
         {tab === "habits" && <HabitsTab isMobile={isMobile} habits={props.habits || []} habitLogs={props.habitLogs || []} onAddHabit={props.onAddHabit} onDeleteHabit={props.onDeleteHabit} onAddLog={props.onAddHabitLog} onDeleteLog={props.onDeleteHabitLog} />}
         {tab === "learning" && <LearningTab isMobile={isMobile} items={props.learningItems || []} onAdd={props.onAddLearning} onUpdate={props.onUpdateLearning} onDelete={props.onDeleteLearning} />}
         {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onDelete={props.onDeleteMilestone} />}
+        {tab === "faith" && <PrayerWallTab isMobile={isMobile} prayers={props.prayers || []} onAdd={props.onAddPrayer} onUpdate={props.onUpdatePrayer} onDelete={props.onDeletePrayer} />}
       </div>
     </div>
   );
