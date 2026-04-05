@@ -946,14 +946,18 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   return (
     <>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[{ k: "ledger", l: "Ledger" }, { k: "statements", l: "Statements" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
-          <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
+        {[{ k: "ledger", l: "Ledger" }, { k: "statements", l: "Statements" }, { k: "uncategorized", l: "Uncategorized" }, { k: "organizer", l: "Organizer" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
+          <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
         ))}
       </div>
       {subView === "statements" ? (
         <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets || []} accounts={accounts} />
       ) : subView === "uploader" ? (
         <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads || []} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />
+      ) : subView === "uncategorized" ? (
+        <UncategorizedTab isMobile={isMobile} transactions={transactions} onDelete={onDelete} />
+      ) : subView === "organizer" ? (
+        <OrganizerTab isMobile={isMobile} transactions={transactions} accounts={accounts} />
       ) : (
       <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -1098,6 +1102,105 @@ function PersonalSpendingTab({ isMobile, lifeExpenses, onAdd, onDelete }) {
 }
 
 /* — Statements Tab — */
+/* — Uncategorized Tab — */
+function UncategorizedTab({ isMobile, transactions, onDelete }) {
+  const uncategorized = transactions.filter((t) => !t.category || t.category === "" || t.category === "Uncategorized");
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{uncategorized.length} transaction{uncategorized.length !== 1 ? "s" : ""} need categorization</span>
+      </div>
+      {uncategorized.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #bbf7d0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#16a34a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>All Caught Up</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Every transaction has a category assigned.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {uncategorized.map((t) => (
+            <div key={t.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #fef3c7", padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.type === "income" ? "#16a34a" : "#dc2626", flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{fmtDate(t.date)} · {t.visibility || "personal"}</div>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: t.type === "income" ? "#16a34a" : "#dc2626", flexShrink: 0 }}>{fmtCurrency(t.amount)}</span>
+              <button onClick={() => { if (window.confirm("Delete?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* — Organizer Tab — */
+function OrganizerTab({ isMobile, transactions, accounts }) {
+  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
+  const periodTxns = transactions.filter((t) => t.date && t.date.startsWith(period));
+  const categories = {};
+  periodTxns.forEach((t) => {
+    const cat = t.category || "Uncategorized";
+    if (!categories[cat]) categories[cat] = { income: 0, expense: 0, count: 0 };
+    categories[cat].count++;
+    if (t.type === "income") categories[cat].income += Number(t.amount);
+    else categories[cat].expense += Number(t.amount);
+  });
+
+  const totalIncome = periodTxns.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+  const totalExpenses = periodTxns.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const uncatCount = periodTxns.filter((t) => !t.category || t.category === "Uncategorized").length;
+  const sorted = Object.entries(categories).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{periodTxns.length} transactions · {Object.keys(categories).length} categories</span>
+        <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        <StatCard label="Transactions" value={periodTxns.length} accent="#3b82f6" compact />
+        <StatCard label="Categories" value={Object.keys(categories).length} accent="#7c3aed" compact />
+        <StatCard label="Uncategorized" value={uncatCount} accent={uncatCount > 0 ? "#f59e0b" : "#16a34a"} compact />
+      </div>
+      {sorted.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📂</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Transactions This Period</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add transactions in the Ledger to see them organized here.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {sorted.map(([cat, data]) => {
+            const total = data.income + data.expense;
+            const grandTotal = totalIncome + totalExpenses;
+            const pct = grandTotal > 0 ? Math.round((total / grandTotal) * 100) : 0;
+            return (
+              <div key={cat} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${cat === "Uncategorized" ? "#fef3c7" : "#e2e8f0"}`, padding: "14px 18px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{cat}</span>
+                    {cat === "Uncategorized" && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#fef3c7", color: "#f59e0b" }}>NEEDS REVIEW</span>}
+                  </div>
+                  <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{data.count} txn · {pct}%</span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden", marginBottom: 6 }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: cat === "Uncategorized" ? "#f59e0b" : "linear-gradient(135deg, #16a34a, #15803d)", borderRadius: 3 }} />
+                </div>
+                <div style={{ display: "flex", gap: 16, fontSize: 11 }}>
+                  {data.income > 0 && <span style={{ color: "#16a34a", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>+{fmtCurrency(data.income)}</span>}
+                  {data.expense > 0 && <span style={{ color: "#dc2626", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>-{fmtCurrency(data.expense)}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function StatementsTab({ isMobile, transactions, assets, accounts }) {
   const [view, setView] = useState("income");
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
