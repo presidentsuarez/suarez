@@ -3959,14 +3959,14 @@ function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, o
   const tab = activeTab || "links";
   const tabs = [
     { key: "links", label: "🔗 Links" },
-    { key: "two", label: "Two" },
+    { key: "goals", label: "🎯 Goals" },
+    { key: "habits", label: "⚡ Habits" },
+    { key: "learning", label: "📚 Learning" },
   ];
 
-  const PlaceholderTab = ({ label }) => (
+  const PlaceholderTab = ({ emoji, label }) => (
     <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "40px 20px" : "60px 32px", textAlign: "center", marginTop: 16 }}>
-      <div style={{ width: 56, height: 56, borderRadius: 16, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-        {Icons.sprout}
-      </div>
+      <div style={{ fontSize: 36, marginBottom: 12 }}>{emoji}</div>
       <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>{label}</h3>
       <p style={{ fontSize: 14, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif" }}>This section is coming soon.</p>
     </div>
@@ -3978,7 +3978,9 @@ function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, o
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "links" && <LinksTab isMobile={isMobile} links={savedLinks || []} onAdd={onAddLink} onDelete={onDeleteLink} />}
-        {tab === "two" && <PlaceholderTab label="Growth — Two" />}
+        {tab === "goals" && <PlaceholderTab emoji="🎯" label="Goals" />}
+        {tab === "habits" && <PlaceholderTab emoji="⚡" label="Habits" />}
+        {tab === "learning" && <PlaceholderTab emoji="📚" label="Learning" />}
       </div>
     </div>
   );
