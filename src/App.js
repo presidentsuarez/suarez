@@ -4803,82 +4803,168 @@ function OutreachDashboard({ isMobile }) {
   );
 }
 
-function CallsTab({ isMobile, companies }) {
-  const [logs, setLogs] = useState([]);
+function InboxTab({ isMobile }) {
+  const [view, setView] = useState("chats");
+  const [messages, setMessages] = useState([]);
+  const [calls, setCalls] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], duration: "", outcome: "Connected", notes: "" });
+  const [activeThread, setActiveThread] = useState(null);
+  const [replyText, setReplyText] = useState("");
+
+  // Chat form
+  const [chatForm, setChatForm] = useState({ contact: "", phone: "", message: "", direction: "Outgoing" });
+  // Call form
+  const [callForm, setCallForm] = useState({ contact: "", phone: "", duration: "", outcome: "Connected", notes: "" });
   const outcomes = ["Connected", "Voicemail", "No Answer", "Callback Requested", "Wrong Number"];
-  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
-  const resetForm = () => { setForm({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], duration: "", outcome: "Connected", notes: "" }); setShowForm(false); };
-  const handleAdd = () => { if (!form.contact.trim()) return; setLogs((p) => [{ id: Date.now(), ...form }, ...p]); resetForm(); };
   const outcomeColors = { Connected: "#16a34a", Voicemail: "#f59e0b", "No Answer": "#dc2626", "Callback Requested": "#3b82f6", "Wrong Number": "#64748b" };
 
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span style={{ fontSize: 13, color: "#64748b" }}>{logs.length} call{logs.length !== 1 ? "s" : ""} logged</span>
-        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Log Call</GreenButton>
-      </div>
-      {showForm && (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Duration (min)</label><input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="5" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Outcome</label><select value={form.outcome} onChange={(e) => setForm({ ...form, outcome: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{outcomes.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
-          </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAdd} disabled={!form.contact.trim()}>Log</GreenButton></div>
-        </div>
-      )}
-      {logs.length === 0 && !showForm ? (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📞</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Calls Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log your calls to keep track of conversations. API integration coming soon.</p></div>
-      ) : logs.map((l) => (
-        <div key={l.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>📞</div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{l.contact}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{fmtDate(l.date)}{l.duration ? ` · ${l.duration} min` : ""}{l.notes ? ` · ${l.notes}` : ""}</div></div>
-          <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${outcomeColors[l.outcome] || "#64748b"}15`, color: outcomeColors[l.outcome] || "#64748b" }}>{l.outcome?.toUpperCase()}</span>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function TextsTab({ isMobile }) {
-  const [logs, setLogs] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], direction: "Outgoing", message: "" });
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
-  const resetForm = () => { setForm({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], direction: "Outgoing", message: "" }); setShowForm(false); };
-  const handleAdd = () => { if (!form.contact.trim()) return; setLogs((p) => [{ id: Date.now(), ...form }, ...p]); resetForm(); };
+
+  const getInitials = (name) => { const parts = (name || "?").split(" "); return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase(); };
+  const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2", "#ea580c"];
+  const getAvatarColor = (name) => avatarColors[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+
+  const resetChat = () => { setChatForm({ contact: "", phone: "", message: "", direction: "Outgoing" }); setShowForm(false); };
+  const resetCall = () => { setCallForm({ contact: "", phone: "", duration: "", outcome: "Connected", notes: "" }); setShowForm(false); };
+
+  const handleAddChat = () => {
+    if (!chatForm.contact.trim() || !chatForm.message.trim()) return;
+    setMessages((p) => [{ id: Date.now(), contact: chatForm.contact, phone: chatForm.phone, message: chatForm.message, direction: chatForm.direction, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), date: new Date().toISOString().split("T")[0], unread: chatForm.direction === "Incoming" ? 1 : 0, thread: [{ message: chatForm.message, direction: chatForm.direction, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }] }, ...p]);
+    resetChat();
+  };
+
+  const handleAddCall = () => {
+    if (!callForm.contact.trim()) return;
+    setCalls((p) => [{ id: Date.now(), contact: callForm.contact, phone: callForm.phone, duration: callForm.duration, outcome: callForm.outcome, notes: callForm.notes, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), date: new Date().toISOString().split("T")[0] }, ...p]);
+    resetCall();
+  };
+
+  const handleReply = (threadId) => {
+    if (!replyText.trim()) return;
+    setMessages((p) => p.map((m) => m.id === threadId ? { ...m, message: replyText, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), thread: [...(m.thread || []), { message: replyText, direction: "Outgoing", time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }] } : m));
+    setReplyText("");
+  };
+
+  // Thread view
+  if (activeThread) {
+    const thread = messages.find((m) => m.id === activeThread);
+    if (!thread) { setActiveThread(null); return null; }
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <button onClick={() => setActiveThread(null)} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: "#64748b" }}>←</button>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: getAvatarColor(thread.contact), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 700 }}>{getInitials(thread.contact)}</div>
+          <div><div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{thread.contact}</div>{thread.phone && <div style={{ fontSize: 11, color: "#94a3b8" }}>{thread.phone}</div>}</div>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "16px", marginBottom: 12, minHeight: 200 }}>
+          {(thread.thread || []).map((msg, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: msg.direction === "Outgoing" ? "flex-end" : "flex-start", marginBottom: 8 }}>
+              <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: msg.direction === "Outgoing" ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: msg.direction === "Outgoing" ? "#1C3820" : "#f1f5f9", color: msg.direction === "Outgoing" ? "#fff" : "#0f172a", fontSize: 13, lineHeight: 1.5 }}>
+                {msg.message}
+                <div style={{ fontSize: 9, color: msg.direction === "Outgoing" ? "#bbf7d0" : "#94a3b8", marginTop: 4, textAlign: "right" }}>{msg.time}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Write a message..." onKeyDown={(e) => e.key === "Enter" && handleReply(activeThread)} style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+          <GreenButton small onClick={() => handleReply(activeThread)} disabled={!replyText.trim()}>Send</GreenButton>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span style={{ fontSize: 13, color: "#64748b" }}>{logs.length} text{logs.length !== 1 ? "s" : ""} logged</span>
-        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Log Text</GreenButton>
+      {/* Chats / Calls toggle */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[{ k: "chats", l: "💬 Chats", count: messages.length }, { k: "calls", l: "📞 Calls", count: calls.length }].map(({ k, l, count }) => (
+          <button key={k} onClick={() => { setView(k); setShowForm(false); }} style={{ flex: 1, padding: "14px", borderRadius: 12, border: `1.5px solid ${view === k ? "#1C3820" : "#e2e8f0"}`, background: view === k ? "#f0fdf4" : "#fff", cursor: "pointer", textAlign: "left" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: view === k ? "#1C3820" : "#64748b" }}>{l}</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{count} {k === "chats" ? "conversation" : "call"}{count !== 1 ? "s" : ""}</div>
+          </button>
+        ))}
       </div>
-      {showForm && (
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <GreenButton small onClick={() => setShowForm(!showForm)}>{Icons.plus} {view === "chats" ? "New Chat" : "Log Call"}</GreenButton>
+      </div>
+
+      {/* New Chat Form */}
+      {showForm && view === "chats" && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Direction</label><select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="Outgoing">Outgoing</option><option value="Incoming">Incoming</option></select></div>
-            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Message</label><input value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="Message preview / topic" style={inputStyle} className="sz-input" /></div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={chatForm.contact} onChange={(e) => setChatForm({ ...chatForm, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={chatForm.phone} onChange={(e) => setChatForm({ ...chatForm, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Direction</label><select value={chatForm.direction} onChange={(e) => setChatForm({ ...chatForm, direction: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="Outgoing">Outgoing</option><option value="Incoming">Incoming</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Message *</label><input value={chatForm.message} onChange={(e) => setChatForm({ ...chatForm, message: e.target.value })} placeholder="Message text" style={inputStyle} className="sz-input" /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAdd} disabled={!form.contact.trim()}>Log</GreenButton></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetChat} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddChat} disabled={!chatForm.contact.trim() || !chatForm.message.trim()}>Send</GreenButton></div>
         </div>
       )}
-      {logs.length === 0 && !showForm ? (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Texts Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log important text conversations. API integration coming soon.</p></div>
-      ) : logs.map((l) => (
-        <div key={l.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: l.direction === "Incoming" ? "#f0fdf4" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{l.direction === "Incoming" ? "📥" : "📤"}</div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{l.contact}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{fmtDate(l.date)}{l.message ? ` · ${l.message}` : ""}</div></div>
-          <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: l.direction === "Incoming" ? "#f0fdf415" : "#eff6ff", color: l.direction === "Incoming" ? "#16a34a" : "#3b82f6" }}>{l.direction?.toUpperCase()}</span>
+
+      {/* Log Call Form */}
+      {showForm && view === "calls" && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={callForm.contact} onChange={(e) => setCallForm({ ...callForm, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={callForm.phone} onChange={(e) => setCallForm({ ...callForm, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Duration (min)</label><input type="number" value={callForm.duration} onChange={(e) => setCallForm({ ...callForm, duration: e.target.value })} placeholder="5" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Outcome</label><select value={callForm.outcome} onChange={(e) => setCallForm({ ...callForm, outcome: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{outcomes.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
+            <div style={{ gridColumn: isMobile ? "1" : "2 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={callForm.notes} onChange={(e) => setCallForm({ ...callForm, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetCall} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddCall} disabled={!callForm.contact.trim()}>Log</GreenButton></div>
         </div>
-      ))}
+      )}
+
+      {/* Chat List */}
+      {view === "chats" && (
+        messages.length === 0 && !showForm ? (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Conversations</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log chats and text conversations. API integration coming soon.</p></div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {messages.map((m) => (
+              <div key={m.id} onClick={() => setActiveThread(m.id)} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", borderBottom: "1px solid #f1f5f9" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: getAvatarColor(m.contact), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{getInitials(m.contact)}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{m.contact}</span>
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>{m.time}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.direction === "Outgoing" ? "You: " : ""}{m.message}</div>
+                </div>
+                {m.unread > 0 && <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#3b82f6", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{m.unread}</div>}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Call List */}
+      {view === "calls" && (
+        calls.length === 0 && !showForm ? (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📞</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Calls Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log your calls to track conversations. API integration coming soon.</p></div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {calls.map((c) => (
+              <div key={c.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid #f1f5f9" }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: getAvatarColor(c.contact), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{getInitials(c.contact)}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{c.contact}</span>
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>{c.time}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 3, alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "#64748b" }}>{c.outcome === "Connected" ? "↗ Call" : c.outcome === "Voicemail" ? "📩 Voicemail" : "✕ " + c.outcome}{c.duration ? ` · ${c.duration}m` : ""}</span>
+                  </div>
+                  {c.notes && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{c.notes}</div>}
+                </div>
+                <span style={{ fontSize: 8, fontWeight: 700, padding: "3px 6px", borderRadius: 4, background: `${outcomeColors[c.outcome] || "#64748b"}15`, color: outcomeColors[c.outcome] || "#64748b", flexShrink: 0 }}>{c.outcome?.toUpperCase()}</span>
+              </div>
+            ))}
+          </div>
+        )
+      )}
     </>
   );
 }
@@ -5026,8 +5112,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
   const tabs = [
     { key: "dashboard", label: "📊 Dashboard" },
     { key: "contacts", label: "📇 Contacts" },
-    { key: "calls", label: "📞 Calls" },
-    { key: "texts", label: "💬 Texts" },
+    { key: "inbox", label: "📨 Inbox" },
     { key: "emails", label: "📧 Emails" },
     { key: "social", label: "📱 Social" },
   ];
@@ -5038,8 +5123,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
         {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
-        {tab === "calls" && <CallsTab isMobile={isMobile} companies={companies} />}
-        {tab === "texts" && <TextsTab isMobile={isMobile} />}
+        {tab === "inbox" && <InboxTab isMobile={isMobile} />}
         {tab === "emails" && <EmailsTab isMobile={isMobile} />}
         {tab === "social" && <SocialTab isMobile={isMobile} />}
       </div>
