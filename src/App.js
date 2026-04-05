@@ -521,10 +521,10 @@ function OverviewView({ isMobile, session, accounts, uploads, assets, transactio
           <SectionHeader text="Quick Actions" />
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12 }}>
             {[
-              { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: Icons.dollar },
-              { label: "Business", desc: "Entities & contacts", nav: "business", icon: Icons.briefcase },
-              { label: "Life", desc: "Home, family & health", nav: "life", icon: Icons.leaf },
-              { label: "Growth", desc: "Your growth journey", nav: "growth", icon: Icons.sprout },
+              { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: <span style={{ fontSize: 22 }}>💰</span> },
+              { label: "Business", desc: "Entities & contacts", nav: "business", icon: <span style={{ fontSize: 22 }}>💼</span> },
+              { label: "Life", desc: "Home, family & health", nav: "life", icon: <span style={{ fontSize: 22 }}>🌳</span> },
+              { label: "Growth", desc: "Your growth journey", nav: "growth", icon: <span style={{ fontSize: 22 }}>🌱</span> },
             ].map((a, i) => (
               <div key={i} onClick={() => onNavigate(a.nav)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, color: "#16a34a" }}>{a.icon}</div>
@@ -4180,19 +4180,19 @@ export default function SuarezApp() {
   const initials = userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const navItems = [
-    { id: "overview", label: "Command Center", icon: Icons.command },
-    { id: "life", label: "Life", icon: Icons.leaf },
-    { id: "business", label: "Business", icon: Icons.briefcase },
-    { id: "finance", label: "Finance", featured: true, icon: Icons.dollar },
-    { id: "growth", label: "Growth", icon: Icons.sprout },
+    { id: "overview", label: "Command Center", icon: <span style={{ fontSize: 18 }}>🌍</span> },
+    { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
+    { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
+    { id: "finance", label: "Finance", featured: true, icon: <span style={{ fontSize: 18 }}>💰</span> },
+    { id: "growth", label: "Growth", icon: <span style={{ fontSize: 18 }}>🌱</span> },
   ];
 
   const mobileNavItems = [
-    { id: "life", label: "Life", icon: Icons.leaf },
-    { id: "business", label: "Business", icon: Icons.briefcase },
-    { id: "overview", label: "", featured: true, icon: Icons.command },
-    { id: "finance", label: "Finance", icon: Icons.dollar },
-    { id: "growth", label: "Growth", icon: Icons.sprout },
+    { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
+    { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
+    { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
+    { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
+    { id: "growth", label: "Growth", icon: <span style={{ fontSize: 18 }}>🌱</span> },
   ];
 
   const renderPage = () => {
