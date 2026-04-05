@@ -2986,7 +2986,7 @@ function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, 
         </div>
       ) : (
         <>
-          <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+          <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "checkin", label: "📋 Check-in" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
           {tab === "dosing" && <DosingTab isMobile={isMobile} memberId={selectedMember} supplements={supplements.filter((s) => s.member_id === selectedMember && s.active)} doseLogs={doseLogs.filter((d) => d.member_id === selectedMember)} onAddLog={onAddDoseLog} onDeleteLog={onDeleteDoseLog} />}
           {tab === "body" && <BodyPerformanceTab isMobile={isMobile} memberId={selectedMember} bodyLogs={bodyLogs.filter((b) => b.member_id === selectedMember)} onAdd={onAddBodyLog} onDelete={onDeleteBodyLog} />}
           {tab === "checkin" && <HealthCheckinTab isMobile={isMobile} memberId={selectedMember} checkins={checkins.filter((c) => c.member_id === selectedMember)} onAdd={onAddCheckin} onDelete={onDeleteCheckin} />}
@@ -3832,6 +3832,8 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
 function FinanceView(props) {
   const { isMobile, activeTab, onTabChange } = props;
   const tab = activeTab || "money";
+  const [moneyTab, setMoneyTab] = useState(null);
+  const [wealthTab, setWealthTab] = useState(null);
   const tabs = [
     { key: "money", label: "Money" },
     { key: "wealth", label: "Wealth" },
@@ -3842,8 +3844,8 @@ function FinanceView(props) {
       <PageHeader title="Finance" subtitle="Day-to-day money & long-term wealth" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "money" && <MoneyView {...props} nested />}
-        {tab === "wealth" && <WealthView {...props} nested />}
+        {tab === "money" && <MoneyView {...props} activeTab={moneyTab} onTabChange={setMoneyTab} nested />}
+        {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
       </div>
     </div>
   );
@@ -3856,6 +3858,9 @@ function FinanceView(props) {
 function LifeConsolidatedView(props) {
   const { isMobile, activeTab, onTabChange } = props;
   const tab = activeTab || "home";
+  const [homeTab, setHomeTab] = useState(null);
+  const [familyTab, setFamilyTab] = useState(null);
+  const [healthTab, setHealthTab] = useState(null);
   const tabs = [
     { key: "home", label: "Home" },
     { key: "family", label: "Family" },
@@ -3867,9 +3872,9 @@ function LifeConsolidatedView(props) {
       <PageHeader title="Life" subtitle="Home, family & health" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "home" && <HomeLifeView {...props} activeTab={null} nested />}
-        {tab === "family" && <FamilyView {...props} activeTab={null} nested />}
-        {tab === "health" && <HealthView {...props} activeTab={null} nested />}
+        {tab === "home" && <HomeLifeView {...props} activeTab={homeTab} onTabChange={setHomeTab} nested />}
+        {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
+        {tab === "health" && <HealthView {...props} activeTab={healthTab} onTabChange={setHealthTab} nested />}
       </div>
     </div>
   );
