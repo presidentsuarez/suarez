@@ -4138,11 +4138,11 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
 
 function FinanceView(props) {
   const { isMobile, activeTab, onTabChange } = props;
-  const tab = activeTab || "bookkeeping";
+  const tab = activeTab || "wealth";
   const [wealthTab, setWealthTab] = useState(null);
   const tabs = [
-    { key: "bookkeeping", label: "📒 Bookkeeping" },
     { key: "wealth", label: "📊 Wealth" },
+    { key: "bookkeeping", label: "📒 Bookkeeping" },
     { key: "accounts", label: "🏦 Accounts" },
     { key: "bills", label: "📋 Bills" },
     { key: "realestate", label: "🏠 Real Estate" },
