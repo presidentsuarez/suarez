@@ -554,7 +554,7 @@ function OverviewView({ isMobile, session, accounts, uploads, assets, transactio
               { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: <span style={{ fontSize: 22 }}>💰</span> },
               { label: "Business", desc: "Entities & contacts", nav: "business", icon: <span style={{ fontSize: 22 }}>💼</span> },
               { label: "Life", desc: "Home, family & health", nav: "life", icon: <span style={{ fontSize: 22 }}>🌳</span> },
-              { label: "Growth", desc: "Your growth journey", nav: "growth", icon: <span style={{ fontSize: 22 }}>🌱</span> },
+              { label: "Outreach", desc: "Communications & social", nav: "outreach", icon: <span style={{ fontSize: 22 }}>📡</span> },
             ].map((a, i) => (
               <div key={i} onClick={() => onNavigate(a.nav)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, color: "#16a34a" }}>{a.icon}</div>
@@ -4494,19 +4494,25 @@ function LifeConsolidatedView(props) {
     { key: "health", label: "Health" },
     { key: "calendar", label: "📅 Calendar" },
     { key: "planner", label: "📝 Planner" },
-    { key: "contacts", label: "📇 Contacts" },
+    { key: "links", label: "🔗 Links" },
+    { key: "goals", label: "🎯 Goals" },
+    { key: "habits", label: "⚡ Habits" },
+    { key: "learning", label: "📚 Learning" },
   ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Life" subtitle="Family, health & planning" isMobile={isMobile} />
+      <PageHeader title="Life" subtitle="Family, health, planning & growth" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
         {tab === "health" && <HealthView {...props} activeTab={healthTab} onTabChange={setHealthTab} nested />}
         {tab === "calendar" && <CalendarView isMobile={isMobile} events={props.calendarEvents} onAdd={props.onAddEvent} onDelete={props.onDeleteEvent} asTab />}
         {tab === "planner" && <PlannerView isMobile={isMobile} tasks={props.plannerTasks} onAdd={props.onAddTask} onUpdate={props.onUpdateTask} onDelete={props.onDeleteTask} asTab />}
-        {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={props.companies} onAdd={props.onAddCompany} onUpdate={props.onUpdateCompany} onDelete={props.onDeleteCompany} />}
+        {tab === "links" && <LinksTab isMobile={isMobile} links={props.savedLinks || []} onAdd={props.onAddLink} onDelete={props.onDeleteLink} />}
+        {tab === "goals" && <GoalsTab isMobile={isMobile} goals={props.goals || []} onAdd={props.onAddGoal} onUpdate={props.onUpdateGoal} onDelete={props.onDeleteGoal} />}
+        {tab === "habits" && <HabitsTab isMobile={isMobile} habits={props.habits || []} habitLogs={props.habitLogs || []} onAddHabit={props.onAddHabit} onDeleteHabit={props.onDeleteHabit} onAddLog={props.onAddHabitLog} onDeleteLog={props.onDeleteHabitLog} />}
+        {tab === "learning" && <LearningTab isMobile={isMobile} items={props.learningItems || []} onAdd={props.onAddLearning} onUpdate={props.onUpdateLearning} onDelete={props.onDeleteLearning} />}
       </div>
     </div>
   );
@@ -4768,23 +4774,274 @@ function LearningTab({ isMobile, items, onAdd, onUpdate, onDelete }) {
    GROWTH (Tabbed: Links, Goals, Habits, Learning)
    ═══════════════════════════════════════════════════════════ */
 
-function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, onDeleteLink, goals, onAddGoal, onUpdateGoal, onDeleteGoal, habits, habitLogs, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, learningItems, onAddLearning, onUpdateLearning, onDeleteLearning }) {
-  const tab = activeTab || "links";
+/* ═══════════════════════════════════════════════════════════
+   OUTREACH (Communications, Social, Brand)
+   ═══════════════════════════════════════════════════════════ */
+
+function OutreachDashboard({ isMobile }) {
+  const stats = [
+    { emoji: "📞", label: "Calls", value: "Coming Soon", color: "#3b82f6" },
+    { emoji: "💬", label: "Texts", value: "Coming Soon", color: "#8b5cf6" },
+    { emoji: "📧", label: "Emails", value: "Coming Soon", color: "#dc2626" },
+    { emoji: "📱", label: "Social", value: "Coming Soon", color: "#16a34a" },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+      {stats.map((s) => (
+        <div key={s.label} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "20px", textAlign: "center" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>{s.emoji}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{s.label}</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{s.value}</div>
+        </div>
+      ))}
+      <div style={{ gridColumn: "1 / -1", background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "24px", textAlign: "center" }}>
+        <div style={{ fontSize: 28, marginBottom: 8 }}>📡</div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>Outreach Command Center</h3>
+        <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, lineHeight: 1.6 }}>Your central hub for all communications. Log calls, texts, and emails. Plan and schedule social media content. Connect with contacts across all channels.</p>
+      </div>
+    </div>
+  );
+}
+
+function CallsTab({ isMobile, companies }) {
+  const [logs, setLogs] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], duration: "", outcome: "Connected", notes: "" });
+  const outcomes = ["Connected", "Voicemail", "No Answer", "Callback Requested", "Wrong Number"];
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], duration: "", outcome: "Connected", notes: "" }); setShowForm(false); };
+  const handleAdd = () => { if (!form.contact.trim()) return; setLogs((p) => [{ id: Date.now(), ...form }, ...p]); resetForm(); };
+  const outcomeColors = { Connected: "#16a34a", Voicemail: "#f59e0b", "No Answer": "#dc2626", "Callback Requested": "#3b82f6", "Wrong Number": "#64748b" };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{logs.length} call{logs.length !== 1 ? "s" : ""} logged</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Log Call</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Duration (min)</label><input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="5" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Outcome</label><select value={form.outcome} onChange={(e) => setForm({ ...form, outcome: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{outcomes.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAdd} disabled={!form.contact.trim()}>Log</GreenButton></div>
+        </div>
+      )}
+      {logs.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📞</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Calls Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log your calls to keep track of conversations. API integration coming soon.</p></div>
+      ) : logs.map((l) => (
+        <div key={l.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>📞</div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{l.contact}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{fmtDate(l.date)}{l.duration ? ` · ${l.duration} min` : ""}{l.notes ? ` · ${l.notes}` : ""}</div></div>
+          <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${outcomeColors[l.outcome] || "#64748b"}15`, color: outcomeColors[l.outcome] || "#64748b" }}>{l.outcome?.toUpperCase()}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function TextsTab({ isMobile }) {
+  const [logs, setLogs] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], direction: "Outgoing", message: "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ contact: "", phone: "", date: new Date().toISOString().split("T")[0], direction: "Outgoing", message: "" }); setShowForm(false); };
+  const handleAdd = () => { if (!form.contact.trim()) return; setLogs((p) => [{ id: Date.now(), ...form }, ...p]); resetForm(); };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{logs.length} text{logs.length !== 1 ? "s" : ""} logged</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Log Text</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Direction</label><select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="Outgoing">Outgoing</option><option value="Incoming">Incoming</option></select></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Message</label><input value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="Message preview / topic" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAdd} disabled={!form.contact.trim()}>Log</GreenButton></div>
+        </div>
+      )}
+      {logs.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Texts Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log important text conversations. API integration coming soon.</p></div>
+      ) : logs.map((l) => (
+        <div key={l.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: l.direction === "Incoming" ? "#f0fdf4" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{l.direction === "Incoming" ? "📥" : "📤"}</div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{l.contact}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{fmtDate(l.date)}{l.message ? ` · ${l.message}` : ""}</div></div>
+          <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: l.direction === "Incoming" ? "#f0fdf415" : "#eff6ff", color: l.direction === "Incoming" ? "#16a34a" : "#3b82f6" }}>{l.direction?.toUpperCase()}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function EmailsTab({ isMobile }) {
+  const [logs, setLogs] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ contact: "", email: "", subject: "", date: new Date().toISOString().split("T")[0], direction: "Sent", status: "Sent", notes: "" });
+  const statuses = ["Draft", "Sent", "Replied", "Awaiting Reply", "Archived"];
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ contact: "", email: "", subject: "", date: new Date().toISOString().split("T")[0], direction: "Sent", status: "Sent", notes: "" }); setShowForm(false); };
+  const handleAdd = () => { if (!form.subject.trim()) return; setLogs((p) => [{ id: Date.now(), ...form }, ...p]); resetForm(); };
+  const statusColors = { Draft: "#64748b", Sent: "#3b82f6", Replied: "#16a34a", "Awaiting Reply": "#f59e0b", Archived: "#94a3b8" };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{logs.length} email{logs.length !== 1 ? "s" : ""} logged</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Log Email</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact</label><input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Subject *</label><input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="Subject line" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Direction</label><select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="Sent">Sent</option><option value="Received">Received</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{statuses.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAdd} disabled={!form.subject.trim()}>Log</GreenButton></div>
+        </div>
+      )}
+      {logs.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📧</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Emails Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Track important emails. Gmail/Outlook integration & AI drafting coming soon.</p></div>
+      ) : logs.map((l) => (
+        <div key={l.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: l.direction === "Received" ? "#fef2f2" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{l.direction === "Received" ? "📥" : "📤"}</div>
+          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.subject}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{l.contact || l.email} · {fmtDate(l.date)}{l.notes ? ` · ${l.notes}` : ""}</div></div>
+          <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${statusColors[l.status] || "#64748b"}15`, color: statusColors[l.status] || "#64748b", flexShrink: 0 }}>{l.status?.toUpperCase()}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SocialTab({ isMobile }) {
+  const [subView, setSubView] = useState("planner");
+  const [posts, setPosts] = useState([]);
+  const [accounts, setAccts] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const platforms = ["Instagram", "Facebook", "TikTok", "LinkedIn", "X/Twitter", "YouTube", "Other"];
+  const postStatuses = ["Draft", "Scheduled", "Posted"];
+  const [form, setForm] = useState({ platform: "Instagram", content: "", date: new Date().toISOString().split("T")[0], time: "12:00", status: "Draft", notes: "" });
+  const [acctForm, setAcctForm] = useState({ platform: "Instagram", handle: "", url: "", followers: "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ platform: "Instagram", content: "", date: new Date().toISOString().split("T")[0], time: "12:00", status: "Draft", notes: "" }); setShowForm(false); };
+  const handleAddPost = () => { if (!form.content.trim()) return; setPosts((p) => [{ id: Date.now(), ...form }, ...p]); resetForm(); };
+  const handleAddAcct = () => { if (!acctForm.handle.trim()) return; setAccts((p) => [...p, { id: Date.now(), ...acctForm }]); setAcctForm({ platform: "Instagram", handle: "", url: "", followers: "" }); };
+  const platformColors = { Instagram: "#e1306c", Facebook: "#1877f2", TikTok: "#000", LinkedIn: "#0a66c2", "X/Twitter": "#1da1f2", YouTube: "#ff0000", Other: "#64748b" };
+  const statusColors = { Draft: "#64748b", Scheduled: "#f59e0b", Posted: "#16a34a" };
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[{ k: "planner", l: "Content Planner" }, { k: "creator", l: "Creator" }, { k: "accounts", l: "Accounts" }, { k: "analytics", l: "Analytics" }].map(({ k, l }) => (
+          <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
+        ))}
+      </div>
+
+      {subView === "planner" && (<>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, color: "#64748b" }}>{posts.length} post{posts.length !== 1 ? "s" : ""}</span>
+          <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} New Post</GreenButton>
+        </div>
+        {showForm && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Platform</label><select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{platforms.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{postStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Content *</label><textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Post caption or content description..." rows={3} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddPost} disabled={!form.content.trim()}>Save</GreenButton></div>
+          </div>
+        )}
+        {posts.length === 0 && !showForm ? (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📅</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Posts Planned</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Plan and schedule social media content across platforms.</p></div>
+        ) : posts.map((p) => (
+          <div key={p.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${platformColors[p.platform] || "#64748b"}15`, color: platformColors[p.platform] || "#64748b" }}>{p.platform?.toUpperCase()}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${statusColors[p.status]}15`, color: statusColors[p.status] }}>{p.status?.toUpperCase()}</span>
+              </div>
+              <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{fmtDate(p.date)}</span>
+            </div>
+            <p style={{ fontSize: 13, color: "#475569", margin: 0, lineHeight: 1.5 }}>{p.content}</p>
+          </div>
+        ))}
+      </>)}
+
+      {subView === "creator" && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🎬</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>Content Creator Studio</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px", lineHeight: 1.6 }}>Upload photos & videos, edit with AI, and distribute across all channels at once. Coming soon with media editing APIs.</p>
+        </div>
+      )}
+
+      {subView === "accounts" && (<>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, color: "#64748b" }}>{accounts.length} account{accounts.length !== 1 ? "s" : ""}</span>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <select value={acctForm.platform} onChange={(e) => setAcctForm({ ...acctForm, platform: e.target.value })} style={{ ...inputStyle, fontSize: 12, cursor: "pointer" }}>{platforms.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+            <input value={acctForm.handle} onChange={(e) => setAcctForm({ ...acctForm, handle: e.target.value })} placeholder="@handle" style={{ ...inputStyle, fontSize: 12 }} className="sz-input" />
+            <input value={acctForm.url} onChange={(e) => setAcctForm({ ...acctForm, url: e.target.value })} placeholder="Profile URL" style={{ ...inputStyle, fontSize: 12 }} className="sz-input" />
+            <GreenButton small onClick={handleAddAcct} disabled={!acctForm.handle.trim()}>Add</GreenButton>
+          </div>
+        </div>
+        {accounts.map((a) => (
+          <div key={a.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", marginBottom: 6, display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: `${platformColors[a.platform] || "#64748b"}15`, color: platformColors[a.platform] || "#64748b" }}>{a.platform}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{a.handle}</span>
+            {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#3b82f6", textDecoration: "none" }}>↗</a>}
+          </div>
+        ))}
+      </>)}
+
+      {subView === "analytics" && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📈</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>Social Analytics</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, lineHeight: 1.6 }}>Track followers, engagement, and growth across platforms. Will populate once accounts are connected via APIs.</p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany }) {
+  const tab = activeTab || "dashboard";
   const tabs = [
-    { key: "links", label: "🔗 Links" },
-    { key: "goals", label: "🎯 Goals" },
-    { key: "habits", label: "⚡ Habits" },
-    { key: "learning", label: "📚 Learning" },
+    { key: "dashboard", label: "📊 Dashboard" },
+    { key: "contacts", label: "📇 Contacts" },
+    { key: "calls", label: "📞 Calls" },
+    { key: "texts", label: "💬 Texts" },
+    { key: "emails", label: "📧 Emails" },
+    { key: "social", label: "📱 Social" },
   ];
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Growth" subtitle="Track your growth journey" isMobile={isMobile} />
+      <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "links" && <LinksTab isMobile={isMobile} links={savedLinks || []} onAdd={onAddLink} onDelete={onDeleteLink} />}
-        {tab === "goals" && <GoalsTab isMobile={isMobile} goals={goals || []} onAdd={onAddGoal} onUpdate={onUpdateGoal} onDelete={onDeleteGoal} />}
-        {tab === "habits" && <HabitsTab isMobile={isMobile} habits={habits || []} habitLogs={habitLogs || []} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddLog={onAddHabitLog} onDeleteLog={onDeleteHabitLog} />}
-        {tab === "learning" && <LearningTab isMobile={isMobile} items={learningItems || []} onAdd={onAddLearning} onUpdate={onUpdateLearning} onDelete={onDeleteLearning} />}
+        {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
+        {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
+        {tab === "calls" && <CallsTab isMobile={isMobile} companies={companies} />}
+        {tab === "texts" && <TextsTab isMobile={isMobile} />}
+        {tab === "emails" && <EmailsTab isMobile={isMobile} />}
+        {tab === "social" && <SocialTab isMobile={isMobile} />}
       </div>
     </div>
   );
@@ -5110,7 +5367,7 @@ export default function SuarezApp() {
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "finance", label: "Finance", featured: true, icon: <span style={{ fontSize: 18 }}>💰</span> },
-    { id: "growth", label: "Growth", icon: <span style={{ fontSize: 18 }}>🌱</span> },
+    { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
   ];
 
   const mobileNavItems = [
@@ -5118,7 +5375,7 @@ export default function SuarezApp() {
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
-    { id: "growth", label: "Growth", icon: <span style={{ fontSize: 18 }}>🌱</span> },
+    { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
   ];
 
   const renderPage = () => {
@@ -5128,8 +5385,8 @@ export default function SuarezApp() {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} />;
-      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
-      case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
+      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
+      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       default: return null;
     }
   };
