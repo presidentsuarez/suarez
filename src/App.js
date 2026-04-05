@@ -3881,13 +3881,84 @@ function LifeConsolidatedView(props) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GROWTH (Tabbed: One, Two)
+   LINKS TAB (saved reference links)
    ═══════════════════════════════════════════════════════════ */
 
-function GrowthView({ isMobile, activeTab, onTabChange }) {
-  const tab = activeTab || "one";
+function LinksTab({ isMobile, links, onAdd, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", url: "", category: "General", notes: "" });
+  const [saving, setSaving] = useState(false);
+
+  const categories = ["General", "Business", "Finance", "Real Estate", "Legal", "Health", "Education", "Tools", "Other"];
+  const resetForm = () => { setForm({ title: "", url: "", category: "General", notes: "" }); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.url.trim()) return;
+    setSaving(true);
+    let url = form.url.trim();
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    await onAdd({ title: form.title, url, category: form.category, notes: form.notes || null });
+    resetForm();
+    setSaving(false);
+  };
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const catColors = { General: "#64748b", Business: "#8b5cf6", Finance: "#16a34a", "Real Estate": "#ea580c", Legal: "#dc2626", Health: "#ec4899", Education: "#3b82f6", Tools: "#0891b2", Other: "#78716c" };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{links.length} link{links.length !== 1 ? "s" : ""} saved</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Link</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Supabase Dashboard" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>URL *</label><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="e.g. supabase.com/dashboard" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.url.trim()}>{saving ? "..." : "Save"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {links.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🔗</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Links Saved</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Save important reference links you want quick access to.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {links.map((link) => (
+            <div key={link.id} onClick={() => window.open(link.url, "_blank")} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#fff"; }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🔗</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{link.title}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{link.url}</div>
+                {link.notes && <p style={{ fontSize: 11, color: "#64748b", marginTop: 3, margin: "3px 0 0" }}>{link.notes}</p>}
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: `${catColors[link.category] || "#64748b"}15`, color: catColors[link.category] || "#64748b", flexShrink: 0, letterSpacing: "0.03em" }}>{link.category?.toUpperCase()}</span>
+              <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this link?")) onDelete(link.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}>{Icons.trash}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GROWTH (Tabbed: Links, Two)
+   ═══════════════════════════════════════════════════════════ */
+
+function GrowthView({ isMobile, activeTab, onTabChange, savedLinks, onAddLink, onDeleteLink }) {
+  const tab = activeTab || "links";
   const tabs = [
-    { key: "one", label: "One" },
+    { key: "links", label: "🔗 Links" },
     { key: "two", label: "Two" },
   ];
 
@@ -3906,7 +3977,7 @@ function GrowthView({ isMobile, activeTab, onTabChange }) {
       <PageHeader title="Growth" subtitle="Track your growth journey" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "one" && <PlaceholderTab label="Growth — One" />}
+        {tab === "links" && <LinksTab isMobile={isMobile} links={savedLinks || []} onAdd={onAddLink} onDelete={onDeleteLink} />}
         {tab === "two" && <PlaceholderTab label="Growth — Two" />}
       </div>
     </div>
@@ -3958,6 +4029,7 @@ export default function SuarezApp() {
   const [doseLogs, setDoseLogs] = useState([]);
   const [bodyLogs, setBodyLogs] = useState([]);
   const [monthlyBills, setMonthlyBills] = useState([]);
+  const [savedLinks, setSavedLinks] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
@@ -3981,7 +4053,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -4009,6 +4081,7 @@ export default function SuarezApp() {
       supabase.from("monthly_bills").select("*").order("created_at", { ascending: true }),
       supabase.from("dose_logs").select("*").order("created_at", { ascending: false }),
       supabase.from("body_logs").select("*").order("date", { ascending: false }),
+      supabase.from("saved_links").select("*").order("created_at", { ascending: false }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -4037,6 +4110,7 @@ export default function SuarezApp() {
     if (mbRes.data) setMonthlyBills(mbRes.data);
     if (dlRes.data) setDoseLogs(dlRes.data);
     if (blRes.data) setBodyLogs(blRes.data);
+    if (linksRes.data) setSavedLinks(linksRes.data);
     setDataLoading(false);
   }, [session]);
 
@@ -4133,6 +4207,8 @@ export default function SuarezApp() {
   // Body Logs CRUD
   const handleAddBodyLog = async (form) => { const { data, error } = await supabase.from("body_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBodyLogs((p) => [data, ...p]); };
   const handleDeleteBodyLog = async (id) => { const { error } = await supabase.from("body_logs").delete().eq("id", id); if (!error) setBodyLogs((p) => p.filter((b) => b.id !== id)); };
+  const handleAddLink = async (form) => { const { data, error } = await supabase.from("saved_links").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setSavedLinks((p) => [data, ...p]); };
+  const handleDeleteLink = async (id) => { const { error } = await supabase.from("saved_links").delete().eq("id", id); if (!error) setSavedLinks((p) => p.filter((l) => l.id !== id)); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -4204,7 +4280,7 @@ export default function SuarezApp() {
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
-      case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} />;
       default: return null;
     }
   };
