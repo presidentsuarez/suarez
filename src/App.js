@@ -2263,23 +2263,135 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
    BUSINESS (Tabbed wrapper: Entities, Contacts, Insurance)
    ═══════════════════════════════════════════════════════════ */
 
-function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, session }) {
+function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, bizGoals, bizMilestones, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, onAddBizGoal, onUpdateBizGoal, onDeleteBizGoal, onAddBizMilestone, onDeleteBizMilestone, session }) {
   const tab = activeTab || "entities";
   const setTab = onTabChange;
   const tabs = [
     { key: "entities", label: "Entities" },
     { key: "reports", label: "📄 Reports" },
+    { key: "goals", label: "🎯 Goals" },
+    { key: "milestones", label: "🏆 Milestones" },
   ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Business" subtitle="Entities & reports" isMobile={isMobile} />
+      <PageHeader title="Business" subtitle="Entities, reports & goals" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
         {tab === "entities" && <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} />}
         {tab === "reports" && <ReportsTab isMobile={isMobile} businesses={businesses} reports={reports || []} onAdd={onAddReport} onUpdate={onUpdateReport} onDelete={onDeleteReport} session={session} />}
+        {tab === "goals" && <BizGoalsTab isMobile={isMobile} businesses={businesses} goals={bizGoals || []} onAdd={onAddBizGoal} onUpdate={onUpdateBizGoal} onDelete={onDeleteBizGoal} />}
+        {tab === "milestones" && <BizMilestonesTab isMobile={isMobile} businesses={businesses} milestones={bizMilestones || []} onAdd={onAddBizMilestone} onDelete={onDeleteBizMilestone} />}
       </div>
     </div>
+  );
+}
+
+/* — Business Goals Tab — */
+function BizGoalsTab({ isMobile, businesses, goals, onAdd, onUpdate, onDelete }) {
+  const [filterBiz, setFilterBiz] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", business_id: "", target_date: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ title: "", business_id: "", target_date: "", notes: "" }); setShowForm(false); };
+  const handleSubmit = async () => { if (!form.title.trim() || !form.business_id) return; setSaving(true); await onAdd({ title: form.title, business_id: form.business_id, target_date: form.target_date || null, notes: form.notes || null, status: "active" }); resetForm(); setSaving(false); };
+  const toggleStatus = (g) => onUpdate(g.id, { status: g.status === "active" ? "done" : "active" });
+  const filtered = filterBiz === "all" ? goals : goals.filter((g) => g.business_id === filterBiz);
+  const active = filtered.filter((g) => g.status === "active");
+  const done = filtered.filter((g) => g.status === "done");
+  const getBizName = (id) => businesses.find((b) => b.id === id)?.name || "—";
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <select value={filterBiz} onChange={(e) => setFilterBiz(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}><option value="all">All Businesses</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Goal</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Goal *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Launch new product line" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Business *</label><select value={form.business_id} onChange={(e) => setForm({ ...form, business_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Target Date</label><input type="date" value={form.target_date} onChange={(e) => setForm({ ...form, target_date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.business_id}>{saving ? "..." : "Save"}</GreenButton></div>
+        </div>
+      )}
+      {filtered.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Business Goals</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Set goals for each business entity.</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[...active, ...done].map((g) => { const isDone = g.status === "done"; return (
+            <div key={g.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${isDone ? "#bbf7d0" : "#e2e8f0"}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, opacity: isDone ? 0.7 : 1 }}>
+              <button onClick={() => toggleStatus(g)} style={{ width: 28, height: 28, borderRadius: 8, border: `2px solid ${isDone ? "#16a34a" : "#cbd5e1"}`, background: isDone ? "#f0fdf4" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>{isDone && Icons.check}</button>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", textDecoration: isDone ? "line-through" : "none" }}>{g.title}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 3, fontSize: 11, color: "#64748b", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 600 }}>{getBizName(g.business_id)}</span>
+                  {g.target_date && <span style={{ fontFamily: "'DM Mono', monospace" }}>· Due {fmtDate(g.target_date)}</span>}
+                  {g.notes && <span>· {g.notes}</span>}
+                </div>
+              </div>
+              <button onClick={() => { if (window.confirm("Delete?")) onDelete(g.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+            </div>); })}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* — Business Milestones Tab — */
+function BizMilestonesTab({ isMobile, businesses, milestones, onAdd, onDelete }) {
+  const [filterBiz, setFilterBiz] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", business_id: "", date: new Date().toISOString().split("T")[0], notes: "" });
+  const [saving, setSaving] = useState(false);
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ title: "", business_id: "", date: new Date().toISOString().split("T")[0], notes: "" }); setShowForm(false); };
+  const handleSubmit = async () => { if (!form.title.trim() || !form.business_id) return; setSaving(true); await onAdd({ title: form.title, business_id: form.business_id, date: form.date, notes: form.notes || null }); resetForm(); setSaving(false); };
+  const filtered = filterBiz === "all" ? milestones : milestones.filter((m) => m.business_id === filterBiz);
+  const getBizName = (id) => businesses.find((b) => b.id === id)?.name || "—";
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <select value={filterBiz} onChange={(e) => setFilterBiz(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}><option value="all">All Businesses</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Milestone</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Milestone *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. First client signed" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Business *</label><select value={form.business_id} onChange={(e) => setForm({ ...form, business_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.business_id}>{saving ? "..." : "Save"}</GreenButton></div>
+        </div>
+      )}
+      {filtered.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>🏆</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Milestones</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Track key achievements and events for your businesses.</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map((m) => (
+            <div key={m.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "#fffbeb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏆</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{m.title}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 3, fontSize: 11, color: "#64748b", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 600 }}>{getBizName(m.business_id)}</span>
+                  <span style={{ fontFamily: "'DM Mono', monospace" }}>· {fmtDate(m.date)}</span>
+                  {m.notes && <span>· {m.notes}</span>}
+                </div>
+              </div>
+              <button onClick={() => { if (window.confirm("Delete?")) onDelete(m.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -4274,12 +4386,74 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
    FINANCE (Tabbed: Money, Wealth)
    ═══════════════════════════════════════════════════════════ */
 
+function FinDashboardTab({ isMobile, transactions, accounts, assets, investments, monthlyBills, policies }) {
+  const curMonth = new Date().toISOString().slice(0, 7);
+  const monthTxns = transactions.filter((t) => t.date && t.date.startsWith(curMonth));
+  const monthIncome = monthTxns.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+  const monthExpenses = monthTxns.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const totalBills = (monthlyBills || []).filter((b) => b.active !== false).reduce((s, b) => s + Number(b.amount || 0), 0);
+  const totalAssets = (assets || []).reduce((s, a) => s + Number(a.estimated_value || 0), 0);
+  const portfolioValue = (investments || []).reduce((s, i) => s + Number(i.current_value || i.amount_invested || 0), 0);
+  const activeAccounts = (accounts || []).filter((a) => a.active !== false);
+  const uncategorized = transactions.filter((t) => !t.category || t.category === "Uncategorized").length;
+  const activePolicies = (policies || []).filter((p) => p.status === "Active" || p.status === "active").length;
+
+  const cards = [
+    { label: "Monthly Income", value: fmtCurrency(monthIncome), accent: "#16a34a" },
+    { label: "Monthly Expenses", value: fmtCurrency(monthExpenses), accent: "#dc2626" },
+    { label: "Net Flow", value: fmtCurrency(monthIncome - monthExpenses), accent: monthIncome - monthExpenses >= 0 ? "#3b82f6" : "#f59e0b" },
+    { label: "Monthly Bills", value: fmtCurrency(totalBills), accent: "#7c3aed" },
+    { label: "Total Assets", value: fmtCurrency(totalAssets), accent: "#0891b2" },
+    { label: "Portfolio", value: fmtCurrency(portfolioValue), accent: "#059669" },
+  ];
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        {cards.map((c) => <StatCard key={c.label} label={c.label} value={c.value} accent={c.accent} compact />)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+          <SectionHeader text="Quick Stats" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[
+              { label: "Active Accounts", value: activeAccounts.length, emoji: "🏦" },
+              { label: "Transactions This Month", value: monthTxns.length, emoji: "📒" },
+              { label: "Uncategorized", value: uncategorized, emoji: uncategorized > 0 ? "⚠️" : "✅" },
+              { label: "Active Insurance Policies", value: activePolicies, emoji: "🛡️" },
+              { label: "Real Estate Holdings", value: (investments || []).filter((i) => i.asset_type === "Real Estate").length, emoji: "🏠" },
+            ].map((s) => (
+              <div key={s.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
+                <span style={{ color: "#475569" }}>{s.emoji} {s.label}</span>
+                <span style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{s.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+          <SectionHeader text="Top Expenses This Month" />
+          {(() => {
+            const expByCategory = {};
+            monthTxns.filter((t) => t.type === "expense").forEach((t) => { const c = t.category || "Uncategorized"; expByCategory[c] = (expByCategory[c] || 0) + Number(t.amount); });
+            const sorted = Object.entries(expByCategory).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            return sorted.length === 0 ? <p style={{ fontSize: 13, color: "#94a3b8" }}>No expenses this month</p> : sorted.map(([cat, amt]) => {
+              const pct = monthExpenses > 0 ? Math.round((amt / monthExpenses) * 100) : 0;
+              return (<div key={cat} style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: "#475569", fontWeight: 600 }}>{cat}</span><span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{fmtCurrency(amt)} ({pct}%)</span></div><div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(135deg, #dc2626, #b91c1c)", borderRadius: 3 }} /></div></div>);
+            });
+          })()}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function FinanceView(props) {
   const { isMobile, activeTab, onTabChange } = props;
-  const tab = activeTab || "wealth";
+  const tab = activeTab || "dashboard";
   const [wealthTab, setWealthTab] = useState(null);
   const tabs = [
-    { key: "wealth", label: "📊 Wealth" },
+    { key: "dashboard", label: "📊 Dashboard" },
+    { key: "wealth", label: "💰 Wealth" },
     { key: "bookkeeping", label: "📒 Bookkeeping" },
     { key: "accounts", label: "🏦 Accounts" },
     { key: "bills", label: "📋 Bills" },
@@ -4293,6 +4467,7 @@ function FinanceView(props) {
       <PageHeader title="Finance" subtitle="Money, wealth, bills & insurance" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
+        {tab === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
         {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} />}
         {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
@@ -4667,6 +4842,8 @@ export default function SuarezApp() {
   const [learningItems, setLearningItems] = useState([]);
   const [uploadLogs, setUploadLogs] = useState([]);
   const [businessReports, setBusinessReports] = useState([]);
+  const [bizGoals, setBizGoals] = useState([]);
+  const [bizMilestones, setBizMilestones] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
@@ -4690,7 +4867,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -4725,6 +4902,8 @@ export default function SuarezApp() {
       supabase.from("learning_items").select("*").order("created_at", { ascending: false }),
       supabase.from("upload_logs").select("*").order("created_at", { ascending: false }),
       supabase.from("business_reports").select("*").order("created_at", { ascending: false }),
+      supabase.from("business_goals").select("*").order("created_at", { ascending: false }),
+      supabase.from("business_milestones").select("*").order("date", { ascending: false }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -4760,6 +4939,8 @@ export default function SuarezApp() {
     if (learningRes.data) setLearningItems(learningRes.data);
     if (uploadLogsRes.data) setUploadLogs(uploadLogsRes.data);
     if (bizReportsRes.data) setBusinessReports(bizReportsRes.data);
+    if (bizGoalsRes.data) setBizGoals(bizGoalsRes.data);
+    if (bizMilestonesRes.data) setBizMilestones(bizMilestonesRes.data);
     setDataLoading(false);
   }, [session]);
 
@@ -4872,6 +5053,11 @@ export default function SuarezApp() {
   const handleAddReport = async (form) => { const { data, error } = await supabase.from("business_reports").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBusinessReports((p) => [data, ...p]); };
   const handleUpdateReport = async (id, form) => { const { data, error } = await supabase.from("business_reports").update(form).eq("id", id).select().single(); if (!error && data) setBusinessReports((p) => p.map((r) => r.id === id ? data : r)); };
   const handleDeleteReport = async (id) => { const { error } = await supabase.from("business_reports").delete().eq("id", id); if (!error) setBusinessReports((p) => p.filter((r) => r.id !== id)); };
+  const handleAddBizGoal = async (form) => { const { data, error } = await supabase.from("business_goals").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBizGoals((p) => [data, ...p]); };
+  const handleUpdateBizGoal = async (id, form) => { const { data, error } = await supabase.from("business_goals").update(form).eq("id", id).select().single(); if (!error && data) setBizGoals((p) => p.map((g) => g.id === id ? data : g)); };
+  const handleDeleteBizGoal = async (id) => { const { error } = await supabase.from("business_goals").delete().eq("id", id); if (!error) setBizGoals((p) => p.filter((g) => g.id !== id)); };
+  const handleAddBizMilestone = async (form) => { const { data, error } = await supabase.from("business_milestones").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBizMilestones((p) => [data, ...p]); };
+  const handleDeleteBizMilestone = async (id) => { const { error } = await supabase.from("business_milestones").delete().eq("id", id); if (!error) setBizMilestones((p) => p.filter((m) => m.id !== id)); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -4941,7 +5127,7 @@ export default function SuarezApp() {
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
-      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} />;
+      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       default: return null;
