@@ -83,9 +83,7 @@ const GlobalStyles = () => (
 /* ─── COMMON COMPONENTS ─────────────────────────────────── */
 
 const SuarezLogo = ({ size = 34 }) => (
-  <div style={{ width: size, height: size, borderRadius: size * 0.24, background: "linear-gradient(135deg, #16a34a, #15803d)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 10px rgba(22,163,74,0.3)", flexShrink: 0 }}>
-    <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-  </div>
+  <img src="/Favicon.png" alt="Suarez" style={{ width: size, height: size, borderRadius: size * 0.22, objectFit: "cover", flexShrink: 0 }} />
 );
 
 const PageHeader = ({ title, subtitle, isMobile, children }) => (
