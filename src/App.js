@@ -212,6 +212,9 @@ const Icons = {
   users: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   star: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
   heart: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
+  command: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
+  leaf: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M17 8C8 10 5.9 16.17 3.82 21.34"/><path d="M20.2 2.8s-3.1 1.5-5.7 4.1c-2.6 2.6-4.5 6.1-4.5 6.1s3.5-1.9 6.1-4.5c2.6-2.6 4.1-5.7 4.1-5.7z"/></svg>,
+  sprout: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 22V10"/><path d="M6 13c0-3.3 2.7-6 6-6"/><path d="M18 13c0-3.3-2.7-6-6-6"/><path d="M6 13c-2.2 0-4-1.8-4-4s1.8-4 4-4c.5 0 1 .1 1.4.3"/><path d="M18 13c2.2 0 4-1.8 4-4s-1.8-4-4-4c-.5 0-1 .1-1.4.3"/></svg>,
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -398,6 +401,7 @@ function AuthScreen() {
    ═══════════════════════════════════════════════════════════ */
 
 function ProfileView({ session, isMobile, onSignOut }) {
+  const [profileTab, setProfileTab] = useState("profile");
   const user = session?.user || {};
   const email = user.email || "—";
   const fullName = user.user_metadata?.full_name || "";
@@ -419,29 +423,40 @@ function ProfileView({ session, isMobile, onSignOut }) {
     </div>
   );
 
+  const tabs = [
+    { key: "profile", label: "Profile" },
+    { key: "settings", label: "Settings" },
+  ];
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Profile & Settings" subtitle="Account information" isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "20px 16px" : "28px 32px", maxWidth: 640 }}>
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "24px 20px" : "28px", marginBottom: 20, position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(135deg, #16a34a, #15803d)" }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #16a34a, #15803d)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700, color: "#fff", fontFamily: "'DM Sans', sans-serif", boxShadow: "0 4px 12px rgba(22,163,74,0.3)", flexShrink: 0 }}>{initials}</div>
-            <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: 0 }}>{displayName}</h2>
-              <p style={{ fontSize: 13, color: "#64748b", fontFamily: "'DM Sans', sans-serif", margin: "2px 0 0" }}>{email}</p>
-              <span style={{ display: "inline-block", marginTop: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>OWNER</span>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", maxWidth: 640 }}>
+        <TabBar tabs={tabs} active={profileTab} onChange={setProfileTab} isMobile={isMobile} />
+        {profileTab === "profile" && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "24px 20px" : "28px", marginBottom: 20, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(135deg, #16a34a, #15803d)" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #16a34a, #15803d)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700, color: "#fff", fontFamily: "'DM Sans', sans-serif", boxShadow: "0 4px 12px rgba(22,163,74,0.3)", flexShrink: 0 }}>{initials}</div>
+                <div>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: 0 }}>{displayName}</h2>
+                  <p style={{ fontSize: 13, color: "#64748b", fontFamily: "'DM Sans', sans-serif", margin: "2px 0 0" }}>{email}</p>
+                  <span style={{ display: "inline-block", marginTop: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>OWNER</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px", marginBottom: 20 }}>
+              <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>} label="Email" value={email} />
+              <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>} label="Sign-in Method" value={provider === "google" ? "Google OAuth" : "Email & Password"} />
+              <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>} label="Member Since" value={createdAt} />
+            </div>
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px" }}>
+              <Row icon={Icons.signout} label="Sign Out" value="End your current session" action={onSignOut} actionLabel="Sign Out" danger />
             </div>
           </div>
-        </div>
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px", marginBottom: 20 }}>
-          <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>} label="Email" value={email} />
-          <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>} label="Sign-in Method" value={provider === "google" ? "Google OAuth" : "Email & Password"} />
-          <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>} label="Member Since" value={createdAt} />
-        </div>
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px" }}>
-          <Row icon={Icons.signout} label="Sign Out" value="End your current session" action={onSignOut} actionLabel="Sign Out" danger />
-        </div>
+        )}
+        {profileTab === "settings" && <SettingsView isMobile={isMobile} session={session} />}
       </div>
     </div>
   );
@@ -566,7 +581,7 @@ const TabBar = ({ tabs, active, onChange, isMobile }) => (
   </div>
 );
 
-function MoneyView({ isMobile, activeTab, onTabChange, transactions, accounts, uploads, lifeExpenses, assets, onAddAccount, onToggleAccount, onDeleteAccount, onAddTransaction, onDeleteTransaction, onAddLifeExpense, onDeleteLifeExpense, onUpload, onDeleteUpload }) {
+function MoneyView({ isMobile, activeTab, onTabChange, transactions, accounts, uploads, lifeExpenses, assets, onAddAccount, onToggleAccount, onDeleteAccount, onAddTransaction, onDeleteTransaction, onAddLifeExpense, onDeleteLifeExpense, onUpload, onDeleteUpload, nested }) {
   const tab = activeTab || "bookkeeping";
   const setTab = onTabChange;
   const tabs = [
@@ -576,15 +591,23 @@ function MoneyView({ isMobile, activeTab, onTabChange, transactions, accounts, u
     { key: "accounts", label: "Accounts" },
   ];
 
+  const content = (
+    <>
+      <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
+      {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={transactions} accounts={accounts} onAdd={onAddTransaction} onDelete={onDeleteTransaction} />}
+      {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={lifeExpenses} onAdd={onAddLifeExpense} onDelete={onDeleteLifeExpense} />}
+        {tab === "statements" && <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets} accounts={accounts} />}
+        {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={accounts} onAdd={onAddAccount} onToggle={onToggleAccount} onDelete={onDeleteAccount} />}
+    </>
+  );
+
+  if (nested) return content;
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Money" subtitle="Day-to-day finances & bookkeeping" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={transactions} accounts={accounts} onAdd={onAddTransaction} onDelete={onDeleteTransaction} />}
-        {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={lifeExpenses} onAdd={onAddLifeExpense} onDelete={onDeleteLifeExpense} />}
-        {tab === "statements" && <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets} accounts={accounts} />}
-        {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={accounts} onAdd={onAddAccount} onToggle={onToggleAccount} onDelete={onDeleteAccount} />}
+        {content}
       </div>
     </div>
   );
@@ -594,7 +617,7 @@ function MoneyView({ isMobile, activeTab, onTabChange, transactions, accounts, u
    WEALTH (Tabbed: Portfolio, Net Worth, Assets)
    ═══════════════════════════════════════════════════════════ */
 
-function WealthView({ isMobile, activeTab, onTabChange, investments, assets, accounts, snapshots, uploads, onAddAsset, onUpdateAsset, onDeleteAsset, onAddInvestment, onUpdateInvestment, onDeleteInvestment, onAddSnapshot, onDeleteSnapshot, onUpload, onDeleteUpload }) {
+function WealthView({ isMobile, activeTab, onTabChange, investments, assets, accounts, snapshots, uploads, onAddAsset, onUpdateAsset, onDeleteAsset, onAddInvestment, onUpdateInvestment, onDeleteInvestment, onAddSnapshot, onDeleteSnapshot, onUpload, onDeleteUpload, nested }) {
   const tab = activeTab || "networth";
   const setTab = onTabChange;
   const tabs = [
@@ -606,17 +629,25 @@ function WealthView({ isMobile, activeTab, onTabChange, investments, assets, acc
     { key: "uploader", label: "📤 Uploader" },
   ];
 
+  const content = (
+    <>
+      <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
+      {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={investments.filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
+      {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Real Estate")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
+      {tab === "companies" && <CompaniesWealthTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Business Equity")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
+      {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={assets} accounts={accounts} investments={investments} snapshots={snapshots} onAddSnapshot={onAddSnapshot} onDeleteSnapshot={onDeleteSnapshot} />}
+      {tab === "assets" && <AssetsTab isMobile={isMobile} assets={assets} accounts={accounts} onAdd={onAddAsset} onUpdate={onUpdateAsset} onDelete={onDeleteAsset} />}
+      {tab === "uploader" && <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />}
+    </>
+  );
+
+  if (nested) return content;
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Wealth" subtitle="Investments, net worth & asset tracking" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={investments.filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
-        {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Real Estate")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
-        {tab === "companies" && <CompaniesWealthTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Business Equity")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
-        {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={assets} accounts={accounts} investments={investments} snapshots={snapshots} onAddSnapshot={onAddSnapshot} onDeleteSnapshot={onDeleteSnapshot} />}
-        {tab === "assets" && <AssetsTab isMobile={isMobile} assets={assets} accounts={accounts} onAdd={onAddAsset} onUpdate={onUpdateAsset} onDelete={onDeleteAsset} />}
-        {tab === "uploader" && <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />}
+        {content}
       </div>
     </div>
   );
@@ -2516,7 +2547,7 @@ function MonthlyBillsTab({ isMobile, bills, onAdd, onUpdate, onDelete }) {
    HOME & LIFE (Tabbed: Properties, Utilities, Calendar, Planner)
    ═══════════════════════════════════════════════════════════ */
 
-function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, calendarEvents, plannerTasks, monthlyBills, onAddHome, onUpdateHome, onDeleteHome, onAddBill, onUpdateBill, onDeleteBill, onAddEvent, onDeleteEvent, onAddTask, onUpdateTask, onDeleteTask, onAddMonthlyBill, onUpdateMonthlyBill, onDeleteMonthlyBill }) {
+function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, calendarEvents, plannerTasks, monthlyBills, onAddHome, onUpdateHome, onDeleteHome, onAddBill, onUpdateBill, onDeleteBill, onAddEvent, onDeleteEvent, onAddTask, onUpdateTask, onDeleteTask, onAddMonthlyBill, onUpdateMonthlyBill, onDeleteMonthlyBill, nested }) {
   const tab = activeTab || "homes";
   const setTab = onTabChange;
   const tabs = [
@@ -2527,17 +2558,23 @@ function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, c
     { key: "planner", label: "Planner" },
   ];
 
+  const content = (
+    <>
+      <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
+      {tab === "homes" && <HomesTab isMobile={isMobile} homes={homes} onAdd={onAddHome} onUpdate={onUpdateHome} onDelete={onDeleteHome} />}
+      {tab === "utilities" && <UtilitiesTab isMobile={isMobile} homes={homes} utilityBills={utilityBills} onAdd={onAddBill} onUpdate={onUpdateBill} onDelete={onDeleteBill} />}
+      {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={monthlyBills} onAdd={onAddMonthlyBill} onUpdate={onUpdateMonthlyBill} onDelete={onDeleteMonthlyBill} />}
+      {tab === "calendar" && <CalendarView isMobile={isMobile} events={calendarEvents} onAdd={onAddEvent} onDelete={onDeleteEvent} asTab />}
+      {tab === "planner" && <PlannerView isMobile={isMobile} tasks={plannerTasks} onAdd={onAddTask} onUpdate={onUpdateTask} onDelete={onDeleteTask} asTab />}
+    </>
+  );
+
+  if (nested) return content;
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Home & Life" subtitle="Properties, utilities & planning" isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "homes" && <HomesTab isMobile={isMobile} homes={homes} onAdd={onAddHome} onUpdate={onUpdateHome} onDelete={onDeleteHome} />}
-        {tab === "utilities" && <UtilitiesTab isMobile={isMobile} homes={homes} utilityBills={utilityBills} onAdd={onAddBill} onUpdate={onUpdateBill} onDelete={onDeleteBill} />}
-        {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={monthlyBills} onAdd={onAddMonthlyBill} onUpdate={onUpdateMonthlyBill} onDelete={onDeleteMonthlyBill} />}
-        {tab === "calendar" && <CalendarView isMobile={isMobile} events={calendarEvents} onAdd={onAddEvent} onDelete={onDeleteEvent} asTab />}
-        {tab === "planner" && <PlannerView isMobile={isMobile} tasks={plannerTasks} onAdd={onAddTask} onUpdate={onUpdateTask} onDelete={onDeleteTask} asTab />}
-      </div>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>{content}</div>
     </div>
   );
 }
@@ -2546,20 +2583,26 @@ function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, c
    FAMILY (Tabbed: Members, Grades, Life Events, Prayer Wall)
    ═══════════════════════════════════════════════════════════ */
 
-function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer }) {
+function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer, nested }) {
   const tab = activeTab || "members";
   const setTab = onTabChange;
+
+  const content = (
+    <>
+      <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }, { key: "events", label: "Life Events" }, { key: "prayer", label: "Prayer Wall" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+      {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} />}
+      {tab === "grades" && <GradesTab isMobile={isMobile} kids={kids} grades={grades} onAdd={onAddGrade} onDelete={onDeleteGrade} />}
+      {tab === "events" && <LifeEventsTab isMobile={isMobile} kids={kids} milestones={milestones} onAdd={onAddMilestone} onDelete={onDeleteMilestone} />}
+      {tab === "prayer" && <PrayerWallTab isMobile={isMobile} prayers={prayers} onAdd={onAddPrayer} onUpdate={onUpdatePrayer} onDelete={onDeletePrayer} />}
+    </>
+  );
+
+  if (nested) return content;
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Family" subtitle="Members, milestones & prayer wall" isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }, { key: "events", label: "Life Events" }, { key: "prayer", label: "Prayer Wall" }]} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} />}
-        {tab === "grades" && <GradesTab isMobile={isMobile} kids={kids} grades={grades} onAdd={onAddGrade} onDelete={onDeleteGrade} />}
-        {tab === "events" && <LifeEventsTab isMobile={isMobile} kids={kids} milestones={milestones} onAdd={onAddMilestone} onDelete={onDeleteMilestone} />}
-        {tab === "prayer" && <PrayerWallTab isMobile={isMobile} prayers={prayers} onAdd={onAddPrayer} onUpdate={onUpdatePrayer} onDelete={onDeletePrayer} />}
-      </div>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>{content}</div>
     </div>
   );
 }
@@ -2913,7 +2956,7 @@ const MemberPicker = ({ members, selected, onChange, onAddMember, isMobile, curr
 };
 
 
-function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, checkins, supplements, meals, bloodWork, scorecards, doseLogs, bodyLogs, onAddMember, onAddCheckin, onDeleteCheckin, onAddSupplement, onUpdateSupplement, onDeleteSupplement, onAddMeal, onDeleteMeal, onAddBloodWork, onDeleteBloodWork, onAddScorecard, onDeleteScorecard, onAddDoseLog, onDeleteDoseLog, onAddBodyLog, onDeleteBodyLog }) {
+function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, checkins, supplements, meals, bloodWork, scorecards, doseLogs, bodyLogs, onAddMember, onAddCheckin, onDeleteCheckin, onAddSupplement, onUpdateSupplement, onDeleteSupplement, onAddMeal, onDeleteMeal, onAddBloodWork, onDeleteBloodWork, onAddScorecard, onDeleteScorecard, onAddDoseLog, onDeleteDoseLog, onAddBodyLog, onDeleteBodyLog, nested }) {
   const tab = activeTab || "scorecard";
   const setTab = onTabChange;
   const currentEmail = session?.user?.email || "";
@@ -2936,30 +2979,36 @@ function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, 
     }
   }, [familyMembers.length, currentEmail]);
 
+  const content = (
+    <>
+      <MemberPicker members={familyMembers} selected={selectedMember} onChange={setSelectedMember} onAddMember={onAddMember} isMobile={isMobile} currentEmail={currentEmail} />
+      {familyMembers.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>💪</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Setting Up Health Tracking</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>We're creating your profile automatically — refresh in a moment.</p>
+        </div>
+      ) : (
+        <>
+          <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+          {tab === "dosing" && <DosingTab isMobile={isMobile} memberId={selectedMember} supplements={supplements.filter((s) => s.member_id === selectedMember && s.active)} doseLogs={doseLogs.filter((d) => d.member_id === selectedMember)} onAddLog={onAddDoseLog} onDeleteLog={onDeleteDoseLog} />}
+          {tab === "body" && <BodyPerformanceTab isMobile={isMobile} memberId={selectedMember} bodyLogs={bodyLogs.filter((b) => b.member_id === selectedMember)} onAdd={onAddBodyLog} onDelete={onDeleteBodyLog} />}
+          {tab === "checkin" && <HealthCheckinTab isMobile={isMobile} memberId={selectedMember} checkins={checkins.filter((c) => c.member_id === selectedMember)} onAdd={onAddCheckin} onDelete={onDeleteCheckin} />}
+          {tab === "supplements" && <SupplementsTab isMobile={isMobile} memberId={selectedMember} familyMembers={familyMembers} supplements={supplements.filter((s) => s.member_id === selectedMember)} onAdd={onAddSupplement} onUpdate={onUpdateSupplement} onDelete={onDeleteSupplement} />}
+          {tab === "meals" && <MealPlanningTab isMobile={isMobile} memberId={selectedMember} meals={meals.filter((m) => m.member_id === selectedMember)} onAdd={onAddMeal} onDelete={onDeleteMeal} />}
+          {tab === "bloodwork" && <BloodWorkTab isMobile={isMobile} memberId={selectedMember} bloodWork={bloodWork.filter((b) => b.member_id === selectedMember)} onAdd={onAddBloodWork} onDelete={onDeleteBloodWork} />}
+          {tab === "scorecard" && <ScorecardTab isMobile={isMobile} memberId={selectedMember} scorecards={scorecards.filter((s) => s.member_id === selectedMember || !s.member_id)} onAdd={onAddScorecard} onDelete={onDeleteScorecard} />}
+        </>
+      )}
+    </>
+  );
+
+  if (nested) return content;
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Health" subtitle="Wellness tracking for the whole family" isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <MemberPicker members={familyMembers} selected={selectedMember} onChange={setSelectedMember} onAddMember={onAddMember} isMobile={isMobile} currentEmail={currentEmail} />
-        {familyMembers.length === 0 ? (
-          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>💪</div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Setting Up Health Tracking</h3>
-            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>We're creating your profile automatically — refresh in a moment.</p>
-          </div>
-        ) : (
-          <>
-            <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
-            {tab === "dosing" && <DosingTab isMobile={isMobile} memberId={selectedMember} supplements={supplements.filter((s) => s.member_id === selectedMember && s.active)} doseLogs={doseLogs.filter((d) => d.member_id === selectedMember)} onAddLog={onAddDoseLog} onDeleteLog={onDeleteDoseLog} />}
-            {tab === "body" && <BodyPerformanceTab isMobile={isMobile} memberId={selectedMember} bodyLogs={bodyLogs.filter((b) => b.member_id === selectedMember)} onAdd={onAddBodyLog} onDelete={onDeleteBodyLog} />}
-            {tab === "checkin" && <HealthCheckinTab isMobile={isMobile} memberId={selectedMember} checkins={checkins.filter((c) => c.member_id === selectedMember)} onAdd={onAddCheckin} onDelete={onDeleteCheckin} />}
-            {tab === "supplements" && <SupplementsTab isMobile={isMobile} memberId={selectedMember} familyMembers={familyMembers} supplements={supplements.filter((s) => s.member_id === selectedMember)} onAdd={onAddSupplement} onUpdate={onUpdateSupplement} onDelete={onDeleteSupplement} />}
-            {tab === "meals" && <MealPlanningTab isMobile={isMobile} memberId={selectedMember} meals={meals.filter((m) => m.member_id === selectedMember)} onAdd={onAddMeal} onDelete={onDeleteMeal} />}
-            {tab === "bloodwork" && <BloodWorkTab isMobile={isMobile} memberId={selectedMember} bloodWork={bloodWork.filter((b) => b.member_id === selectedMember)} onAdd={onAddBloodWork} onDelete={onDeleteBloodWork} />}
-            {tab === "scorecard" && <ScorecardTab isMobile={isMobile} memberId={selectedMember} scorecards={scorecards.filter((s) => s.member_id === selectedMember || !s.member_id)} onAdd={onAddScorecard} onDelete={onDeleteScorecard} />}
-          </>
-        )}
-      </div>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>{content}</div>
     </div>
   );
 }
@@ -3779,6 +3828,90 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════
+   FINANCE (Tabbed: Money, Wealth)
+   ═══════════════════════════════════════════════════════════ */
+
+function FinanceView(props) {
+  const { isMobile, activeTab, onTabChange } = props;
+  const tab = activeTab || "money";
+  const tabs = [
+    { key: "money", label: "Money" },
+    { key: "wealth", label: "Wealth" },
+  ];
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Finance" subtitle="Day-to-day money & long-term wealth" isMobile={isMobile} />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
+        {tab === "money" && <MoneyView {...props} nested />}
+        {tab === "wealth" && <WealthView {...props} nested />}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIFE (Tabbed: Home, Family, Health)
+   ═══════════════════════════════════════════════════════════ */
+
+function LifeConsolidatedView(props) {
+  const { isMobile, activeTab, onTabChange } = props;
+  const tab = activeTab || "home";
+  const tabs = [
+    { key: "home", label: "Home" },
+    { key: "family", label: "Family" },
+    { key: "health", label: "Health" },
+  ];
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Life" subtitle="Home, family & health" isMobile={isMobile} />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
+        {tab === "home" && <HomeLifeView {...props} activeTab={null} nested />}
+        {tab === "family" && <FamilyView {...props} activeTab={null} nested />}
+        {tab === "health" && <HealthView {...props} activeTab={null} nested />}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GROWTH (Tabbed: One, Two)
+   ═══════════════════════════════════════════════════════════ */
+
+function GrowthView({ isMobile, activeTab, onTabChange }) {
+  const tab = activeTab || "one";
+  const tabs = [
+    { key: "one", label: "One" },
+    { key: "two", label: "Two" },
+  ];
+
+  const PlaceholderTab = ({ label }) => (
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "40px 20px" : "60px 32px", textAlign: "center", marginTop: 16 }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+        {Icons.sprout}
+      </div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>{label}</h3>
+      <p style={{ fontSize: 14, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif" }}>This section is coming soon.</p>
+    </div>
+  );
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Growth" subtitle="Track your growth journey" isMobile={isMobile} />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
+        {tab === "one" && <PlaceholderTab label="Growth — One" />}
+        {tab === "two" && <PlaceholderTab label="Growth — Two" />}
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════════════════════ */
@@ -4047,22 +4180,19 @@ export default function SuarezApp() {
   const initials = userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const navItems = [
-    { id: "overview", label: "Dashboard", icon: Icons.grid },
-    { id: "money", label: "Money", featured: true, icon: Icons.dollar },
-    { id: "wealth", label: "Wealth", icon: Icons.trending },
+    { id: "overview", label: "Command Center", icon: Icons.command },
+    { id: "life", label: "Life", icon: Icons.leaf },
     { id: "business", label: "Business", icon: Icons.briefcase },
-    { id: "homelife", label: "Home & Life", icon: Icons.home },
-    { id: "family", label: "Family", icon: Icons.users },
-    { id: "health", label: "Health", icon: Icons.heart },
-    { id: "settings", label: "Settings", icon: Icons.gear },
+    { id: "finance", label: "Finance", featured: true, icon: Icons.dollar },
+    { id: "growth", label: "Growth", icon: Icons.sprout },
   ];
 
   const mobileNavItems = [
-    { id: "family", label: "Family", icon: Icons.users },
-    { id: "money", label: "Money", icon: Icons.dollar },
-    { id: "overview", label: "Dashboard", featured: true, icon: Icons.grid },
-    { id: "health", label: "Health", icon: Icons.heart },
-    { id: "homelife", label: "Life", icon: Icons.home },
+    { id: "life", label: "Life", icon: Icons.leaf },
+    { id: "business", label: "Business", icon: Icons.briefcase },
+    { id: "overview", label: "", featured: true, icon: Icons.command },
+    { id: "finance", label: "Finance", icon: Icons.dollar },
+    { id: "growth", label: "Growth", icon: Icons.sprout },
   ];
 
   const renderPage = () => {
@@ -4070,13 +4200,10 @@ export default function SuarezApp() {
     if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
-      case "money": return <MoneyView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} />;
-      case "wealth": return <WealthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} investments={investments} assets={assets} accounts={accounts} snapshots={snapshots} uploads={uploads} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} />;
+      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
-      case "homelife": return <HomeLifeView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} />;
-      case "family": return <FamilyView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} />;
-      case "health": return <HealthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
-      case "settings": return <SettingsView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
+      case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} />;
       default: return null;
     }
   };
