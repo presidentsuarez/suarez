@@ -2972,12 +2972,31 @@ function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, 
   }, [familyMembers, currentEmail, selectedMember]);
 
   // Auto-create a family_member for the logged-in user if none exists with their email
+  const creatingRef = useCallback(() => {}, []);
+  const [hasCreated, setHasCreated] = useState(false);
   useEffect(() => {
+    if (nested || hasCreated) return;
     if (!familyMembers.some((m) => m.email === currentEmail) && currentEmail) {
+      setHasCreated(true);
       const userName = session?.user?.user_metadata?.full_name || fmtUserName(currentEmail);
       onAddMember({ name: userName, role: "Self", email: currentEmail });
     }
-  }, [familyMembers.length, currentEmail]);
+  }, [familyMembers.length, currentEmail, nested, hasCreated]);
+
+  // One-time cleanup: remove duplicate family members (keep first created)
+  useEffect(() => {
+    if (!currentEmail || familyMembers.length <= 1) return;
+    const myMembers = familyMembers.filter((m) => m.email === currentEmail);
+    if (myMembers.length > 1) {
+      // Keep the first one, delete the rest
+      const toDelete = myMembers.slice(1);
+      toDelete.forEach(async (m) => {
+        await supabase.from("family_members").delete().eq("id", m.id);
+      });
+      // Reload after cleanup
+      setTimeout(() => window.location.reload(), 500);
+    }
+  }, [familyMembers, currentEmail]);
 
   const content = (
     <>
