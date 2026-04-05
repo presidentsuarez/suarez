@@ -4481,7 +4481,7 @@ function FinanceView(props) {
     { key: "bookkeeping", label: "📒 Bookkeeping" },
     { key: "accounts", label: "🏦 Accounts" },
     { key: "realestate", label: "🏠 Real Estate" },
-    { key: "assets", label: "🚗 Assets" },
+    { key: "assets", label: "🚗 Vehicles" },
     { key: "insurance", label: "🛡️ Insurance" },
   ];
 
