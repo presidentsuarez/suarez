@@ -996,30 +996,30 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         <StatCard label="Expenses" value={fmtCurrency(totalExpenses)} accent="#dc2626" compact />
         <StatCard label="Net Flow" value={fmtCurrency(totalIncome - totalExpenses)} accent={totalIncome - totalExpenses >= 0 ? "#3b82f6" : "#f59e0b"} compact />
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "10px 14px", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <div style={{ display: "flex", gap: 4 }}>
             {["all", "income", "expense"].map((t) => (
-              <button key={t} onClick={() => setFilterType(t)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterType === t ? "#16a34a" : "#e2e8f0"}`, background: filterType === t ? "#f0fdf4" : "transparent", color: filterType === t ? "#16a34a" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
+              <button key={t} onClick={() => setFilterType(t)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${filterType === t ? "#16a34a" : "#e2e8f0"}`, background: filterType === t ? "#f0fdf4" : "transparent", color: filterType === t ? "#16a34a" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
             ))}
           </div>
+          <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 10, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <div style={{ display: "flex", gap: 4 }}>
             {["all", "personal", "business"].map((v) => (
-              <button key={v} onClick={() => setFilterVis(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterVis === v ? "#7c3aed" : "#e2e8f0"}`, background: filterVis === v ? "#faf5ff" : "transparent", color: filterVis === v ? "#7c3aed" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>
+              <button key={v} onClick={() => setFilterVis(v)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${filterVis === v ? "#7c3aed" : "#e2e8f0"}`, background: filterVis === v ? "#faf5ff" : "transparent", color: filterVis === v ? "#7c3aed" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[{ k: "all", l: "All" }, { k: "categorized", l: "Categorized" }, { k: "uncategorized", l: "Uncategorized" }].map(({ k, l }) => (
-              <button key={k} onClick={() => setFilterCat(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterCat === k ? "#f59e0b" : "#e2e8f0"}`, background: filterCat === k ? "#fffbeb" : "transparent", color: filterCat === k ? "#f59e0b" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{l}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end", flexShrink: 0 }}>
-          <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
-          <select value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}>
+          <select value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 10, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569", maxWidth: 140 }}>
             <option value="all">All Accounts</option>
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {[{ k: "all", l: "All" }, { k: "categorized", l: "Categorized" }, { k: "uncategorized", l: "Uncategorized" }].map(({ k, l }) => (
+            <button key={k} onClick={() => setFilterCat(k)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${filterCat === k ? "#f59e0b" : "#e2e8f0"}`, background: filterCat === k ? "#fffbeb" : "transparent", color: filterCat === k ? "#f59e0b" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+          ))}
         </div>
       </div>
 
