@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import Papa from "papaparse";
 
 /* ═══════════════════════════════════════════════════════════
    SUAREZ — Life & Business Management App
@@ -958,7 +959,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
       {subView === "statements" ? (
         <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets || []} accounts={accounts} />
       ) : subView === "uploader" ? (
-        <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads || []} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />
+        <UploaderTab isMobile={isMobile} accounts={accounts} onAddTransaction={onAdd} />
       ) : (
       <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -1274,61 +1275,209 @@ function StatementsTab({ isMobile, transactions, assets, accounts }) {
 }
 
 /* — Uploader Tab — */
-function UploaderTab({ isMobile, accounts, uploads, onUpload, onDeleteUpload }) {
-  const quarter = getCurrentQuarter();
-  const [selectedQ, setSelectedQ] = useState(quarter);
-  const [uploading, setUploading] = useState(null);
-  const activeAccounts = accounts.filter((a) => a.active);
+function UploaderTab({ isMobile, accounts, onAddTransaction }) {
+  const [selectedAccount, setSelectedAccount] = useState("");
+  const [file, setFile] = useState(null);
+  const [parsedRows, setParsedRows] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const [dateCol, setDateCol] = useState("");
+  const [descCol, setDescCol] = useState("");
+  const [amountCol, setAmountCol] = useState("");
+  const [typeCol, setTypeCol] = useState("");
+  const [skipRows, setSkipRows] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState(0);
+  const [step, setStep] = useState(1); // 1=upload, 2=map, 3=preview
 
-  const handleFileSelect = async (acct, month, e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(`${acct.id}-${month}`);
-    await onUpload(acct, month, selectedQ, file);
-    setUploading(null);
-    e.target.value = "";
+  const activeAccounts = accounts.filter((a) => a.active !== false);
+
+  // Save/load templates per account from localStorage
+  const saveTemplate = () => {
+    if (!selectedAccount) return;
+    const t = { dateCol, descCol, amountCol, typeCol, skipRows };
+    localStorage.setItem(`upload_template_${selectedAccount}`, JSON.stringify(t));
   };
+  const loadTemplate = (acctId) => {
+    const saved = localStorage.getItem(`upload_template_${acctId}`);
+    if (saved) {
+      const t = JSON.parse(saved);
+      setDateCol(t.dateCol || ""); setDescCol(t.descCol || ""); setAmountCol(t.amountCol || ""); setTypeCol(t.typeCol || ""); setSkipRows(t.skipRows || 0);
+      return true;
+    }
+    return false;
+  };
+
+  const handleFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    Papa.parse(f, {
+      complete: (results) => {
+        const data = results.data.filter((r) => r.some((cell) => cell && cell.trim()));
+        if (data.length > 0) {
+          setHeaders(data[0]);
+          setParsedRows(data);
+          setStep(2);
+        }
+      },
+      skipEmptyLines: true,
+    });
+  };
+
+  const previewRows = parsedRows.slice(skipRows + 1, skipRows + 11);
+  const allDataRows = parsedRows.slice(skipRows + 1);
+
+  const handleImport = async () => {
+    if (!selectedAccount || !dateCol || !descCol || !amountCol) return;
+    setImporting(true);
+    saveTemplate();
+    let count = 0;
+    const acct = accounts.find((a) => a.id === selectedAccount);
+    for (const row of allDataRows) {
+      const date = row[parseInt(dateCol)] || "";
+      const desc = row[parseInt(descCol)] || "";
+      const rawAmt = row[parseInt(amountCol)] || "0";
+      const amount = Math.abs(parseFloat(rawAmt.replace(/[^0-9.\-]/g, "")) || 0);
+      if (!desc.trim() || amount === 0) continue;
+
+      let type = "expense";
+      if (typeCol && row[parseInt(typeCol)]) {
+        const tv = row[parseInt(typeCol)].toLowerCase();
+        type = tv.includes("credit") || tv.includes("deposit") || tv.includes("income") ? "income" : "expense";
+      } else {
+        const numVal = parseFloat(rawAmt.replace(/[^0-9.\-]/g, ""));
+        if (numVal > 0) type = "income";
+      }
+
+      // Parse date
+      let parsedDate = date;
+      try {
+        const d = new Date(date);
+        if (!isNaN(d.getTime())) parsedDate = d.toISOString().split("T")[0];
+      } catch {}
+
+      await onAddTransaction({ description: desc.trim(), amount, type, category: null, account_id: selectedAccount, date: parsedDate, visibility: acct?.visibility || "personal" });
+      count++;
+    }
+    setImported(count);
+    setImporting(false);
+    setStep(1);
+    setFile(null);
+    setParsedRows([]);
+  };
+
+  const reset = () => { setFile(null); setParsedRows([]); setHeaders([]); setStep(1); setImported(0); };
+
+  const selectStyle = { padding: "8px 12px", fontSize: 13, border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", fontFamily: "'DM Sans', sans-serif", cursor: "pointer", background: "#fff", color: "#0f172a", width: "100%" };
 
   return (
     <>
-      <div style={{ marginBottom: 16 }}><QuarterPicker selected={selectedQ} onChange={setSelectedQ} /></div>
-      {activeAccounts.length === 0 ? (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-          <p style={{ fontSize: 14, color: "#94a3b8" }}>Add accounts first to start uploading statements.</p>
+      {imported > 0 && (
+        <div style={{ background: "#f0fdf4", borderRadius: 12, border: "1px solid #bbf7d0", padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+          {Icons.check}
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#16a34a" }}>{imported} transactions imported successfully</span>
         </div>
-      ) : activeAccounts.map((acct) => (
-        <div key={acct.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", marginBottom: 14, overflow: "hidden" }}>
-          <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{acct.name}</span>
-              <VisibilityBadge visibility={acct.visibility} />
+      )}
+
+      {step === 1 && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "28px 32px" }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 16px" }}>Import Transactions</h3>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 20 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Account *</label>
+              <select value={selectedAccount} onChange={(e) => { setSelectedAccount(e.target.value); loadTemplate(e.target.value); }} style={selectStyle}>
+                <option value="">Select account...</option>
+                {activeAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
+              </select>
             </div>
-            <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{acct.type}</span>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>CSV File *</label>
+              <label style={{ display: "block", padding: "10px 14px", borderRadius: 8, border: "1.5px dashed #e2e8f0", background: "#f8fafc", fontSize: 13, fontWeight: 600, color: file ? "#16a34a" : "#94a3b8", cursor: "pointer", textAlign: "center" }}>
+                {file ? `📄 ${file.name}` : "📎 Choose CSV file"}
+                <input type="file" accept=".csv" style={{ display: "none" }} onChange={handleFileChange} />
+              </label>
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, padding: 14 }}>
-            {QUARTERS[selectedQ].months.map((m) => {
-              const existing = uploads.find((u) => u.account_id === acct.id && u.month === m && u.quarter === selectedQ);
-              const isUploading = uploading === `${acct.id}-${m}`;
-              return (
-                <div key={m} style={{ padding: 14, borderRadius: 10, border: `1.5px ${existing ? "solid" : "dashed"} ${existing ? "#bbf7d0" : "#e2e8f0"}`, background: existing ? "#f0fdf4" : "#f8fafc", textAlign: "center" }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", marginBottom: 6 }}>{m}</div>
-                  {existing ? (<>
-                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#dcfce7", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>{Icons.check}</div>
-                    <div style={{ fontSize: 10, color: "#16a34a", fontWeight: 600 }}>{existing.filename}</div>
-                    {existing.file_url && <a href={existing.file_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", marginTop: 4, fontSize: 9, color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>View File ↗</a>}
-                    <div><button onClick={() => onDeleteUpload(existing.id, existing.file_path)} style={{ marginTop: 4, padding: "2px 8px", borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", fontSize: 9, fontWeight: 600, color: "#dc2626", cursor: "pointer" }}>Remove</button></div>
-                  </>) : (
-                    <label style={{ display: "inline-block", marginTop: 2, padding: "5px 14px", borderRadius: 7, border: "1px solid #e2e8f0", background: "#fff", fontSize: 11, fontWeight: 600, color: isUploading ? "#94a3b8" : "#16a34a", cursor: isUploading ? "not-allowed" : "pointer" }}>
-                      {isUploading ? "Uploading..." : "📎 Upload File"}
-                      <input type="file" accept=".pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.doc,.docx" style={{ display: "none" }} onChange={(e) => handleFileSelect(acct, m, e)} disabled={isUploading} />
-                    </label>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {!selectedAccount && <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>Select an account to get started. Column templates are saved per account.</p>}
         </div>
-      ))}
+      )}
+
+      {step === 2 && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "28px 32px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: 0 }}>Map Columns</h3>
+            <button onClick={reset} style={{ fontSize: 11, color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+          </div>
+          <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>Found {parsedRows.length - skipRows - 1} rows. Map your CSV columns below:</p>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Skip Rows</label>
+              <input type="number" min="0" value={skipRows} onChange={(e) => setSkipRows(parseInt(e.target.value) || 0)} style={{ ...selectStyle, fontSize: 12 }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Date Column *</label>
+              <select value={dateCol} onChange={(e) => setDateCol(e.target.value)} style={{ ...selectStyle, fontSize: 12 }}>
+                <option value="">Select...</option>
+                {headers.map((h, i) => <option key={i} value={i}>{h || `Col ${i + 1}`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Description *</label>
+              <select value={descCol} onChange={(e) => setDescCol(e.target.value)} style={{ ...selectStyle, fontSize: 12 }}>
+                <option value="">Select...</option>
+                {headers.map((h, i) => <option key={i} value={i}>{h || `Col ${i + 1}`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Amount *</label>
+              <select value={amountCol} onChange={(e) => setAmountCol(e.target.value)} style={{ ...selectStyle, fontSize: 12 }}>
+                <option value="">Select...</option>
+                {headers.map((h, i) => <option key={i} value={i}>{h || `Col ${i + 1}`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#475569", marginBottom: 3 }}>Type (optional)</label>
+              <select value={typeCol} onChange={(e) => setTypeCol(e.target.value)} style={{ ...selectStyle, fontSize: 12 }}>
+                <option value="">Auto-detect</option>
+                {headers.map((h, i) => <option key={i} value={i}>{h || `Col ${i + 1}`}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {dateCol && descCol && amountCol && (
+            <>
+              <SectionHeader text={`Preview (first ${Math.min(previewRows.length, 10)} rows)`} />
+              <div style={{ overflowX: "auto", marginBottom: 16 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
+                  <thead><tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                    <th style={{ padding: "6px 8px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Date</th>
+                    <th style={{ padding: "6px 8px", textAlign: "left", color: "#64748b", fontWeight: 600 }}>Description</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right", color: "#64748b", fontWeight: 600 }}>Amount</th>
+                    <th style={{ padding: "6px 8px", textAlign: "center", color: "#64748b", fontWeight: 600 }}>Type</th>
+                  </tr></thead>
+                  <tbody>{previewRows.map((row, i) => {
+                    const rawAmt = row[parseInt(amountCol)] || "0";
+                    const numVal = parseFloat(rawAmt.replace(/[^0-9.\-]/g, ""));
+                    const isIncome = typeCol ? (row[parseInt(typeCol)]?.toLowerCase()?.includes("credit") || row[parseInt(typeCol)]?.toLowerCase()?.includes("deposit")) : numVal > 0;
+                    return (
+                      <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "#475569" }}>{row[parseInt(dateCol)]}</td>
+                        <td style={{ padding: "8px", color: "#0f172a", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row[parseInt(descCol)]}</td>
+                        <td style={{ padding: "8px", textAlign: "right", fontFamily: "'DM Mono', monospace", fontWeight: 600, color: isIncome ? "#16a34a" : "#dc2626" }}>{rawAmt}</td>
+                        <td style={{ padding: "8px", textAlign: "center" }}><span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: isIncome ? "#f0fdf4" : "#fef2f2", color: isIncome ? "#16a34a" : "#dc2626" }}>{isIncome ? "INCOME" : "EXPENSE"}</span></td>
+                      </tr>
+                    );
+                  })}</tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+                <GreenButton small onClick={handleImport} disabled={importing}>{importing ? `Importing...` : `Import ${allDataRows.length} Transactions`}</GreenButton>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }
