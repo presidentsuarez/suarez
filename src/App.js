@@ -921,6 +921,8 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   const [filterType, setFilterType] = useState("all");
   const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
   const [filterVis, setFilterVis] = useState("all");
+  const [filterCat, setFilterCat] = useState("all");
+  const [filterAccount, setFilterAccount] = useState("all");
 
   const resetForm = () => { setForm({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" }); setShowForm(false); };
 
@@ -935,6 +937,9 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
     if (filterType !== "all" && t.type !== filterType) return false;
     if (filterVis !== "all" && t.visibility !== filterVis) return false;
     if (filterMonth && t.date && !t.date.startsWith(filterMonth)) return false;
+    if (filterCat === "uncategorized" && t.category && t.category !== "" && t.category !== "Uncategorized") return false;
+    if (filterCat === "categorized" && (!t.category || t.category === "" || t.category === "Uncategorized")) return false;
+    if (filterAccount !== "all" && t.account_id !== filterAccount) return false;
     return true;
   });
 
@@ -946,7 +951,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   return (
     <>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[{ k: "ledger", l: "Ledger" }, { k: "statements", l: "Statements" }, { k: "uncategorized", l: "Uncategorized" }, { k: "organizer", l: "Organizer" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
+        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
           <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
         ))}
       </div>
@@ -954,10 +959,6 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets || []} accounts={accounts} />
       ) : subView === "uploader" ? (
         <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads || []} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />
-      ) : subView === "uncategorized" ? (
-        <UncategorizedTab isMobile={isMobile} transactions={transactions} onDelete={onDelete} />
-      ) : subView === "organizer" ? (
-        <OrganizerTab isMobile={isMobile} transactions={transactions} accounts={accounts} />
       ) : (
       <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -977,8 +978,19 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
               <button key={v} onClick={() => setFilterVis(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterVis === v ? "#7c3aed" : "#e2e8f0"}`, background: filterVis === v ? "#faf5ff" : "transparent", color: filterVis === v ? "#7c3aed" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>
             ))}
           </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[{ k: "all", l: "All" }, { k: "categorized", l: "Categorized" }, { k: "uncategorized", l: "Uncategorized" }].map(({ k, l }) => (
+              <button key={k} onClick={() => setFilterCat(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterCat === k ? "#f59e0b" : "#e2e8f0"}`, background: filterCat === k ? "#fffbeb" : "transparent", color: filterCat === k ? "#f59e0b" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+            ))}
+          </div>
         </div>
-        <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "6px 10px", fontSize: 11, border: "1px solid #e2e8f0", borderRadius: 8, fontFamily: "'DM Mono', monospace", outline: "none", flexShrink: 0 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end", flexShrink: 0 }}>
+          <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+          <select value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}>
+            <option value="all">All Accounts</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
       </div>
 
       {showForm && (
