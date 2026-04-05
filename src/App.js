@@ -3331,59 +3331,83 @@ function GradesTab({ isMobile, kids, grades, onAdd, onDelete }) {
 /* — Life Events Tab — */
 function LifeEventsTab({ isMobile, kids, milestones, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ kid_id: "", title: "", date: new Date().toISOString().split("T")[0], description: "" });
+  const [form, setForm] = useState({ title: "", date: "", description: "" });
   const [saving, setSaving] = useState(false);
+  const [orderedIds, setOrderedIds] = useState(null);
 
-  const resetForm = () => { setForm({ kid_id: "", title: "", date: new Date().toISOString().split("T")[0], description: "" }); setShowForm(false); };
+  // Maintain local order — initialize from milestones sorted by date
+  const sorted = orderedIds ? orderedIds.map((id) => milestones.find((m) => m.id === id)).filter(Boolean) : [...milestones].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+  const resetForm = () => { setForm({ title: "", date: "", description: "" }); setShowForm(false); };
   const handleSubmit = async () => {
     if (!form.title.trim()) return;
     setSaving(true);
-    await onAdd({ kid_id: form.kid_id || null, title: form.title, date: form.date || null, description: form.description || null });
+    await onAdd({ title: form.title, date: form.date || null, description: form.description || null });
     resetForm(); setSaving(false);
+    setOrderedIds(null); // reset order to pick up new item
+  };
+
+  const moveUp = (idx) => {
+    if (idx === 0) return;
+    const ids = sorted.map((m) => m.id);
+    [ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]];
+    setOrderedIds(ids);
+  };
+  const moveDown = (idx) => {
+    if (idx >= sorted.length - 1) return;
+    const ids = sorted.map((m) => m.id);
+    [ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]];
+    setOrderedIds(ids);
   };
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Event</GreenButton>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{sorted.length} move{sorted.length !== 1 ? "s" : ""} planned</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Move</GreenButton>
       </div>
       {showForm && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. First day of school" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
-            {kids.length > 0 && <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Kid (optional)</label><select value={form.kid_id} onChange={(e) => setForm({ ...form, kid_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Family-wide</option>{kids.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}</select></div>}
-            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Description</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional details" style={inputStyle} className="sz-input" /></div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Move *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Close on investment property" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Target Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Details</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Strategy, dependencies, notes..." style={inputStyle} className="sz-input" /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
-            <GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim()}>{saving ? "..." : "Add"}</GreenButton>
-          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim()}>{saving ? "..." : "Add"}</GreenButton></div>
         </div>
       )}
-      {milestones.length === 0 && !showForm ? (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No life events recorded yet</div>
+      {sorted.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>♟️</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Plan Your Moves</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add sequential moves and arrange them in the order you need to execute.</p>
+        </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {milestones.map((m) => {
-            const kid = kids.find((k) => k.id === m.kid_id);
-            return (
-              <div key={m.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#16a34a", marginTop: 5, flexShrink: 0 }} />
+        <div style={{ position: "relative", paddingLeft: 28 }}>
+          {/* Vertical line */}
+          <div style={{ position: "absolute", left: 13, top: 20, bottom: 20, width: 2, background: "linear-gradient(180deg, #1C3820, #16a34a, #bbf7d0)" }} />
+          {sorted.map((m, idx) => (
+            <div key={m.id} style={{ position: "relative", marginBottom: 12 }}>
+              {/* Step number circle */}
+              <div style={{ position: "absolute", left: -28, top: 14, width: 28, height: 28, borderRadius: "50%", background: "#1C3820", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, fontFamily: "'Playfair Display', serif", zIndex: 1, border: "2px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }}>{idx + 1}</div>
+              <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px 14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{m.title}</div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 3, fontSize: 11, color: "#94a3b8" }}>
-                    {m.date && <span style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(m.date)}</span>}
-                    {kid && <span style={{ padding: "1px 8px", borderRadius: 5, background: "#eff6ff", color: "#3b82f6", fontWeight: 600, fontSize: 10 }}>{kid.name}</span>}
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{m.title}</div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 4, fontSize: 11, color: "#64748b" }}>
+                    {m.date && <span style={{ fontFamily: "'DM Mono', monospace", padding: "1px 6px", borderRadius: 4, background: "#f1f5f9" }}>{fmtDate(m.date)}</span>}
                   </div>
-                  {m.description && <p style={{ fontSize: 12, color: "#64748b", marginTop: 4, lineHeight: 1.4 }}>{m.description}</p>}
+                  {m.description && <p style={{ fontSize: 12, color: "#475569", marginTop: 4, lineHeight: 1.4, margin: "4px 0 0" }}>{m.description}</p>}
                 </div>
-                <button onClick={() => { if (window.confirm("Delete?")) onDelete(m.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0 }}>
+                  <button onClick={() => moveUp(idx)} disabled={idx === 0} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", fontSize: 14, color: idx === 0 ? "#e2e8f0" : "#64748b", padding: "2px 4px", lineHeight: 1 }}>▲</button>
+                  <button onClick={() => moveDown(idx)} disabled={idx >= sorted.length - 1} style={{ background: "none", border: "none", cursor: idx >= sorted.length - 1 ? "default" : "pointer", fontSize: 14, color: idx >= sorted.length - 1 ? "#e2e8f0" : "#64748b", padding: "2px 4px", lineHeight: 1 }}>▼</button>
+                </div>
+                <button onClick={() => { if (window.confirm("Delete this move?")) { onDelete(m.id); setOrderedIds(null); } }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}>{Icons.trash}</button>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </>
