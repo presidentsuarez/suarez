@@ -212,9 +212,9 @@ const Icons = {
   users: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   star: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
   heart: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
-  command: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
-  leaf: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M17 8C8 10 5.9 16.17 3.82 21.34"/><path d="M20.2 2.8s-3.1 1.5-5.7 4.1c-2.6 2.6-4.5 6.1-4.5 6.1s3.5-1.9 6.1-4.5c2.6-2.6 4.1-5.7 4.1-5.7z"/></svg>,
-  sprout: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 22V10"/><path d="M6 13c0-3.3 2.7-6 6-6"/><path d="M18 13c0-3.3-2.7-6-6-6"/><path d="M6 13c-2.2 0-4-1.8-4-4s1.8-4 4-4c.5 0 1 .1 1.4.3"/><path d="M18 13c2.2 0 4-1.8 4-4s-1.8-4-4-4c-.5 0-1 .1-1.4.3"/></svg>,
+  command: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><line x1="6.5" y1="5" x2="6.5" y2="8"/><line x1="5" y1="6.5" x2="8" y2="6.5"/></svg>,
+  leaf: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 22c-4-4-8-7.5-8-12C4 5.5 7.5 2 12 2s8 3.5 8 8c0 4.5-4 8-8 12z"/><path d="M12 2v10"/><path d="M8 8c2 1 4 2 4 4"/><path d="M16 8c-2 1-4 2-4 4"/></svg>,
+  sprout: <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 22V12"/><path d="M8 12c0-4 4-8 4-10 0 2 4 6 4 10"/><path d="M5 18c0-3.5 3.1-6.4 7-7"/><path d="M19 18c0-3.5-3.1-6.4-7-7"/></svg>,
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -521,10 +521,10 @@ function OverviewView({ isMobile, session, accounts, uploads, assets, transactio
           <SectionHeader text="Quick Actions" />
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12 }}>
             {[
-              { label: "Money", desc: "Bookkeeping & spending", nav: "money", icon: Icons.dollar },
-              { label: "Wealth", desc: "Portfolio & net worth", nav: "wealth", icon: Icons.trending },
+              { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: Icons.dollar },
               { label: "Business", desc: "Entities & contacts", nav: "business", icon: Icons.briefcase },
-              { label: "Family", desc: "Members & prayer wall", nav: "family", icon: Icons.users },
+              { label: "Life", desc: "Home, family & health", nav: "life", icon: Icons.leaf },
+              { label: "Growth", desc: "Your growth journey", nav: "growth", icon: Icons.sprout },
             ].map((a, i) => (
               <div key={i} onClick={() => onNavigate(a.nav)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, color: "#16a34a" }}>{a.icon}</div>
