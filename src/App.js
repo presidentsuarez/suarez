@@ -626,7 +626,6 @@ function WealthView({ isMobile, activeTab, onTabChange, investments, assets, acc
     { key: "realestate", label: "🏠 Real Estate" },
     { key: "companies", label: "🏢 Companies" },
     { key: "assets", label: "🚗 Assets" },
-    { key: "uploader", label: "📤 Uploader" },
   ];
 
   const content = (
@@ -637,7 +636,6 @@ function WealthView({ isMobile, activeTab, onTabChange, investments, assets, acc
       {tab === "companies" && <CompaniesWealthTab isMobile={isMobile} investments={investments.filter((i) => i.asset_type === "Business Equity")} onAdd={onAddInvestment} onUpdate={onUpdateInvestment} onDelete={onDeleteInvestment} />}
       {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={assets} accounts={accounts} investments={investments} snapshots={snapshots} onAddSnapshot={onAddSnapshot} onDeleteSnapshot={onDeleteSnapshot} />}
       {tab === "assets" && <AssetsTab isMobile={isMobile} assets={assets} accounts={accounts} onAdd={onAddAsset} onUpdate={onUpdateAsset} onDelete={onDeleteAsset} />}
-      {tab === "uploader" && <UploaderTab isMobile={isMobile} accounts={accounts} uploads={uploads} onUpload={onUpload} onDeleteUpload={onDeleteUpload} />}
     </>
   );
 
@@ -1954,17 +1952,15 @@ function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactio
   const tabs = [
     { key: "entities", label: "Entities" },
     { key: "contacts", label: "Contacts" },
-    { key: "insurance", label: "Insurance" },
   ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Business" subtitle="Entities, contacts & insurance" isMobile={isMobile} />
+      <PageHeader title="Business" subtitle="Entities & contacts" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
         {tab === "entities" && <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} />}
         {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
-        {tab === "insurance" && <InsuranceContentTab isMobile={isMobile} policies={policies} onAdd={onAddPolicy} onUpdate={onUpdatePolicy} onDelete={onDeletePolicy} />}
       </div>
     </div>
   );
@@ -2553,7 +2549,6 @@ function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, c
   const tabs = [
     { key: "homes", label: "Properties" },
     { key: "utilities", label: "Utilities" },
-    { key: "bills", label: "Monthly Bills" },
     { key: "calendar", label: "Calendar" },
     { key: "planner", label: "Planner" },
   ];
@@ -2563,7 +2558,6 @@ function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, c
       <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
       {tab === "homes" && <HomesTab isMobile={isMobile} homes={homes} onAdd={onAddHome} onUpdate={onUpdateHome} onDelete={onDeleteHome} />}
       {tab === "utilities" && <UtilitiesTab isMobile={isMobile} homes={homes} utilityBills={utilityBills} onAdd={onAddBill} onUpdate={onUpdateBill} onDelete={onDeleteBill} />}
-      {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={monthlyBills} onAdd={onAddMonthlyBill} onUpdate={onUpdateMonthlyBill} onDelete={onDeleteMonthlyBill} />}
       {tab === "calendar" && <CalendarView isMobile={isMobile} events={calendarEvents} onAdd={onAddEvent} onDelete={onDeleteEvent} asTab />}
       {tab === "planner" && <PlannerView isMobile={isMobile} tasks={plannerTasks} onAdd={onAddTask} onUpdate={onUpdateTask} onDelete={onDeleteTask} asTab />}
     </>
@@ -3831,21 +3825,30 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
 
 function FinanceView(props) {
   const { isMobile, activeTab, onTabChange } = props;
-  const tab = activeTab || "money";
-  const [moneyTab, setMoneyTab] = useState(null);
+  const tab = activeTab || "bookkeeping";
   const [wealthTab, setWealthTab] = useState(null);
   const tabs = [
-    { key: "money", label: "Money" },
-    { key: "wealth", label: "Wealth" },
+    { key: "bookkeeping", label: "📒 Bookkeeping" },
+    { key: "spending", label: "💳 Spending" },
+    { key: "wealth", label: "📊 Wealth" },
+    { key: "accounts", label: "🏦 Accounts" },
+    { key: "bills", label: "📋 Bills" },
+    { key: "insurance", label: "🛡️ Insurance" },
+    { key: "uploader", label: "📤 Uploader" },
   ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Finance" subtitle="Day-to-day money & long-term wealth" isMobile={isMobile} />
+      <PageHeader title="Finance" subtitle="Money, wealth, bills & insurance" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "money" && <MoneyView {...props} activeTab={moneyTab} onTabChange={setMoneyTab} nested />}
+        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} />}
+        {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={props.lifeExpenses} onAdd={props.onAddLifeExpense} onDelete={props.onDeleteLifeExpense} />}
         {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
+        {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
+        {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={props.monthlyBills} onAdd={props.onAddMonthlyBill} onUpdate={props.onUpdateMonthlyBill} onDelete={props.onDeleteMonthlyBill} />}
+        {tab === "insurance" && <InsuranceContentTab isMobile={isMobile} policies={props.policies} onAdd={props.onAddPolicy} onUpdate={props.onUpdatePolicy} onDelete={props.onDeletePolicy} />}
+        {tab === "uploader" && <UploaderTab isMobile={isMobile} accounts={props.accounts} uploads={props.uploads} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} />}
       </div>
     </div>
   );
@@ -4473,7 +4476,7 @@ export default function SuarezApp() {
     if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
-      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} />;
+      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} />;
       case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
