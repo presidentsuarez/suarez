@@ -2263,20 +2263,161 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
    BUSINESS (Tabbed wrapper: Entities, Contacts, Insurance)
    ═══════════════════════════════════════════════════════════ */
 
-function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy }) {
+function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, session }) {
   const tab = activeTab || "entities";
   const setTab = onTabChange;
   const tabs = [
     { key: "entities", label: "Entities" },
+    { key: "reports", label: "📄 Reports" },
   ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Business" subtitle="Your business entities" isMobile={isMobile} />
+      <PageHeader title="Business" subtitle="Entities & reports" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
         {tab === "entities" && <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} />}
+        {tab === "reports" && <ReportsTab isMobile={isMobile} businesses={businesses} reports={reports || []} onAdd={onAddReport} onUpdate={onUpdateReport} onDelete={onDeleteReport} session={session} />}
       </div>
     </div>
+  );
+}
+
+/* — Reports Tab — */
+function ReportsTab({ isMobile, businesses, reports, onAdd, onUpdate, onDelete, session }) {
+  const [filterBiz, setFilterBiz] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ title: "", business_id: "", report_type: "Financial", period_type: "Monthly", period_label: "", status: "draft", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null);
+
+  const reportTypes = ["Financial", "Operational", "Legal", "Other"];
+  const periodTypes = ["Weekly", "Monthly", "Quarterly", "Annual"];
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const resetForm = () => { setForm({ title: "", business_id: "", report_type: "Financial", period_type: "Monthly", period_label: "", status: "draft", notes: "" }); setEditingId(null); setShowForm(false); setUploadedFile(null); };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !session) return;
+    setUploading(true);
+    const ext = file.name.split(".").pop()?.toLowerCase() || "pdf";
+    const filePath = `${session.user.id}/reports/${Date.now()}_${file.name}`;
+    const { error } = await supabase.storage.from("uploads").upload(filePath, file, { upsert: true });
+    if (!error) {
+      const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(filePath);
+      setUploadedFile({ filename: file.name, file_path: filePath, file_url: urlData?.publicUrl || null });
+    }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.business_id) return;
+    setSaving(true);
+    const payload = { title: form.title, business_id: form.business_id, report_type: form.report_type, period_type: form.period_type, period_label: form.period_label || null, status: form.status, notes: form.notes || null, filename: uploadedFile?.filename || null, file_path: uploadedFile?.file_path || null, file_url: uploadedFile?.file_url || null };
+    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
+    resetForm(); setSaving(false);
+  };
+
+  const startEdit = (r) => {
+    setForm({ title: r.title || "", business_id: r.business_id || "", report_type: r.report_type || "Financial", period_type: r.period_type || "Monthly", period_label: r.period_label || "", status: r.status || "draft", notes: r.notes || "" });
+    setUploadedFile(r.filename ? { filename: r.filename, file_path: r.file_path, file_url: r.file_url } : null);
+    setEditingId(r.id); setShowForm(true);
+  };
+
+  const toggleStatus = (r) => onUpdate(r.id, { status: r.status === "draft" ? "final" : "draft" });
+
+  const filtered = filterBiz === "all" ? reports : reports.filter((r) => r.business_id === filterBiz);
+  const getBizName = (id) => businesses.find((b) => b.id === id)?.name || "—";
+  const statusColors = { draft: "#f59e0b", final: "#16a34a" };
+  const typeColors = { Financial: "#3b82f6", Operational: "#8b5cf6", Legal: "#dc2626", Other: "#64748b" };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <select value={filterBiz} onChange={(e) => setFilterBiz(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}>
+          <option value="all">All Businesses</option>
+          {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} New Report</GreenButton>
+      </div>
+
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? "Edit Report" : "New Report"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Q1 2026 P&L" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Business *</label><select value={form.business_id} onChange={(e) => setForm({ ...form, business_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Type</label><select value={form.report_type} onChange={(e) => setForm({ ...form, report_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{reportTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Period</label><select value={form.period_type} onChange={(e) => setForm({ ...form, period_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{periodTypes.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Period Label</label><input value={form.period_label} onChange={(e) => setForm({ ...form, period_label: e.target.value })} placeholder="e.g. Q1 2026, March 2026, Week 14" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="draft">Draft</option><option value="final">Final</option></select></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Key findings, summary, action items..." rows={3} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Attachment</label>
+              {uploadedFile ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                  <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {uploadedFile.filename}</span>
+                  <button onClick={() => setUploadedFile(null)} style={{ background: "none", border: "none", fontSize: 11, color: "#dc2626", cursor: "pointer", fontWeight: 600 }}>Remove</button>
+                </div>
+              ) : (
+                <label style={{ display: "block", padding: "12px", borderRadius: 8, border: "1.5px dashed #e2e8f0", background: "#f8fafc", fontSize: 12, fontWeight: 600, color: uploading ? "#94a3b8" : "#64748b", cursor: uploading ? "not-allowed" : "pointer", textAlign: "center" }}>
+                  {uploading ? "Uploading..." : "📎 Upload file (PDF, Excel, Image, etc.)"}
+                  <input type="file" accept=".pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.doc,.docx" style={{ display: "none" }} onChange={handleFileUpload} disabled={uploading} />
+                </label>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.business_id}>{saving ? "..." : editingId ? "Update" : "Save Report"}</GreenButton>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Reports</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Create reports to track business performance across periods.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map((r) => (
+            <div key={r.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{r.title}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${typeColors[r.report_type] || "#64748b"}15`, color: typeColors[r.report_type] || "#64748b" }}>{r.report_type?.toUpperCase()}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[r.status]}15`, color: statusColors[r.status] }}>{r.status?.toUpperCase()}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span>{getBizName(r.business_id)}</span>
+                    <span>· {r.period_type}{r.period_label ? ` — ${r.period_label}` : ""}</span>
+                    <span style={{ fontFamily: "'DM Mono', monospace" }}>· {fmtDate(r.created_at)}</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
+                  <button onClick={() => toggleStatus(r)} title={r.status === "draft" ? "Mark Final" : "Back to Draft"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: 2 }}>{r.status === "final" ? "✅" : "📝"}</button>
+                  <button onClick={() => startEdit(r)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                  <button onClick={() => { if (window.confirm("Delete?")) onDelete(r.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                </div>
+              </div>
+              {r.notes && <p style={{ fontSize: 12, color: "#475569", margin: "6px 0 0", lineHeight: 1.5 }}>{r.notes}</p>}
+              {r.filename && (
+                <div style={{ marginTop: 6 }}>
+                  <a href={r.file_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#3b82f6", textDecoration: "none", padding: "4px 10px", borderRadius: 6, background: "#eff6ff", border: "1px solid #bfdbfe" }}>📎 {r.filename} ↗</a>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -4525,6 +4666,7 @@ export default function SuarezApp() {
   const [habitLogs, setHabitLogs] = useState([]);
   const [learningItems, setLearningItems] = useState([]);
   const [uploadLogs, setUploadLogs] = useState([]);
+  const [businessReports, setBusinessReports] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
@@ -4548,7 +4690,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -4582,6 +4724,7 @@ export default function SuarezApp() {
       supabase.from("habit_logs").select("*").order("date", { ascending: false }),
       supabase.from("learning_items").select("*").order("created_at", { ascending: false }),
       supabase.from("upload_logs").select("*").order("created_at", { ascending: false }),
+      supabase.from("business_reports").select("*").order("created_at", { ascending: false }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -4616,6 +4759,7 @@ export default function SuarezApp() {
     if (habitLogsRes.data) setHabitLogs(habitLogsRes.data);
     if (learningRes.data) setLearningItems(learningRes.data);
     if (uploadLogsRes.data) setUploadLogs(uploadLogsRes.data);
+    if (bizReportsRes.data) setBusinessReports(bizReportsRes.data);
     setDataLoading(false);
   }, [session]);
 
@@ -4725,6 +4869,9 @@ export default function SuarezApp() {
   const handleUpdateLearning = async (id, form) => { const { data, error } = await supabase.from("learning_items").update(form).eq("id", id).select().single(); if (!error && data) setLearningItems((p) => p.map((l) => l.id === id ? data : l)); };
   const handleDeleteLearning = async (id) => { const { error } = await supabase.from("learning_items").delete().eq("id", id); if (!error) setLearningItems((p) => p.filter((l) => l.id !== id)); };
   const handleLogUpload = async (form) => { const { data, error } = await supabase.from("upload_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setUploadLogs((p) => [data, ...p]); };
+  const handleAddReport = async (form) => { const { data, error } = await supabase.from("business_reports").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBusinessReports((p) => [data, ...p]); };
+  const handleUpdateReport = async (id, form) => { const { data, error } = await supabase.from("business_reports").update(form).eq("id", id).select().single(); if (!error && data) setBusinessReports((p) => p.map((r) => r.id === id ? data : r)); };
+  const handleDeleteReport = async (id) => { const { error } = await supabase.from("business_reports").delete().eq("id", id); if (!error) setBusinessReports((p) => p.filter((r) => r.id !== id)); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -4794,7 +4941,7 @@ export default function SuarezApp() {
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
-      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} />;
+      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "growth": return <GrowthView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       default: return null;
