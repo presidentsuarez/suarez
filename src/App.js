@@ -1116,11 +1116,13 @@ function StatementsTab({ isMobile, transactions, assets, accounts }) {
 
   return (
     <>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        {[{ k: "income", l: "Income Statement" }, { k: "balance", l: "Balance Sheet" }, { k: "cashflow", l: "Cash Flow" }].map(({ k, l }) => (
-          <button key={k} onClick={() => setView(k)} style={{ padding: "7px 16px", borderRadius: 7, border: `1px solid ${view === k ? "#16a34a" : "#e2e8f0"}`, background: view === k ? "#f0fdf4" : "transparent", color: view === k ? "#16a34a" : "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{l}</button>
-        ))}
-        <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Mono', monospace" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {[{ k: "income", l: "P&L" }, { k: "balance", l: "Balance" }, { k: "cashflow", l: "Cash Flow" }].map(({ k, l }) => (
+            <button key={k} onClick={() => setView(k)} style={{ padding: "5px 10px", borderRadius: 20, border: `1.5px solid ${view === k ? "#0f172a" : "#e2e8f0"}`, background: view === k ? "#0f172a" : "#fff", color: view === k ? "#fff" : "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
+          ))}
+        </div>
+        <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
       </div>
       <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "24px 28px" }}>
         {view === "income" && (<>
