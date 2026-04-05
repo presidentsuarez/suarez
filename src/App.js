@@ -4803,39 +4803,65 @@ function OutreachDashboard({ isMobile }) {
   );
 }
 
-function InboxTab({ isMobile }) {
+function InboxTab({ isMobile, companies, onAddCompany }) {
   const [view, setView] = useState("chats");
   const [messages, setMessages] = useState([]);
   const [calls, setCalls] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [activeThread, setActiveThread] = useState(null);
   const [replyText, setReplyText] = useState("");
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickName, setQuickName] = useState("");
+  const [quickPhone, setQuickPhone] = useState("");
 
   // Chat form
-  const [chatForm, setChatForm] = useState({ contact: "", phone: "", message: "", direction: "Outgoing" });
+  const [chatForm, setChatForm] = useState({ contact_id: "", message: "", direction: "Outgoing" });
   // Call form
-  const [callForm, setCallForm] = useState({ contact: "", phone: "", duration: "", outcome: "Connected", notes: "" });
+  const [callForm, setCallForm] = useState({ contact_id: "", duration: "", outcome: "Connected", notes: "" });
   const outcomes = ["Connected", "Voicemail", "No Answer", "Callback Requested", "Wrong Number"];
   const outcomeColors = { Connected: "#16a34a", Voicemail: "#f59e0b", "No Answer": "#dc2626", "Callback Requested": "#3b82f6", "Wrong Number": "#64748b" };
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
+  const getContact = (id) => (companies || []).find((c) => c.id === id);
+  const getContactName = (id) => getContact(id)?.name || "Unknown";
   const getInitials = (name) => { const parts = (name || "?").split(" "); return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase(); };
   const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2", "#ea580c"];
   const getAvatarColor = (name) => avatarColors[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
 
-  const resetChat = () => { setChatForm({ contact: "", phone: "", message: "", direction: "Outgoing" }); setShowForm(false); };
-  const resetCall = () => { setCallForm({ contact: "", phone: "", duration: "", outcome: "Connected", notes: "" }); setShowForm(false); };
+  const handleQuickAdd = async () => {
+    if (!quickName.trim()) return;
+    await onAddCompany({ name: quickName, phone: quickPhone || null });
+    setQuickName(""); setQuickPhone(""); setShowQuickAdd(false);
+  };
+
+  const ContactSelector = ({ value, onChange }) => (
+    <div>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label>
+      <div style={{ display: "flex", gap: 4 }}>
+        <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: "pointer" }}>
+          <option value="">Select contact...</option>
+          {(companies || []).map((c) => <option key={c.id} value={c.id}>{c.name}{c.phone ? ` · ${c.phone}` : ""}</option>)}
+        </select>
+        <button onClick={() => setShowQuickAdd(!showQuickAdd)} style={{ padding: "0 12px", borderRadius: 8, border: "1.5px solid #bbf7d0", background: "#f0fdf4", color: "#16a34a", fontSize: 16, fontWeight: 700, cursor: "pointer", flexShrink: 0 }} title="Add new contact">+</button>
+      </div>
+    </div>
+  );
+
+  const resetChat = () => { setChatForm({ contact_id: "", message: "", direction: "Outgoing" }); setShowForm(false); setShowQuickAdd(false); };
+  const resetCall = () => { setCallForm({ contact_id: "", duration: "", outcome: "Connected", notes: "" }); setShowForm(false); setShowQuickAdd(false); };
 
   const handleAddChat = () => {
-    if (!chatForm.contact.trim() || !chatForm.message.trim()) return;
-    setMessages((p) => [{ id: Date.now(), contact: chatForm.contact, phone: chatForm.phone, message: chatForm.message, direction: chatForm.direction, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), date: new Date().toISOString().split("T")[0], unread: chatForm.direction === "Incoming" ? 1 : 0, thread: [{ message: chatForm.message, direction: chatForm.direction, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }] }, ...p]);
+    if (!chatForm.contact_id || !chatForm.message.trim()) return;
+    const name = getContactName(chatForm.contact_id);
+    setMessages((p) => [{ id: Date.now(), contact_id: chatForm.contact_id, contact: name, message: chatForm.message, direction: chatForm.direction, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), date: new Date().toISOString().split("T")[0], unread: chatForm.direction === "Incoming" ? 1 : 0, thread: [{ message: chatForm.message, direction: chatForm.direction, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }] }, ...p]);
     resetChat();
   };
 
   const handleAddCall = () => {
-    if (!callForm.contact.trim()) return;
-    setCalls((p) => [{ id: Date.now(), contact: callForm.contact, phone: callForm.phone, duration: callForm.duration, outcome: callForm.outcome, notes: callForm.notes, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), date: new Date().toISOString().split("T")[0] }, ...p]);
+    if (!callForm.contact_id) return;
+    const name = getContactName(callForm.contact_id);
+    setCalls((p) => [{ id: Date.now(), contact_id: callForm.contact_id, contact: name, duration: callForm.duration, outcome: callForm.outcome, notes: callForm.notes, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), date: new Date().toISOString().split("T")[0] }, ...p]);
     resetCall();
   };
 
@@ -4893,27 +4919,39 @@ function InboxTab({ isMobile }) {
       {/* New Chat Form */}
       {showForm && view === "chats" && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          {showQuickAdd && (
+            <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>Name *</label><input value={quickName} onChange={(e) => setQuickName(e.target.value)} placeholder="New contact name" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+              <div style={{ flex: 1 }}><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>Phone</label><input value={quickPhone} onChange={(e) => setQuickPhone(e.target.value)} placeholder="Optional" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+              <GreenButton small onClick={handleQuickAdd} disabled={!quickName.trim()}>Add</GreenButton>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={chatForm.contact} onChange={(e) => setChatForm({ ...chatForm, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={chatForm.phone} onChange={(e) => setChatForm({ ...chatForm, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <ContactSelector value={chatForm.contact_id} onChange={(v) => setChatForm({ ...chatForm, contact_id: v })} />
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Direction</label><select value={chatForm.direction} onChange={(e) => setChatForm({ ...chatForm, direction: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="Outgoing">Outgoing</option><option value="Incoming">Incoming</option></select></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Message *</label><input value={chatForm.message} onChange={(e) => setChatForm({ ...chatForm, message: e.target.value })} placeholder="Message text" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Message *</label><input value={chatForm.message} onChange={(e) => setChatForm({ ...chatForm, message: e.target.value })} placeholder="Message text" style={inputStyle} className="sz-input" /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetChat} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddChat} disabled={!chatForm.contact.trim() || !chatForm.message.trim()}>Send</GreenButton></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetChat} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddChat} disabled={!chatForm.contact_id || !chatForm.message.trim()}>Send</GreenButton></div>
         </div>
       )}
 
       {/* Log Call Form */}
       {showForm && view === "calls" && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          {showQuickAdd && (
+            <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>Name *</label><input value={quickName} onChange={(e) => setQuickName(e.target.value)} placeholder="New contact name" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+              <div style={{ flex: 1 }}><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>Phone</label><input value={quickPhone} onChange={(e) => setQuickPhone(e.target.value)} placeholder="Optional" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+              <GreenButton small onClick={handleQuickAdd} disabled={!quickName.trim()}>Add</GreenButton>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact *</label><input value={callForm.contact} onChange={(e) => setCallForm({ ...callForm, contact: e.target.value })} placeholder="Name" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={callForm.phone} onChange={(e) => setCallForm({ ...callForm, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <ContactSelector value={callForm.contact_id} onChange={(v) => setCallForm({ ...callForm, contact_id: v })} />
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Duration (min)</label><input type="number" value={callForm.duration} onChange={(e) => setCallForm({ ...callForm, duration: e.target.value })} placeholder="5" style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Outcome</label><select value={callForm.outcome} onChange={(e) => setCallForm({ ...callForm, outcome: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{outcomes.map((o) => <option key={o} value={o}>{o}</option>)}</select></div>
-            <div style={{ gridColumn: isMobile ? "1" : "2 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={callForm.notes} onChange={(e) => setCallForm({ ...callForm, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={callForm.notes} onChange={(e) => setCallForm({ ...callForm, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetCall} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddCall} disabled={!callForm.contact.trim()}>Log</GreenButton></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetCall} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddCall} disabled={!callForm.contact_id}>Log</GreenButton></div>
         </div>
       )}
 
@@ -5123,7 +5161,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
         {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
-        {tab === "inbox" && <InboxTab isMobile={isMobile} />}
+        {tab === "inbox" && <InboxTab isMobile={isMobile} companies={companies} onAddCompany={onAddCompany} />}
         {tab === "emails" && <EmailsTab isMobile={isMobile} />}
         {tab === "social" && <SocialTab isMobile={isMobile} />}
       </div>
