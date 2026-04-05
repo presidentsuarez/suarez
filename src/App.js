@@ -913,7 +913,8 @@ function CompaniesWealthTab({ isMobile, investments, onAdd, onUpdate, onDelete }
   );
 }
 /* — Bookkeeping Tab — */
-function BookkeepingTab({ isMobile, transactions, accounts, onAdd, onDelete }) {
+function BookkeepingTab({ isMobile, transactions, accounts, assets, onAdd, onDelete }) {
+  const [subView, setSubView] = useState("ledger");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" });
   const [saving, setSaving] = useState(false);
@@ -944,6 +945,15 @@ function BookkeepingTab({ isMobile, transactions, accounts, onAdd, onDelete }) {
 
   return (
     <>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[{ k: "ledger", l: "Ledger" }, { k: "statements", l: "Statements" }].map(({ k, l }) => (
+          <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
+        ))}
+      </div>
+      {subView === "statements" ? (
+        <StatementsTab isMobile={isMobile} transactions={transactions} assets={assets || []} accounts={accounts} />
+      ) : (
+      <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
         <StatCard label="Income" value={fmtCurrency(totalIncome)} accent="#16a34a" compact />
         <StatCard label="Expenses" value={fmtCurrency(totalExpenses)} accent="#dc2626" compact />
@@ -1008,6 +1018,8 @@ function BookkeepingTab({ isMobile, transactions, accounts, onAdd, onDelete }) {
           </div>
         )}
       </div>
+    </>
+      )}
     </>
   );
 }
@@ -3839,7 +3851,7 @@ function FinanceView(props) {
       <PageHeader title="Finance" subtitle="Money, wealth, bills & insurance" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} />}
+        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} />}
         {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={props.lifeExpenses} onAdd={props.onAddLifeExpense} onDelete={props.onDeleteLifeExpense} />}
         {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
