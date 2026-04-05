@@ -2457,7 +2457,7 @@ function MonthlyBillsTab({ isMobile, bills, onAdd, onUpdate, onDelete }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", amount: "", category: "Education", visibility: "personal", active: true, notes: "" });
   const [saving, setSaving] = useState(false);
-  const categories = ["Education", "Childcare", "Food & Groceries", "Gas & Fuel", "Subscriptions", "Memberships", "Transportation", "Phone Plans", "Storage", "Donations", "Alimony/Support", "Other"];
+  const categories = ["Rent/Mortgage", "Electric", "Water", "Gas", "Internet", "Phone", "Sewer/Trash", "Lawn/Pest", "HOA", "Insurance", "Subscriptions", "Memberships", "Education", "Childcare", "Food & Groceries", "Gas & Fuel", "Transportation", "Storage", "Donations", "Loan Payment", "Alimony/Support", "Other"];
 
   const resetForm = () => { setForm({ name: "", amount: "", category: "Education", visibility: "personal", active: true, notes: "" }); setEditingId(null); setShowForm(false); };
   const handleSubmit = async () => {
@@ -2479,9 +2479,9 @@ function MonthlyBillsTab({ isMobile, bills, onAdd, onUpdate, onDelete }) {
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
-        <StatCard label="Monthly Total" value={fmtCurrency(totalMonthly)} accent="#dc2626" />
-        <StatCard label="Active Bills" value={activeBills.length} accent="#3b82f6" />
-        <StatCard label="Categories" value={Object.keys(byCategory).length} accent="#7c3aed" />
+        <StatCard label="Monthly Total" value={fmtCurrency(totalMonthly)} accent="#dc2626" compact />
+        <StatCard label="Active Bills" value={activeBills.length} accent="#3b82f6" compact />
+        <StatCard label="Categories" value={Object.keys(byCategory).length} accent="#7c3aed" compact />
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Bill</GreenButton></div>
       {showForm && (
@@ -3830,7 +3830,6 @@ function FinanceView(props) {
     { key: "accounts", label: "🏦 Accounts" },
     { key: "bills", label: "📋 Bills" },
     { key: "properties", label: "🏠 Properties" },
-    { key: "utilities", label: "⚡ Utilities" },
     { key: "insurance", label: "🛡️ Insurance" },
     { key: "uploader", label: "📤 Uploader" },
   ];
@@ -3846,7 +3845,6 @@ function FinanceView(props) {
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
         {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={props.monthlyBills} onAdd={props.onAddMonthlyBill} onUpdate={props.onUpdateMonthlyBill} onDelete={props.onDeleteMonthlyBill} />}
         {tab === "properties" && <HomesTab isMobile={isMobile} homes={props.homes} onAdd={props.onAddHome} onUpdate={props.onUpdateHome} onDelete={props.onDeleteHome} />}
-        {tab === "utilities" && <UtilitiesTab isMobile={isMobile} homes={props.homes} utilityBills={props.utilityBills} onAdd={props.onAddBill} onUpdate={props.onUpdateBill} onDelete={props.onDeleteBill} />}
         {tab === "insurance" && <InsuranceContentTab isMobile={isMobile} policies={props.policies} onAdd={props.onAddPolicy} onUpdate={props.onUpdatePolicy} onDelete={props.onDeletePolicy} />}
         {tab === "uploader" && <UploaderTab isMobile={isMobile} accounts={props.accounts} uploads={props.uploads} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} />}
       </div>
