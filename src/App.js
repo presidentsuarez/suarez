@@ -4173,24 +4173,25 @@ function FinanceView(props) {
 
 function LifeConsolidatedView(props) {
   const { isMobile, activeTab, onTabChange } = props;
-  const tab = activeTab || "home";
-  const [homeTab, setHomeTab] = useState(null);
+  const tab = activeTab || "family";
   const [familyTab, setFamilyTab] = useState(null);
   const [healthTab, setHealthTab] = useState(null);
   const tabs = [
-    { key: "home", label: "Home" },
     { key: "family", label: "Family" },
     { key: "health", label: "Health" },
+    { key: "calendar", label: "📅 Calendar" },
+    { key: "planner", label: "📝 Planner" },
   ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Life" subtitle="Home, family & health" isMobile={isMobile} />
+      <PageHeader title="Life" subtitle="Family, health & planning" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "home" && <HomeLifeView {...props} activeTab={homeTab} onTabChange={setHomeTab} nested />}
         {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
         {tab === "health" && <HealthView {...props} activeTab={healthTab} onTabChange={setHealthTab} nested />}
+        {tab === "calendar" && <CalendarView isMobile={isMobile} events={props.calendarEvents} onAdd={props.onAddEvent} onDelete={props.onDeleteEvent} asTab />}
+        {tab === "planner" && <PlannerView isMobile={isMobile} tasks={props.plannerTasks} onAdd={props.onAddTask} onUpdate={props.onUpdateTask} onDelete={props.onDeleteTask} asTab />}
       </div>
     </div>
   );
