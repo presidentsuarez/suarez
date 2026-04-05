@@ -961,16 +961,15 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         <StatCard label="Expenses" value={fmtCurrency(totalExpenses)} accent="#dc2626" compact />
         <StatCard label="Net Flow" value={fmtCurrency(totalIncome - totalExpenses)} accent={totalIncome - totalExpenses >= 0 ? "#3b82f6" : "#f59e0b"} compact />
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 12, alignItems: "center", overflowX: "auto", padding: "0 0 4px" }}>
         {["all", "income", "expense"].map((t) => (
-          <button key={t} onClick={() => setFilterType(t)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${filterType === t ? "#16a34a" : "#e2e8f0"}`, background: filterType === t ? "#f0fdf4" : "transparent", color: filterType === t ? "#16a34a" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
+          <button key={t} onClick={() => setFilterType(t)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterType === t ? "#16a34a" : "#e2e8f0"}`, background: filterType === t ? "#f0fdf4" : "transparent", color: filterType === t ? "#16a34a" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize", whiteSpace: "nowrap" }}>{t}</button>
         ))}
-        <span style={{ color: "#e2e8f0" }}>|</span>
+        <span style={{ color: "#e2e8f0", flexShrink: 0 }}>|</span>
         {["all", "personal", "business"].map((v) => (
-          <button key={v} onClick={() => setFilterVis(v)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${filterVis === v ? "#7c3aed" : "#e2e8f0"}`, background: filterVis === v ? "#faf5ff" : "transparent", color: filterVis === v ? "#7c3aed" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>
+          <button key={v} onClick={() => setFilterVis(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${filterVis === v ? "#7c3aed" : "#e2e8f0"}`, background: filterVis === v ? "#faf5ff" : "transparent", color: filterVis === v ? "#7c3aed" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize", whiteSpace: "nowrap" }}>{v}</button>
         ))}
-        <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 11 }} />
-        <GreenButton small onClick={() => setShowForm(!showForm)}>{Icons.plus} Add</GreenButton>
+        <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "4px 8px", fontSize: 10, border: "1px solid #e2e8f0", borderRadius: 6, fontFamily: "'DM Mono', monospace", outline: "none", flexShrink: 0 }} />
       </div>
 
       {showForm && (
