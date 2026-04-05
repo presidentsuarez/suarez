@@ -4146,7 +4146,6 @@ function FinanceView(props) {
   const [wealthTab, setWealthTab] = useState(null);
   const tabs = [
     { key: "bookkeeping", label: "📒 Bookkeeping" },
-    { key: "spending", label: "💳 Spending" },
     { key: "wealth", label: "📊 Wealth" },
     { key: "accounts", label: "🏦 Accounts" },
     { key: "bills", label: "📋 Bills" },
@@ -4160,7 +4159,6 @@ function FinanceView(props) {
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} />}
-        {tab === "spending" && <PersonalSpendingTab isMobile={isMobile} lifeExpenses={props.lifeExpenses} onAdd={props.onAddLifeExpense} onDelete={props.onDeleteLifeExpense} />}
         {tab === "wealth" && <WealthView {...props} activeTab={wealthTab} onTabChange={setWealthTab} nested />}
         {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
         {tab === "bills" && <MonthlyBillsTab isMobile={isMobile} bills={props.monthlyBills} onAdd={props.onAddMonthlyBill} onUpdate={props.onUpdateMonthlyBill} onDelete={props.onDeleteMonthlyBill} />}
