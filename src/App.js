@@ -2961,18 +2961,11 @@ function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, 
   const setTab = onTabChange;
   const currentEmail = session?.user?.email || "";
 
-  // Auto-detect current user's family member by email, or fall back to first member
-  const myMember = familyMembers.find((m) => m.email === currentEmail);
-  const [selectedMember, setSelectedMember] = useState(myMember?.id || familyMembers[0]?.id || null);
-
-  useEffect(() => {
-    const me = familyMembers.find((m) => m.email === currentEmail);
-    if (me && !selectedMember) setSelectedMember(me.id);
-    else if (!selectedMember && familyMembers.length > 0) setSelectedMember(familyMembers[0].id);
-  }, [familyMembers, currentEmail, selectedMember]);
+  // Silently use the current user's family member
+  const myMember = familyMembers.find((m) => m.email === currentEmail) || familyMembers[0];
+  const selectedMember = myMember?.id || null;
 
   // Auto-create a family_member for the logged-in user if none exists with their email
-  const creatingRef = useCallback(() => {}, []);
   const [hasCreated, setHasCreated] = useState(false);
   useEffect(() => {
     if (nested || hasCreated) return;
@@ -2983,24 +2976,8 @@ function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, 
     }
   }, [familyMembers.length, currentEmail, nested, hasCreated]);
 
-  // One-time cleanup: remove duplicate family members (keep first created)
-  useEffect(() => {
-    if (!currentEmail || familyMembers.length <= 1) return;
-    const myMembers = familyMembers.filter((m) => m.email === currentEmail);
-    if (myMembers.length > 1) {
-      // Keep the first one, delete the rest
-      const toDelete = myMembers.slice(1);
-      toDelete.forEach(async (m) => {
-        await supabase.from("family_members").delete().eq("id", m.id);
-      });
-      // Reload after cleanup
-      setTimeout(() => window.location.reload(), 500);
-    }
-  }, [familyMembers, currentEmail]);
-
   const content = (
     <>
-      <MemberPicker members={familyMembers} selected={selectedMember} onChange={setSelectedMember} onAddMember={onAddMember} isMobile={isMobile} currentEmail={currentEmail} />
       {familyMembers.length === 0 ? (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>💪</div>
