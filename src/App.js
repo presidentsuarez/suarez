@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Papa from "papaparse";
 
@@ -624,16 +624,17 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [expanded, setExpanded] = useState(null);
-  const [form, setForm] = useState({ name: "", role: "", description: "", model: "claude-sonnet-4-5", api_endpoint: "", api_key: "", system_prompt: "", status: "active", avatar_color: "#1C3820" });
+  const [chatRobot, setChatRobot] = useState(null);
+  const [form, setForm] = useState({ name: "", role: "", description: "", model: "claude-sonnet-4-5", system_prompt: "", status: "active", avatar_color: "#1C3820" });
 
   const presetRobots = [
-    { name: "Alfred", role: "Personal Butler", description: "Manages calendar, reminders, daily briefings, and personal logistics", color: "#1C3820", icon: "🎩" },
-    { name: "Atlas", role: "Strategic Operator", description: "Handles business operations, data analysis, and high-level decision support", color: "#3b82f6", icon: "🌐" },
+    { name: "Alfred", role: "Personal Butler", description: "Manages calendar, reminders, daily briefings, and personal logistics", color: "#1C3820", icon: "🎩", prompt: "You are Alfred, a distinguished personal butler in the tradition of the finest English household staff. You are warm, discreet, impeccably professional, and endlessly helpful. You address your employer as 'sir'. You manage calendar, reminders, daily briefings, and personal logistics. You anticipate needs before they are spoken. Keep responses concise and elegant." },
+    { name: "Atlas", role: "Strategic Operator", description: "Handles business operations, data analysis, and high-level decision support", color: "#3b82f6", icon: "🌐", prompt: "You are Atlas, a strategic business operator and analyst. You are sharp, data-driven, and decisive. You help with business operations, financial analysis, market trends, and high-level decision support. You think in frameworks, cite numbers when relevant, and surface insights others miss. Be direct and substantive." },
   ];
 
   const colors = ["#1C3820", "#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2"];
 
-  const resetForm = () => { setForm({ name: "", role: "", description: "", model: "claude-sonnet-4-5", api_endpoint: "", api_key: "", system_prompt: "", status: "active", avatar_color: "#1C3820" }); setEditingId(null); setShowForm(false); };
+  const resetForm = () => { setForm({ name: "", role: "", description: "", model: "claude-sonnet-4-5", system_prompt: "", status: "active", avatar_color: "#1C3820" }); setEditingId(null); setShowForm(false); };
 
   const handleSubmit = async () => {
     if (!form.name.trim()) return;
@@ -643,14 +644,14 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
   };
 
   const startEdit = (r) => {
-    setForm({ name: r.name || "", role: r.role || "", description: r.description || "", model: r.model || "claude-sonnet-4-5", api_endpoint: r.api_endpoint || "", api_key: r.api_key || "", system_prompt: r.system_prompt || "", status: r.status || "active", avatar_color: r.avatar_color || "#1C3820" });
+    setForm({ name: r.name || "", role: r.role || "", description: r.description || "", model: r.model || "claude-sonnet-4-5", system_prompt: r.system_prompt || "", status: r.status || "active", avatar_color: r.avatar_color || "#1C3820" });
     setEditingId(r.id);
     setShowForm(true);
     setExpanded(null);
   };
 
   const quickAdd = async (preset) => {
-    await onAdd({ name: preset.name, role: preset.role, description: preset.description, status: "active", avatar_color: preset.color, model: "claude-sonnet-4-5", system_prompt: `You are ${preset.name}, ${preset.role}. ${preset.description}` });
+    await onAdd({ name: preset.name, role: preset.role, description: preset.description, status: "active", avatar_color: preset.color, model: "claude-sonnet-4-5", system_prompt: preset.prompt });
   };
 
   const missingPresets = presetRobots.filter((p) => !robots.find((r) => r.name === p.name));
@@ -686,18 +687,12 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
               <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
               <option value="claude-opus-4">Claude Opus 4</option>
               <option value="claude-haiku-4">Claude Haiku 4</option>
-              <option value="gpt-4o">GPT-4o</option>
-              <option value="gpt-4o-mini">GPT-4o Mini</option>
-              <option value="gemini-2.0">Gemini 2.0</option>
-              <option value="custom">Custom</option>
             </select></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>
               <option value="active">Active</option>
               <option value="paused">Paused</option>
               <option value="offline">Offline</option>
             </select></div>
-            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>API Endpoint</label><input value={form.api_endpoint} onChange={(e) => setForm({ ...form, api_endpoint: e.target.value })} placeholder="https://api.anthropic.com/v1/messages" style={inputStyle} className="sz-input" /></div>
-            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>API Key</label><input type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." style={inputStyle} className="sz-input" /></div>
             <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>System Prompt</label><textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} placeholder="Define the robot's personality, knowledge, and behavior..." rows={5} style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Mono', monospace", fontSize: 12 }} className="sz-input" /></div>
             <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Avatar Color</label>
               <div style={{ display: "flex", gap: 6 }}>
@@ -721,25 +716,26 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
         const statusColors = { active: "#16a34a", paused: "#f59e0b", offline: "#94a3b8" };
         return (
           <div key={r.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", marginBottom: 8, overflow: "hidden" }}>
-            <div onClick={() => setExpanded(isExpanded ? null : r.id)} style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: `linear-gradient(135deg, ${r.avatar_color || "#1C3820"}, ${r.avatar_color || "#0f1f12"}cc)`, color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🤖</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{r.name}</span>
-                  <span style={{ fontSize: 8, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[r.status] || "#94a3b8"}15`, color: statusColors[r.status] || "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>● {r.status || "active"}</span>
+            <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div onClick={() => setExpanded(isExpanded ? null : r.id)} style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, cursor: "pointer", minWidth: 0 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: `linear-gradient(135deg, ${r.avatar_color || "#1C3820"}, ${r.avatar_color || "#0f1f12"}cc)`, color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🤖</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{r.name}</span>
+                    <span style={{ fontSize: 8, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[r.status] || "#94a3b8"}15`, color: statusColors[r.status] || "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>● {r.status || "active"}</span>
+                  </div>
+                  {r.role && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{r.role}</div>}
                 </div>
-                {r.role && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{r.role}</div>}
               </div>
-              <span style={{ color: "#94a3b8", fontSize: 10 }}>{isExpanded ? "▲" : "▼"}</span>
+              <button onClick={(e) => { e.stopPropagation(); setChatRobot(r); }} style={{ background: "linear-gradient(135deg, #1C3820, #15803d)", border: "none", borderRadius: 8, padding: "8px 14px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, flexShrink: 0, boxShadow: "0 2px 6px rgba(28,56,32,0.3)" }}>💬 Chat</button>
             </div>
             {isExpanded && (
               <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f1f5f9" }}>
                 {r.description && <p style={{ fontSize: 12, color: "#475569", margin: "12px 0", lineHeight: 1.5 }}>{r.description}</p>}
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, fontSize: 11, marginBottom: 12 }}>
                   <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Model</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{r.model || "—"}</div></div>
-                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>API</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.api_endpoint ? "✓ Configured" : "Not set"}</div></div>
-                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>API Key</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{r.api_key ? "•••••••• ✓" : "Not set"}</div></div>
-                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>System Prompt</span><div style={{ color: "#0f172a", marginTop: 2 }}>{r.system_prompt ? `${r.system_prompt.length} chars` : "—"}</div></div>
+                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Provider</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{r.provider || "anthropic"}</div></div>
+                  <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>System Prompt</span><div style={{ color: "#475569", marginTop: 2, fontSize: 11, lineHeight: 1.4 }}>{r.system_prompt ? (r.system_prompt.length > 200 ? r.system_prompt.slice(0, 200) + "..." : r.system_prompt) : "—"}</div></div>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={(e) => { e.stopPropagation(); startEdit(r); }} style={{ flex: 1, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", color: "#16a34a", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>
@@ -750,7 +746,97 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
           </div>
         );
       })}
+
+      {chatRobot && <RobotChatModal robot={chatRobot} onClose={() => setChatRobot(null)} isMobile={isMobile} />}
     </>
+  );
+}
+
+function RobotChatModal({ robot, onClose, isMobile }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const scrollRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, loading]);
+
+  const send = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = { role: "user", content: input.trim() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("robot-chat", {
+        body: { robot_id: robot.id, messages: newMessages },
+      });
+      if (error) throw error;
+      if (data?.reply) {
+        setMessages((p) => [...p, { role: "assistant", content: data.reply }]);
+      } else if (data?.error) {
+        setMessages((p) => [...p, { role: "assistant", content: `⚠️ Error: ${data.error}${data.details ? ` — ${data.details}` : ""}` }]);
+      }
+    } catch (err) {
+      setMessages((p) => [...p, { role: "assistant", content: `⚠️ Connection error: ${err.message || err}` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 680, height: isMobile ? "100dvh" : "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        {/* Header */}
+        <div style={{ background: `linear-gradient(135deg, ${robot.avatar_color || "#1C3820"}, ${robot.avatar_color || "#0f1f12"}cc)`, padding: "18px 22px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(212,192,140,0.2)", border: "1.5px solid rgba(212,192,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🤖</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", fontFamily: "'Playfair Display', serif" }}>{robot.name}</div>
+            <div style={{ fontSize: 11, color: "rgba(212,192,140,0.8)" }}>{robot.role || "AI Assistant"}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, width: 32, height: 32, color: "#fff", fontSize: 16, cursor: "pointer", padding: 0 }}>×</button>
+        </div>
+
+        {/* Messages */}
+        <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "20px 22px", background: "#f8fafc" }}>
+          {messages.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>💬</div>
+              <p style={{ fontSize: 13, margin: 0 }}>Start a conversation with {robot.name}</p>
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} style={{ marginBottom: 12, display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+              <div style={{ maxWidth: "78%", background: m.role === "user" ? "#1C3820" : "#fff", color: m.role === "user" ? "#fff" : "#0f172a", padding: "10px 14px", borderRadius: 14, fontSize: 13, lineHeight: 1.5, border: m.role === "user" ? "none" : "1px solid #e2e8f0", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {m.content}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
+              <div style={{ background: "#fff", border: "1px solid #e2e8f0", padding: "10px 14px", borderRadius: 14, fontSize: 13, color: "#94a3b8" }}>
+                {robot.name} is thinking...
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div style={{ padding: "14px 16px", borderTop: "1px solid #e2e8f0", background: "#fff", display: "flex", gap: 8, flexShrink: 0 }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())}
+            placeholder={`Message ${robot.name}...`}
+            disabled={loading}
+            style={{ flex: 1, padding: "12px 14px", fontSize: 14, border: "1px solid #e2e8f0", borderRadius: 10, outline: "none", fontFamily: "'DM Sans', sans-serif", background: "#f8fafc" }}
+          />
+          <button onClick={send} disabled={!input.trim() || loading} style={{ background: "linear-gradient(135deg, #1C3820, #15803d)", color: "#D4C08C", border: "none", borderRadius: 10, padding: "0 18px", fontSize: 13, fontWeight: 700, cursor: loading || !input.trim() ? "not-allowed" : "pointer", opacity: loading || !input.trim() ? 0.5 : 1 }}>Send</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
