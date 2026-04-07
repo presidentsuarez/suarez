@@ -963,7 +963,7 @@ function CompaniesWealthTab({ isMobile, investments, onAdd, onUpdate, onDelete }
   );
 }
 /* — Bookkeeping Tab — */
-function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onAdd, onDelete, onUpload, onDeleteUpload, onLogUpload, bills, onAddBill, onUpdateBill, onDeleteBill }) {
+function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onAdd, onDelete, onUpload, onDeleteUpload, onLogUpload, bills, onAddBill, onUpdateBill, onDeleteBill, onAddAccount, onToggleAccount, onDeleteAccount }) {
   const [subView, setSubView] = useState("ledger");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" });
@@ -1001,7 +1001,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   return (
     <>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "budgeting", l: "Budgeting" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
+        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "budgeting", l: "Budgeting" }, { k: "accounts", l: "Accounts" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
           <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
         ))}
       </div>
@@ -1011,6 +1011,8 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         <UploaderTab isMobile={isMobile} accounts={accounts} onAddTransaction={onAdd} transactions={transactions} onLogUpload={onLogUpload} />
       ) : subView === "budgeting" ? (
         <MonthlyBillsTab isMobile={isMobile} bills={bills || []} onAdd={onAddBill} onUpdate={onUpdateBill} onDelete={onDeleteBill} />
+      ) : subView === "accounts" ? (
+        <AccountsTab isMobile={isMobile} accounts={accounts} onAdd={onAddAccount} onToggle={onToggleAccount} onDelete={onDeleteAccount} />
       ) : (
       <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -4630,12 +4632,12 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
 function FinanceView(props) {
   const { isMobile, activeTab, onTabChange } = props;
   const tab = activeTab || "dashboard";
+  const [dashSubView, setDashSubView] = useState("dashboard");
+  const [bkSubView, setBkSubView] = useState("ledger");
   const tabs = [
     { key: "dashboard", label: "📊 Dashboard" },
-    { key: "networth", label: "💰 Net Worth" },
-    { key: "stocks", label: "📈 Stocks" },
     { key: "bookkeeping", label: "📒 Bookkeeping" },
-    { key: "accounts", label: "🏦 Accounts" },
+    { key: "stocks", label: "📈 Stocks" },
     { key: "realestate", label: "🏠 Real Estate" },
     { key: "assets", label: "🚗 Vehicles" },
     { key: "insurance", label: "🛡️ Insurance" },
@@ -4646,11 +4648,19 @@ function FinanceView(props) {
       <PageHeader title="Finance" subtitle="Money, wealth & insurance" isMobile={isMobile} icon="💰" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
-        {tab === "networth" && <NetWorthTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} investments={props.investments} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
+        {tab === "dashboard" && (
+          <>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              {[{ k: "dashboard", l: "Dashboard" }, { k: "networth", l: "Net Worth" }].map(({ k, l }) => (
+                <button key={k} onClick={() => setDashSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${dashSubView === k ? "#0f172a" : "#e2e8f0"}`, background: dashSubView === k ? "#0f172a" : "#fff", color: dashSubView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
+              ))}
+            </div>
+            {dashSubView === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
+            {dashSubView === "networth" && <NetWorthTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} investments={props.investments} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
+          </>
+        )}
+        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} onAddAccount={props.onAddAccount} onToggleAccount={props.onToggleAccount} onDeleteAccount={props.onDeleteAccount} />}
         {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={(props.investments || []).filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
-        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} />}
-        {tab === "accounts" && <AccountsTab isMobile={isMobile} accounts={props.accounts} onAdd={props.onAddAccount} onToggle={props.onToggleAccount} onDelete={props.onDeleteAccount} />}
         {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={props.investments?.filter((i) => i.asset_type === "Real Estate") || []} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
         {tab === "assets" && <AssetsTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} onAdd={props.onAddAsset} onUpdate={props.onUpdateAsset} onDelete={props.onDeleteAsset} />}
         {tab === "insurance" && <InsuranceContentTab isMobile={isMobile} policies={props.policies} onAdd={props.onAddPolicy} onUpdate={props.onUpdatePolicy} onDelete={props.onDeletePolicy} />}
