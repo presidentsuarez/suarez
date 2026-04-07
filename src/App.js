@@ -257,10 +257,10 @@ function AuthScreen() {
   const [pageLoaded, setPageLoaded] = useState(false);
   const [hoverBtn, setHoverBtn] = useState(false);
   const [hoverGoogle, setHoverGoogle] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
 
   useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768);
+    const h = () => setIsMobile(window.innerWidth < 900);
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
@@ -6182,7 +6182,7 @@ export default function SuarezApp() {
   const [authLoading, setAuthLoading] = useState(true);
   const [activeNav, setActiveNav] = useState(initialHash.page || "overview");
   const [activeTab, setActiveTab] = useState(initialHash.tab || null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 900);
   const [showProfile, setShowProfile] = useState(initialHash.page === "profile");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [accounts, setAccounts] = useState([]);
@@ -6232,7 +6232,7 @@ export default function SuarezApp() {
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768);
+    const h = () => setIsMobile(window.innerWidth < 900);
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
@@ -6570,27 +6570,28 @@ export default function SuarezApp() {
       <GlobalStyles />
       <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", background: "#f8fafc", overflow: "hidden", fontFamily: "'DM Sans', sans-serif" }}>
         {!isMobile && (
-          <div style={{ width: 60, background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 0", gap: 6, flexShrink: 0, overflowY: "auto" }}>
+          <div style={{ width: 60, background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 0 12px", flexShrink: 0 }}>
             <SuarezLogo size={36} />
             <div style={{ height: 16 }} />
-            {navItems.map((item) => (
-              <button key={item.id} onClick={() => navigate(item.id)} title={item.label} style={{
-                width: 40, height: 40, borderRadius: 10, border: "none",
-                background: activeNav === item.id && !showProfile ? (item.featured ? "linear-gradient(135deg, #16a34a, #15803d)" : "#f0fdf4") : "transparent",
-                color: activeNav === item.id && !showProfile ? (item.featured ? "#fff" : "#16a34a") : "#94a3b8",
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
-                boxShadow: activeNav === item.id && item.featured && !showProfile ? "0 2px 8px rgba(22,163,74,0.3)" : "none",
-              }}>{item.icon}</button>
-            ))}
-            <div style={{ flex: 1 }} />
-            <div style={{ width: 48, height: 1, background: "#e2e8f0", margin: "8px 0" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center", flex: 1, overflowY: "auto", width: "100%" }}>
+              {navItems.map((item) => (
+                <button key={item.id} onClick={() => navigate(item.id)} title={item.label} style={{
+                  width: 40, height: 40, borderRadius: 10, border: "none",
+                  background: activeNav === item.id && !showProfile ? (item.featured ? "linear-gradient(135deg, #16a34a, #15803d)" : "#f0fdf4") : "transparent",
+                  color: activeNav === item.id && !showProfile ? (item.featured ? "#fff" : "#16a34a") : "#94a3b8",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
+                  boxShadow: activeNav === item.id && item.featured && !showProfile ? "0 2px 8px rgba(22,163,74,0.3)" : "none", flexShrink: 0,
+                }}>{item.icon}</button>
+              ))}
+            </div>
+            <div style={{ width: 48, height: 1, background: "#e2e8f0", margin: "8px 0", flexShrink: 0 }} />
             <button onClick={() => navigate("profile")} title={`${initials} · Owner`} style={{
               width: 40, height: 40, borderRadius: 12,
               background: showProfile ? "linear-gradient(135deg, #1C3820, #15803d)" : "linear-gradient(135deg, #1C3820, #0f1f12)",
               border: showProfile ? "2px solid #D4C08C" : "2px solid transparent",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 12, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(28,56,32,0.25)",
+              boxShadow: "0 2px 8px rgba(28,56,32,0.25)", flexShrink: 0,
             }}>{initials}</button>
           </div>
         )}
