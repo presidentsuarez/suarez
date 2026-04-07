@@ -427,6 +427,7 @@ function AuthScreen() {
 
 function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, appUsers, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember }) {
   const [profileTab, setProfileTab] = useState("basic");
+  const [usersSubTab, setUsersSubTab] = useState("active");
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", tier: "member" });
   const user = session?.user || {};
@@ -521,44 +522,61 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
 
         {profileTab === "users" && (
           <div style={{ marginTop: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <span style={{ fontSize: 13, color: "#64748b" }}>{(appUsers || []).length} signed-up user{(appUsers || []).length !== 1 ? "s" : ""}</span>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              {[{ k: "active", l: "👥 Active Users" }, { k: "robots", l: "🤖 Robots" }].map(({ k, l }) => (
+                <button key={k} onClick={() => setUsersSubTab(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${usersSubTab === k ? "#0f172a" : "#e2e8f0"}`, background: usersSubTab === k ? "#0f172a" : "#fff", color: usersSubTab === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
+              ))}
             </div>
-            <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 11, color: "#92400e" }}>
-              💡 These are real users who have signed up. Set a tier for each to control their permissions.
-            </div>
-            {(appUsers || []).map((u) => {
-              const isCurrentUser = u.id === user.id;
-              const member = (teamMembers || []).find((m) => m.auth_user_id === u.id || m.email === u.email);
-              const userTier = isCurrentUser ? "owner" : (member?.tier || "member");
-              const tier = tiers.find((t) => t.k === userTier) || tiers[2];
-              const displayName = u.full_name || fmtUserName(u.email);
-              const inits = displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-              return (
-                <div key={u.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${isCurrentUser ? "#1C3820" : "#e2e8f0"}`, padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: isCurrentUser ? "linear-gradient(135deg, #1C3820, #15803d)" : getColor(displayName), color: isCurrentUser ? "#D4C08C" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{inits}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{displayName} {isCurrentUser && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", marginLeft: 4 }}>YOU</span>}</div>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>{u.email}</div>
-                    {u.last_sign_in_at && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Last seen {fmtDate(u.last_sign_in_at)}</div>}
-                  </div>
-                  {isCurrentUser ? (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 6, background: "#1C3820", color: "#D4C08C", letterSpacing: "0.05em" }}>OWNER</span>
-                  ) : (
-                    <select value={userTier} onChange={async (e) => {
-                      if (member) await onUpdateTeamMember(member.id, { tier: e.target.value });
-                      else await onAddTeamMember({ name: displayName, email: u.email, tier: e.target.value, auth_user_id: u.id });
-                    }} style={{ padding: "5px 10px", borderRadius: 6, border: `1.5px solid ${tier.c}`, background: `${tier.c}10`, color: tier.c, fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'DM Sans', sans-serif" }}>
-                      {tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
-                    </select>
-                  )}
+            {usersSubTab === "active" && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, color: "#64748b" }}>{(appUsers || []).length} signed-up user{(appUsers || []).length !== 1 ? "s" : ""}</span>
                 </div>
-              );
-            })}
-            {(appUsers || []).length === 0 && (
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px 24px", textAlign: "center" }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
-                <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No users yet. Make sure you've run the app_users view SQL.</p>
+                <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 11, color: "#92400e" }}>
+                  💡 These are real users who have signed up. Set a tier for each to control their permissions.
+                </div>
+                {(appUsers || []).map((u) => {
+                  const isCurrentUser = u.id === user.id;
+                  const member = (teamMembers || []).find((m) => m.auth_user_id === u.id || m.email === u.email);
+                  const userTier = isCurrentUser ? "owner" : (member?.tier || "member");
+                  const tier = tiers.find((t) => t.k === userTier) || tiers[2];
+                  const displayName = u.full_name || fmtUserName(u.email);
+                  const inits = displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+                  return (
+                    <div key={u.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${isCurrentUser ? "#1C3820" : "#e2e8f0"}`, padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: "50%", background: isCurrentUser ? "linear-gradient(135deg, #1C3820, #15803d)" : getColor(displayName), color: isCurrentUser ? "#D4C08C" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{inits}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{displayName} {isCurrentUser && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", marginLeft: 4 }}>YOU</span>}</div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>{u.email}</div>
+                        {u.last_sign_in_at && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Last seen {fmtDate(u.last_sign_in_at)}</div>}
+                      </div>
+                      {isCurrentUser ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 6, background: "#1C3820", color: "#D4C08C", letterSpacing: "0.05em" }}>OWNER</span>
+                      ) : (
+                        <select value={userTier} onChange={async (e) => {
+                          if (member) await onUpdateTeamMember(member.id, { tier: e.target.value });
+                          else await onAddTeamMember({ name: displayName, email: u.email, tier: e.target.value, auth_user_id: u.id });
+                        }} style={{ padding: "5px 10px", borderRadius: 6, border: `1.5px solid ${tier.c}`, background: `${tier.c}10`, color: tier.c, fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'DM Sans', sans-serif" }}>
+                          {tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+                {(appUsers || []).length === 0 && (
+                  <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px 24px", textAlign: "center" }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
+                    <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No users yet. Make sure you've run the app_users view SQL.</p>
+                  </div>
+                )}
+              </>
+            )}
+            {usersSubTab === "robots" && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🤖</div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Robots</h3>
+                <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 4px", maxWidth: 360, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>Automated agents, AI assistants, and bots that work on your behalf will appear here.</p>
+                <p style={{ fontSize: 11, color: "#cbd5e1", margin: 0 }}>Coming soon</p>
               </div>
             )}
           </div>
