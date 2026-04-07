@@ -425,8 +425,10 @@ function AuthScreen() {
    PROFILE VIEW
    ═══════════════════════════════════════════════════════════ */
 
-function ProfileView({ session, isMobile, onSignOut, uploadLogs }) {
-  const [profileTab, setProfileTab] = useState("profile");
+function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember }) {
+  const [profileTab, setProfileTab] = useState("basic");
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUserForm, setNewUserForm] = useState({ name: "", email: "", tier: "member" });
   const user = session?.user || {};
   const email = user.email || "—";
   const fullName = user.user_metadata?.full_name || "";
@@ -435,53 +437,139 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs }) {
   const createdAt = fmtDate(user.created_at);
   const provider = user.app_metadata?.provider || "email";
 
-  const Row = ({ icon, label, value, action, actionLabel, danger }) => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid #f1f5f9" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: danger ? "#fef2f2" : "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{icon}</div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", fontFamily: "'DM Sans', sans-serif" }}>{label}</div>
-          <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'DM Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
-        </div>
-      </div>
-      {action && <button onClick={action} style={{ background: danger ? "#fef2f2" : "#f8fafc", border: `1px solid ${danger ? "#fca5a5" : "#e2e8f0"}`, borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, color: danger ? "#dc2626" : "#475569", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{actionLabel}</button>}
-    </div>
-  );
+  const tiers = [
+    { k: "owner", l: "Owner", c: "#1C3820", desc: "Full access. Can manage billing, users, and all data.", perms: ["✓ Full access to all modules", "✓ Manage billing & subscriptions", "✓ Add/remove users", "✓ Set user permissions", "✓ Delete data", "✓ Export everything"] },
+    { k: "admin", l: "Admin", c: "#3b82f6", desc: "Can manage everything except billing and ownership.", perms: ["✓ Full access to all modules", "✗ No billing access", "✓ Add/remove users", "✓ Set user permissions", "✓ Delete data", "✓ Export everything"] },
+    { k: "member", l: "Member", c: "#16a34a", desc: "Can view and edit but cannot manage users or delete major records.", perms: ["✓ View all modules", "✓ Edit assigned items", "✗ No user management", "✗ Cannot delete entities", "✓ Export own data", "✗ No billing access"] },
+    { k: "viewer", l: "Viewer", c: "#94a3b8", desc: "Read-only access to view information.", perms: ["✓ View all modules", "✗ No editing", "✗ No deletion", "✗ No user management", "✗ No data export", "✗ No billing access"] },
+  ];
 
   const tabs = [
-    { key: "profile", label: "Profile" },
+    { key: "basic", label: "Basic Info" },
+    { key: "tier", label: "Permissions / Tier" },
+    { key: "users", label: "Users" },
     { key: "uploads", label: "Upload Log" },
     { key: "settings", label: "Settings" },
   ];
 
+  const handleAddUser = async () => {
+    if (!newUserForm.name.trim()) return;
+    await onAddTeamMember(newUserForm);
+    setNewUserForm({ name: "", email: "", tier: "member" });
+    setShowAddUser(false);
+  };
+
+  const userAvatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2"];
+  const getColor = (n) => userAvatarColors[Math.abs([...(n || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % userAvatarColors.length];
+  const getInits = (n) => { const p = (n || "?").split(" "); return p.length > 1 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : n.slice(0, 2).toUpperCase(); };
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Profile & Settings" subtitle="Account information" isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", maxWidth: 640 }}>
+      <PageHeader
+        isMobile={isMobile}
+        title={displayName}
+        subtitle={email}
+        icon={initials}
+        pills={["OWNER"]}
+      />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", maxWidth: 720 }}>
         <TabBar tabs={tabs} active={profileTab} onChange={setProfileTab} isMobile={isMobile} />
-        {profileTab === "profile" && (
+
+        {profileTab === "basic" && (
           <div style={{ marginTop: 16 }}>
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "24px 20px" : "28px", marginBottom: 20, position: "relative", overflow: "hidden" }}>
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(135deg, #16a34a, #15803d)" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ width: 56, height: 56, borderRadius: 16, background: "linear-gradient(135deg, #16a34a, #15803d)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700, color: "#fff", fontFamily: "'DM Sans', sans-serif", boxShadow: "0 4px 12px rgba(22,163,74,0.3)", flexShrink: 0 }}>{initials}</div>
-                <div>
-                  <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: 0 }}>{displayName}</h2>
-                  <p style={{ fontSize: 13, color: "#64748b", fontFamily: "'DM Sans', sans-serif", margin: "2px 0 0" }}>{email}</p>
-                  <span style={{ display: "inline-block", marginTop: 8, fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>OWNER</span>
-                </div>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "8px 22px", marginBottom: 12 }}>
+              <Row label="Full Name" value={displayName} />
+              <Row label="Email" value={email} />
+              <Row label="Sign-in Method" value={provider === "google" ? "Google OAuth" : "Email & Password"} />
+              <Row label="Member Since" value={createdAt} />
+              <Row label="User ID" value={user.id?.slice(0, 12) + "..."} mono />
+            </div>
+            <button onClick={onSignOut} style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "12px 20px", fontSize: 13, fontWeight: 700, color: "#dc2626", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", width: "100%" }}>Sign Out</button>
+          </div>
+        )}
+
+        {profileTab === "tier" && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", borderRadius: 14, padding: "20px 24px", marginBottom: 16, color: "#fff" }}>
+              <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>Your Current Tier</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif" }}>OWNER</span>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>👑 Highest tier</span>
               </div>
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", margin: "8px 0 0", lineHeight: 1.5 }}>You have full access to every part of the app, can manage billing, add team members, and configure permissions.</p>
             </div>
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px", marginBottom: 20 }}>
-              <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>} label="Email" value={email} />
-              <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>} label="Sign-in Method" value={provider === "google" ? "Google OAuth" : "Email & Password"} />
-              <Row icon={<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth={2}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>} label="Member Since" value={createdAt} />
-            </div>
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "4px 20px" : "4px 28px" }}>
-              <Row icon={Icons.signout} label="Sign Out" value="End your current session" action={onSignOut} actionLabel="Sign Out" danger />
+            <SectionHeader text="All Tiers" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {tiers.map((t) => (
+                <div key={t.k} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${t.k === "owner" ? t.c : "#e2e8f0"}`, padding: "16px 20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.c }} />
+                    <span style={{ fontSize: 14, fontWeight: 800, color: t.c, fontFamily: "'Playfair Display', serif" }}>{t.l}</span>
+                    {t.k === "owner" && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>YOU</span>}
+                  </div>
+                  <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 10px", lineHeight: 1.5 }}>{t.desc}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 4 }}>
+                    {t.perms.map((p, i) => <div key={i} style={{ fontSize: 11, color: p.startsWith("✓") ? "#16a34a" : "#94a3b8", fontWeight: 500 }}>{p}</div>)}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
+
+        {profileTab === "users" && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ fontSize: 13, color: "#64748b" }}>{(teamMembers || []).length + 1} user{(teamMembers || []).length !== 0 ? "s" : ""}</span>
+              <GreenButton small onClick={() => setShowAddUser(!showAddUser)}>{Icons.plus} Add User</GreenButton>
+            </div>
+            {showAddUser && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={newUserForm.name} onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+                  <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+                  <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Tier</label><select value={newUserForm.tier} onChange={(e) => setNewUserForm({ ...newUserForm, tier: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}</select></div>
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={() => { setShowAddUser(false); setNewUserForm({ name: "", email: "", tier: "member" }); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddUser} disabled={!newUserForm.name.trim()}>Add</GreenButton></div>
+              </div>
+            )}
+            {/* Owner row (current user) */}
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #1C3820", padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg, #1C3820, #15803d)", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{initials}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{displayName} <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", marginLeft: 4 }}>YOU</span></div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{email}</div>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: "#1C3820", color: "#D4C08C", letterSpacing: "0.05em" }}>OWNER</span>
+            </div>
+            {/* Other team members */}
+            {(teamMembers || []).map((m) => {
+              const tier = tiers.find((t) => t.k === m.tier) || tiers[2];
+              return (
+                <div key={m.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: getColor(m.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{getInits(m.name)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{m.name}</div>
+                    {m.email && <div style={{ fontSize: 11, color: "#64748b" }}>{m.email}</div>}
+                  </div>
+                  <select value={m.tier || "member"} onChange={(e) => onUpdateTeamMember(m.id, { tier: e.target.value })} style={{ padding: "5px 10px", borderRadius: 6, border: `1.5px solid ${tier.c}`, background: `${tier.c}10`, color: tier.c, fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'DM Sans', sans-serif" }}>
+                    {tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
+                  </select>
+                  <button onClick={() => { if (window.confirm("Remove " + m.name + "?")) onDeleteTeamMember(m.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                </div>
+              );
+            })}
+            {(teamMembers || []).length === 0 && !showAddUser && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px 24px", textAlign: "center" }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
+                <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>You're the only user. Add team members to collaborate.</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {profileTab === "uploads" && (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>{(uploadLogs || []).length} upload{(uploadLogs || []).length !== 1 ? "s" : ""} logged</div>
@@ -512,6 +600,15 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs }) {
         )}
         {profileTab === "settings" && <SettingsView isMobile={isMobile} session={session} />}
       </div>
+    </div>
+  );
+}
+
+function Row({ label, value, mono }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+      <span style={{ color: "#64748b", fontWeight: 500 }}>{label}</span>
+      <span style={{ color: "#0f172a", fontWeight: 600, fontFamily: mono ? "'DM Mono', monospace" : "'DM Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%", textAlign: "right" }}>{value}</span>
     </div>
   );
 }
@@ -6127,6 +6224,7 @@ export default function SuarezApp() {
   const [bizTeam, setBizTeam] = useState([]);
   const [funnelPresets, setFunnelPresets] = useState([]);
   const [funnelInflows, setFunnelInflows] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -6154,7 +6252,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -6194,6 +6292,7 @@ export default function SuarezApp() {
       supabase.from("business_team").select("*").order("created_at", { ascending: true }),
       supabase.from("funnel_presets").select("*").order("created_at", { ascending: true }),
       supabase.from("funnel_inflows").select("*").order("date", { ascending: false }),
+      supabase.from("team_members").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -6238,6 +6337,7 @@ export default function SuarezApp() {
     if (bizTeamRes.data) setBizTeam(bizTeamRes.data);
     if (funnelPresetsRes.data) setFunnelPresets(funnelPresetsRes.data);
     if (funnelInflowsRes.data) setFunnelInflows(funnelInflowsRes.data);
+    if (teamMembersRes.data) setTeamMembers(teamMembersRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -6370,6 +6470,9 @@ export default function SuarezApp() {
   const handleAddFunnelInflow = async (form) => { const { data, error } = await supabase.from("funnel_inflows").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setFunnelInflows((p) => [data, ...p]); };
   const handleUpdateFunnelInflow = async (id, form) => { const { data, error } = await supabase.from("funnel_inflows").update(form).eq("id", id).select().single(); if (!error && data) setFunnelInflows((p) => p.map((x) => x.id === id ? data : x)); };
   const handleDeleteFunnelInflow = async (id) => { const { error } = await supabase.from("funnel_inflows").delete().eq("id", id); if (!error) setFunnelInflows((p) => p.filter((x) => x.id !== id)); };
+  const handleAddTeamMember = async (form) => { const { data, error } = await supabase.from("team_members").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setTeamMembers((p) => [...p, data]); };
+  const handleUpdateTeamMember = async (id, form) => { const { data, error } = await supabase.from("team_members").update(form).eq("id", id).select().single(); if (!error && data) setTeamMembers((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteTeamMember = async (id) => { const { error } = await supabase.from("team_members").delete().eq("id", id); if (!error) setTeamMembers((p) => p.filter((x) => x.id !== id)); };
 
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
@@ -6450,7 +6553,7 @@ export default function SuarezApp() {
 
   const renderPage = () => {
     if (dataLoading) return (<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}><Spinner /></div>);
-    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} />;
+    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
@@ -6480,11 +6583,14 @@ export default function SuarezApp() {
               }}>{item.icon}</button>
             ))}
             <div style={{ flex: 1 }} />
-            <button onClick={() => navigate("profile")} title="Profile" style={{
-              width: 32, height: 32, borderRadius: "50%",
-              background: showProfile ? "linear-gradient(135deg, #16a34a, #15803d)" : "linear-gradient(135deg, #3b82f6, #2563eb)",
-              border: "none", display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 11, fontWeight: 700, color: "#fff", fontFamily: "'DM Sans', sans-serif", cursor: "pointer",
+            <div style={{ width: 48, height: 1, background: "#e2e8f0", margin: "8px 0" }} />
+            <button onClick={() => navigate("profile")} title={`${initials} · Owner`} style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: showProfile ? "linear-gradient(135deg, #1C3820, #15803d)" : "linear-gradient(135deg, #1C3820, #0f1f12)",
+              border: showProfile ? "2px solid #D4C08C" : "2px solid transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(28,56,32,0.25)",
             }}>{initials}</button>
           </div>
         )}
