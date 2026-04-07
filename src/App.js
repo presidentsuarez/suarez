@@ -425,7 +425,7 @@ function AuthScreen() {
    PROFILE VIEW
    ═══════════════════════════════════════════════════════════ */
 
-function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember }) {
+function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, appUsers, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember }) {
   const [profileTab, setProfileTab] = useState("basic");
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", tier: "member" });
@@ -522,49 +522,43 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, on
         {profileTab === "users" && (
           <div style={{ marginTop: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <span style={{ fontSize: 13, color: "#64748b" }}>{(teamMembers || []).length + 1} user{(teamMembers || []).length !== 0 ? "s" : ""}</span>
-              <GreenButton small onClick={() => setShowAddUser(!showAddUser)}>{Icons.plus} Add User</GreenButton>
+              <span style={{ fontSize: 13, color: "#64748b" }}>{(appUsers || []).length} signed-up user{(appUsers || []).length !== 1 ? "s" : ""}</span>
             </div>
-            {showAddUser && (
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                  <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={newUserForm.name} onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
-                  <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
-                  <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Tier</label><select value={newUserForm.tier} onChange={(e) => setNewUserForm({ ...newUserForm, tier: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}</select></div>
-                </div>
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={() => { setShowAddUser(false); setNewUserForm({ name: "", email: "", tier: "member" }); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddUser} disabled={!newUserForm.name.trim()}>Add</GreenButton></div>
-              </div>
-            )}
-            {/* Owner row (current user) */}
-            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #1C3820", padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg, #1C3820, #15803d)", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{initials}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{displayName} <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", marginLeft: 4 }}>YOU</span></div>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{email}</div>
-              </div>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: "#1C3820", color: "#D4C08C", letterSpacing: "0.05em" }}>OWNER</span>
+            <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 11, color: "#92400e" }}>
+              💡 These are real users who have signed up. Set a tier for each to control their permissions.
             </div>
-            {/* Other team members */}
-            {(teamMembers || []).map((m) => {
-              const tier = tiers.find((t) => t.k === m.tier) || tiers[2];
+            {(appUsers || []).map((u) => {
+              const isCurrentUser = u.id === user.id;
+              const member = (teamMembers || []).find((m) => m.auth_user_id === u.id || m.email === u.email);
+              const userTier = isCurrentUser ? "owner" : (member?.tier || "member");
+              const tier = tiers.find((t) => t.k === userTier) || tiers[2];
+              const displayName = u.full_name || fmtUserName(u.email);
+              const inits = displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
               return (
-                <div key={m.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: getColor(m.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{getInits(m.name)}</div>
+                <div key={u.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${isCurrentUser ? "#1C3820" : "#e2e8f0"}`, padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: isCurrentUser ? "linear-gradient(135deg, #1C3820, #15803d)" : getColor(displayName), color: isCurrentUser ? "#D4C08C" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{inits}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{m.name}</div>
-                    {m.email && <div style={{ fontSize: 11, color: "#64748b" }}>{m.email}</div>}
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{displayName} {isCurrentUser && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", marginLeft: 4 }}>YOU</span>}</div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>{u.email}</div>
+                    {u.last_sign_in_at && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2 }}>Last seen {fmtDate(u.last_sign_in_at)}</div>}
                   </div>
-                  <select value={m.tier || "member"} onChange={(e) => onUpdateTeamMember(m.id, { tier: e.target.value })} style={{ padding: "5px 10px", borderRadius: 6, border: `1.5px solid ${tier.c}`, background: `${tier.c}10`, color: tier.c, fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'DM Sans', sans-serif" }}>
-                    {tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
-                  </select>
-                  <button onClick={() => { if (window.confirm("Remove " + m.name + "?")) onDeleteTeamMember(m.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  {isCurrentUser ? (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 6, background: "#1C3820", color: "#D4C08C", letterSpacing: "0.05em" }}>OWNER</span>
+                  ) : (
+                    <select value={userTier} onChange={async (e) => {
+                      if (member) await onUpdateTeamMember(member.id, { tier: e.target.value });
+                      else await onAddTeamMember({ name: displayName, email: u.email, tier: e.target.value, auth_user_id: u.id });
+                    }} style={{ padding: "5px 10px", borderRadius: 6, border: `1.5px solid ${tier.c}`, background: `${tier.c}10`, color: tier.c, fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'DM Sans', sans-serif" }}>
+                      {tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
+                    </select>
+                  )}
                 </div>
               );
             })}
-            {(teamMembers || []).length === 0 && !showAddUser && (
+            {(appUsers || []).length === 0 && (
               <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px 24px", textAlign: "center" }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
-                <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>You're the only user. Add team members to collaborate.</p>
+                <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No users yet. Make sure you've run the app_users view SQL.</p>
               </div>
             )}
           </div>
@@ -6266,6 +6260,7 @@ export default function SuarezApp() {
   const [funnelPresets, setFunnelPresets] = useState([]);
   const [funnelInflows, setFunnelInflows] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [appUsers, setAppUsers] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -6293,7 +6288,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -6334,6 +6329,7 @@ export default function SuarezApp() {
       supabase.from("funnel_presets").select("*").order("created_at", { ascending: true }),
       supabase.from("funnel_inflows").select("*").order("date", { ascending: false }),
       supabase.from("team_members").select("*").order("created_at", { ascending: true }),
+      supabase.from("app_users").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -6379,6 +6375,7 @@ export default function SuarezApp() {
     if (funnelPresetsRes.data) setFunnelPresets(funnelPresetsRes.data);
     if (funnelInflowsRes.data) setFunnelInflows(funnelInflowsRes.data);
     if (teamMembersRes.data) setTeamMembers(teamMembersRes.data);
+    if (appUsersRes.data) setAppUsers(appUsersRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -6594,7 +6591,7 @@ export default function SuarezApp() {
 
   const renderPage = () => {
     if (dataLoading) return (<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}><Spinner /></div>);
-    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} />;
+    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} appUsers={appUsers} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
