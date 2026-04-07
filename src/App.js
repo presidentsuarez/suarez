@@ -6570,10 +6570,10 @@ export default function SuarezApp() {
       <GlobalStyles />
       <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100dvh", minHeight: "100vh", background: "#f8fafc", overflow: "hidden", fontFamily: "'DM Sans', sans-serif" }}>
         {!isMobile && (
-          <div style={{ width: 60, background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 0 12px", flexShrink: 0, height: "100%" }}>
+          <div style={{ width: 60, background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 0 70px", flexShrink: 0, height: "100%", position: "relative" }}>
             <SuarezLogo size={36} />
             <div style={{ height: 16 }} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center", flex: 1, overflowY: "auto", width: "100%" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center", width: "100%", overflowY: "auto", flex: 1 }}>
               {navItems.map((item) => (
                 <button key={item.id} onClick={() => navigate(item.id)} title={item.label} style={{
                   width: 40, height: 40, borderRadius: 10, border: "none",
@@ -6584,14 +6584,14 @@ export default function SuarezApp() {
                 }}>{item.icon}</button>
               ))}
             </div>
-            <div style={{ width: 48, height: 1, background: "#e2e8f0", margin: "8px 0", flexShrink: 0 }} />
             <button onClick={() => navigate("profile")} title={`${initials} · Owner`} style={{
+              position: "absolute", bottom: 14, left: 10,
               width: 40, height: 40, borderRadius: 12,
               background: showProfile ? "linear-gradient(135deg, #1C3820, #15803d)" : "linear-gradient(135deg, #1C3820, #0f1f12)",
               border: showProfile ? "2px solid #D4C08C" : "2px solid transparent",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 12, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(28,56,32,0.25)", flexShrink: 0,
+              boxShadow: "0 4px 12px rgba(28,56,32,0.4)", zIndex: 10,
             }}>{initials}</button>
           </div>
         )}
