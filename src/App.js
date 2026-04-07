@@ -1833,7 +1833,7 @@ function NetWorthTab({ isMobile, assets, accounts, investments, snapshots, onAdd
    BUSINESSES
    ═══════════════════════════════════════════════════════════ */
 
-function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, onDelete, asTab }) {
+function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, onDelete, onSelect, asTab }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", entity_type: "LLC", ein: "", state_of_formation: "", date_formed: "", industry: "", description: "" });
@@ -1947,14 +1947,14 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
                   <th style={{ width: 80 }}></th>
                 </tr></thead>
                 <tbody>{businesses.map((biz) => (
-                  <tr key={biz.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                  <tr key={biz.id} onClick={() => onSelect && onSelect(biz.id)} style={{ borderBottom: "1px solid #f8fafc", cursor: onSelect ? "pointer" : "default" }} onMouseEnter={(e) => { if (onSelect) e.currentTarget.style.background = "#f8fafc"; }} onMouseLeave={(e) => { if (onSelect) e.currentTarget.style.background = "transparent"; }}>
                     <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600, color: "#0f172a" }}>{biz.name}</div>{biz.description && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{biz.description}</div>}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.entity_type}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.ein || "—"}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b" }}>{biz.state_of_formation || "—"}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b" }}>{biz.industry || "—"}</td>
                     <td style={{ padding: "10px 14px", textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: biz.active ? "#f0fdf4" : "#f8fafc", color: biz.active ? "#16a34a" : "#94a3b8", border: `1px solid ${biz.active ? "#bbf7d0" : "#e2e8f0"}` }}>{biz.active ? "ACTIVE" : "INACTIVE"}</span></td>
-                    <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, justifyContent: "center" }}><button onClick={() => startEdit(biz)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button><button onClick={() => { if (window.confirm("Delete " + biz.name + "?")) onDelete(biz.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
+                    <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, justifyContent: "center" }}><button onClick={(e) => { e.stopPropagation(); startEdit(biz); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button><button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete " + biz.name + "?")) onDelete(biz.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -2265,7 +2265,8 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
    BUSINESS (Tabbed wrapper: Entities, Contacts, Insurance)
    ═══════════════════════════════════════════════════════════ */
 
-function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, bizGoals, bizMilestones, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, onAddBizGoal, onUpdateBizGoal, onDeleteBizGoal, onAddBizMilestone, onDeleteBizMilestone, session }) {
+function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, bizGoals, bizMilestones, bizTeam, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, onAddBizGoal, onUpdateBizGoal, onDeleteBizGoal, onAddBizMilestone, onDeleteBizMilestone, onAddTeam, onUpdateTeam, onDeleteTeam, session }) {
+  const [selectedBizId, setSelectedBizId] = useState(null);
   const tab = activeTab || "entities";
   const setTab = onTabChange;
   const tabs = [
@@ -2275,17 +2276,159 @@ function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactio
     { key: "milestones", label: "🏆 Milestones" },
   ];
 
+  // If a business is selected, show its detail view
+  if (selectedBizId) {
+    const biz = businesses.find((b) => b.id === selectedBizId);
+    if (!biz) { setSelectedBizId(null); return null; }
+    return <BusinessDetailView isMobile={isMobile} biz={biz} session={session} reports={reports || []} goals={bizGoals || []} team={bizTeam || []} onBack={() => setSelectedBizId(null)} onUpdate={onUpdateBusiness} onAddReport={onAddReport} onUpdateReport={onUpdateReport} onDeleteReport={onDeleteReport} onAddGoal={onAddBizGoal} onUpdateGoal={onUpdateBizGoal} onDeleteGoal={onDeleteBizGoal} onAddTeam={onAddTeam} onUpdateTeam={onUpdateTeam} onDeleteTeam={onDeleteTeam} />;
+  }
+
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Business" subtitle="Entities, reports & goals" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "entities" && <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} />}
+        {tab === "entities" && <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} onSelect={(id) => setSelectedBizId(id)} />}
         {tab === "reports" && <ReportsTab isMobile={isMobile} businesses={businesses} reports={reports || []} onAdd={onAddReport} onUpdate={onUpdateReport} onDelete={onDeleteReport} session={session} />}
         {tab === "goals" && <BizGoalsTab isMobile={isMobile} businesses={businesses} goals={bizGoals || []} onAdd={onAddBizGoal} onUpdate={onUpdateBizGoal} onDelete={onDeleteBizGoal} />}
         {tab === "milestones" && <BizMilestonesTab isMobile={isMobile} businesses={businesses} milestones={bizMilestones || []} onAdd={onAddBizMilestone} onDelete={onDeleteBizMilestone} />}
       </div>
     </div>
+  );
+}
+
+/* — Business Detail View — */
+function BusinessDetailView({ isMobile, biz, session, reports, goals, team, onBack, onUpdate, onAddReport, onUpdateReport, onDeleteReport, onAddGoal, onUpdateGoal, onDeleteGoal, onAddTeam, onUpdateTeam, onDeleteTeam }) {
+  const [activeTab, setActiveTab] = useState("overview");
+  const bizReports = reports.filter((r) => r.business_id === biz.id);
+  const bizGoalsList = goals.filter((g) => g.business_id === biz.id);
+  const bizTeamList = team.filter((t) => t.business_id === biz.id);
+
+  const tabs = [
+    { key: "overview", label: "Overview" },
+    { key: "goals", label: "🎯 Goals" },
+    { key: "reports", label: "📄 Reports" },
+    { key: "team", label: "👥 Team" },
+  ];
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", padding: isMobile ? "20px 16px 24px" : "28px 32px 32px", color: "#fff" }}>
+        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>← Back to Business</button>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div style={{ width: 60, height: 60, borderRadius: 14, background: "rgba(212,192,140,0.15)", border: "1.5px solid rgba(212,192,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: 24, fontWeight: 800, fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>{biz.name?.[0]?.toUpperCase()}</div>
+          <div style={{ flex: 1 }}>
+            <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, fontFamily: "'Playfair Display', serif", margin: "0 0 4px", color: "#fff" }}>{biz.name}</h1>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: "rgba(212,192,140,0.2)", color: "#D4C08C", letterSpacing: "0.05em" }}>{biz.entity_type?.toUpperCase()}</span>
+              {biz.state_of_formation && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>📍 {biz.state_of_formation}</span>}
+              {biz.industry && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>· {biz.industry}</span>}
+            </div>
+            {biz.description && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: "8px 0 0", lineHeight: 1.5 }}>{biz.description}</p>}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 18 }}>
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px" }}><div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em" }}>GOALS</div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 2 }}>{bizGoalsList.length}</div></div>
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px" }}><div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em" }}>REPORTS</div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 2 }}>{bizReports.length}</div></div>
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px" }}><div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em" }}>TEAM</div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 2 }}>{bizTeamList.length}</div></div>
+        </div>
+      </div>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} isMobile={isMobile} />
+        {activeTab === "overview" && <BizOverview biz={biz} reports={bizReports} goals={bizGoalsList} team={bizTeamList} />}
+        {activeTab === "goals" && <BizGoalsTab isMobile={isMobile} businesses={[biz]} goals={bizGoalsList} onAdd={onAddGoal} onUpdate={onUpdateGoal} onDelete={onDeleteGoal} hideFilter defaultBizId={biz.id} />}
+        {activeTab === "reports" && <ReportsTab isMobile={isMobile} businesses={[biz]} reports={bizReports} onAdd={onAddReport} onUpdate={onUpdateReport} onDelete={onDeleteReport} session={session} hideFilter defaultBizId={biz.id} />}
+        {activeTab === "team" && <BizTeamTab isMobile={isMobile} bizId={biz.id} team={bizTeamList} onAdd={onAddTeam} onUpdate={onUpdateTeam} onDelete={onDeleteTeam} />}
+      </div>
+    </div>
+  );
+}
+
+function BizOverview({ biz, reports, goals, team }) {
+  const activeGoals = goals.filter((g) => g.status === "active");
+  const draftReports = reports.filter((r) => r.status === "draft");
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+        <SectionHeader text="Entity Details" />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, fontSize: 12 }}>
+          <div><div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>EIN</div><div style={{ color: "#0f172a", fontWeight: 600, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>{biz.ein || "—"}</div></div>
+          <div><div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>Date Formed</div><div style={{ color: "#0f172a", fontWeight: 600, marginTop: 2 }}>{biz.date_formed ? fmtDate(biz.date_formed) : "—"}</div></div>
+          <div><div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>State</div><div style={{ color: "#0f172a", fontWeight: 600, marginTop: 2 }}>{biz.state_of_formation || "—"}</div></div>
+          <div><div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>Industry</div><div style={{ color: "#0f172a", fontWeight: 600, marginTop: 2 }}>{biz.industry || "—"}</div></div>
+        </div>
+      </div>
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+        <SectionHeader text="Activity Snapshot" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>🎯 Active Goals</span><span style={{ fontWeight: 700, color: "#0f172a" }}>{activeGoals.length}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📄 Draft Reports</span><span style={{ fontWeight: 700, color: "#0f172a" }}>{draftReports.length}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>👥 Team Members</span><span style={{ fontWeight: 700, color: "#0f172a" }}>{team.length}</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BizTeamTab({ isMobile, bizId, team, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: "", role: "", email: "", phone: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ name: "", role: "", email: "", phone: "", notes: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload = { ...form, business_id: bizId };
+    if (editingId) await onUpdate(editingId, payload); else await onAdd(payload);
+    resetForm(); setSaving(false);
+  };
+  const startEdit = (m) => { setForm({ name: m.name || "", role: m.role || "", email: m.email || "", phone: m.phone || "", notes: m.notes || "" }); setEditingId(m.id); setShowForm(true); };
+
+  const colors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2"];
+  const getColor = (name) => colors[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % colors.length];
+  const getInitials = (name) => { const parts = (name || "?").split(" "); return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase(); };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{team.length} member{team.length !== 1 ? "s" : ""}</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Member</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g. CEO, Manager" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : editingId ? "Update" : "Add"}</GreenButton></div>
+        </div>
+      )}
+      {team.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>👥</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Team Members</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add team members for this business.</p></div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 10 }}>
+          {team.map((m) => (
+            <div key={m.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", background: getColor(m.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{getInitials(m.name)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{m.name}</div>
+                {m.role && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{m.role}</div>}
+                {m.email && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.email}</div>}
+              </div>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                <button onClick={() => startEdit(m)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                <button onClick={() => { if (window.confirm("Remove?")) onDelete(m.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -5610,6 +5753,7 @@ export default function SuarezApp() {
   const [businessReports, setBusinessReports] = useState([]);
   const [bizGoals, setBizGoals] = useState([]);
   const [bizMilestones, setBizMilestones] = useState([]);
+  const [bizTeam, setBizTeam] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -5637,7 +5781,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -5674,6 +5818,7 @@ export default function SuarezApp() {
       supabase.from("business_reports").select("*").order("created_at", { ascending: false }),
       supabase.from("business_goals").select("*").order("created_at", { ascending: false }),
       supabase.from("business_milestones").select("*").order("date", { ascending: false }),
+      supabase.from("business_team").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -5715,6 +5860,7 @@ export default function SuarezApp() {
     if (bizReportsRes.data) setBusinessReports(bizReportsRes.data);
     if (bizGoalsRes.data) setBizGoals(bizGoalsRes.data);
     if (bizMilestonesRes.data) setBizMilestones(bizMilestonesRes.data);
+    if (bizTeamRes.data) setBizTeam(bizTeamRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -5836,6 +5982,9 @@ export default function SuarezApp() {
   const handleDeleteBizGoal = async (id) => { const { error } = await supabase.from("business_goals").delete().eq("id", id); if (!error) setBizGoals((p) => p.filter((g) => g.id !== id)); };
   const handleAddBizMilestone = async (form) => { const { data, error } = await supabase.from("business_milestones").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBizMilestones((p) => [data, ...p]); };
   const handleDeleteBizMilestone = async (id) => { const { error } = await supabase.from("business_milestones").delete().eq("id", id); if (!error) setBizMilestones((p) => p.filter((m) => m.id !== id)); };
+  const handleAddBizTeam = async (form) => { const { data, error } = await supabase.from("business_team").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setBizTeam((p) => [...p, data]); };
+  const handleUpdateBizTeam = async (id, form) => { const { data, error } = await supabase.from("business_team").update(form).eq("id", id).select().single(); if (!error && data) setBizTeam((p) => p.map((t) => t.id === id ? data : t)); };
+  const handleDeleteBizTeam = async (id) => { const { error } = await supabase.from("business_team").delete().eq("id", id); if (!error) setBizTeam((p) => p.filter((t) => t.id !== id)); };
 
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
@@ -5920,7 +6069,7 @@ export default function SuarezApp() {
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
-      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} />;
+      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
