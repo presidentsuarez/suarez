@@ -2285,13 +2285,9 @@ function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactio
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Business" subtitle="Entities, reports & goals" isMobile={isMobile} />
+      <PageHeader title="Business" subtitle="Your business entities" isMobile={isMobile} />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "entities" && <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} onSelect={(id) => setSelectedBizId(id)} />}
-        {tab === "reports" && <ReportsTab isMobile={isMobile} businesses={businesses} reports={reports || []} onAdd={onAddReport} onUpdate={onUpdateReport} onDelete={onDeleteReport} session={session} />}
-        {tab === "goals" && <BizGoalsTab isMobile={isMobile} businesses={businesses} goals={bizGoals || []} onAdd={onAddBizGoal} onUpdate={onUpdateBizGoal} onDelete={onDeleteBizGoal} />}
-        {tab === "milestones" && <BizMilestonesTab isMobile={isMobile} businesses={businesses} milestones={bizMilestones || []} onAdd={onAddBizMilestone} onDelete={onDeleteBizMilestone} />}
+        <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} onSelect={(id) => setSelectedBizId(id)} />
       </div>
     </div>
   );
