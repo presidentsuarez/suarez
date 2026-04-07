@@ -4650,13 +4650,14 @@ function FinanceView(props) {
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && (
           <>
-            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-              {[{ k: "dashboard", l: "Dashboard" }, { k: "networth", l: "Net Worth" }].map(({ k, l }) => (
+            <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+              {[{ k: "dashboard", l: "Dashboard" }, { k: "networth", l: "Net Worth" }, { k: "funnel", l: "💧 Funnel" }].map(({ k, l }) => (
                 <button key={k} onClick={() => setDashSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${dashSubView === k ? "#0f172a" : "#e2e8f0"}`, background: dashSubView === k ? "#0f172a" : "#fff", color: dashSubView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
               ))}
             </div>
             {dashSubView === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
             {dashSubView === "networth" && <NetWorthTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} investments={props.investments} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
+            {dashSubView === "funnel" && <FunnelTab isMobile={isMobile} businesses={props.businesses || []} presets={props.funnelPresets || []} inflows={props.funnelInflows || []} onAddPreset={props.onAddFunnelPreset} onUpdatePreset={props.onUpdateFunnelPreset} onDeletePreset={props.onDeleteFunnelPreset} onAddInflow={props.onAddFunnelInflow} onUpdateInflow={props.onUpdateFunnelInflow} onDeleteInflow={props.onDeleteFunnelInflow} />}
           </>
         )}
         {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} onAddAccount={props.onAddAccount} onToggleAccount={props.onToggleAccount} onDeleteAccount={props.onDeleteAccount} />}
@@ -4666,6 +4667,186 @@ function FinanceView(props) {
         {tab === "insurance" && <InsuranceContentTab isMobile={isMobile} policies={props.policies} onAdd={props.onAddPolicy} onUpdate={props.onUpdatePolicy} onDelete={props.onDeletePolicy} />}
       </div>
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MONEY FUNNEL — Income allocation tracker
+   ═══════════════════════════════════════════════════════════ */
+
+function FunnelTab({ isMobile, businesses, presets, inflows, onAddPreset, onUpdatePreset, onDeletePreset, onAddInflow, onUpdateInflow, onDeleteInflow }) {
+  const [showInflow, setShowInflow] = useState(false);
+  const [showPreset, setShowPreset] = useState(false);
+  const [editingInflowId, setEditingInflowId] = useState(null);
+  const [inflowForm, setInflowForm] = useState({ amount: "", date: new Date().toISOString().split("T")[0], source: "", business_id: "", status: "received", notes: "" });
+  const [presetForm, setPresetForm] = useState({ name: "", percentage: "", category: "" });
+  const [filterScope, setFilterScope] = useState("all");
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const activePresets = presets.filter((p) => p.active !== false);
+  const totalAllocated = activePresets.reduce((s, p) => s + Number(p.percentage || 0), 0);
+  const unallocatedPct = Math.max(0, 100 - totalAllocated);
+
+  const filtered = filterScope === "all" ? inflows : filterScope === "personal" ? inflows.filter((i) => !i.business_id) : inflows.filter((i) => i.business_id === filterScope);
+  const totalReceived = filtered.filter((i) => i.status === "received").reduce((s, i) => s + Number(i.amount || 0), 0);
+  const totalUpcoming = filtered.filter((i) => i.status === "upcoming").reduce((s, i) => s + Number(i.amount || 0), 0);
+
+  const presetColors = ["#1C3820", "#16a34a", "#3b82f6", "#8b5cf6", "#f59e0b", "#dc2626", "#0891b2", "#ec4899"];
+
+  const resetInflow = () => { setInflowForm({ amount: "", date: new Date().toISOString().split("T")[0], source: "", business_id: "", status: "received", notes: "" }); setEditingInflowId(null); setShowInflow(false); };
+  const resetPreset = () => { setPresetForm({ name: "", percentage: "", category: "" }); setShowPreset(false); };
+
+  const handleAddInflow = async () => {
+    if (!inflowForm.amount || Number(inflowForm.amount) <= 0) return;
+    const payload = { amount: Number(inflowForm.amount), date: inflowForm.date || null, source: inflowForm.source || null, business_id: inflowForm.business_id || null, status: inflowForm.status, notes: inflowForm.notes || null };
+    if (editingInflowId) await onUpdateInflow(editingInflowId, payload);
+    else await onAddInflow(payload);
+    resetInflow();
+  };
+
+  const handleAddPreset = async () => {
+    if (!presetForm.name.trim() || !presetForm.percentage) return;
+    await onAddPreset({ name: presetForm.name, percentage: Number(presetForm.percentage), category: presetForm.category || null, active: true });
+    resetPreset();
+  };
+
+  const startEditInflow = (i) => {
+    setInflowForm({ amount: i.amount || "", date: i.date || new Date().toISOString().split("T")[0], source: i.source || "", business_id: i.business_id || "", status: i.status || "received", notes: i.notes || "" });
+    setEditingInflowId(i.id);
+    setShowInflow(true);
+  };
+
+  const getBizName = (id) => businesses.find((b) => b.id === id)?.name || "Personal";
+
+  return (
+    <>
+      {/* Stats row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        <StatCard label="Received" value={fmtCurrency(totalReceived)} accent="#16a34a" compact />
+        <StatCard label="Upcoming" value={fmtCurrency(totalUpcoming)} accent="#f59e0b" compact />
+        <StatCard label="Allocated %" value={`${totalAllocated}%`} accent={totalAllocated > 100 ? "#dc2626" : "#3b82f6"} compact />
+      </div>
+
+      {/* Allocation Presets */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <SectionHeader text="Allocation Rules" />
+          <button onClick={() => setShowPreset(!showPreset)} style={{ background: "none", border: "1px solid #bbf7d0", borderRadius: 6, padding: "4px 10px", color: "#16a34a", fontSize: 11, fontWeight: 700, cursor: "pointer", marginLeft: 8 }}>+ Rule</button>
+        </div>
+        {showPreset && (
+          <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "10px 12px", marginBottom: 10, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 2fr auto", gap: 8, alignItems: "end" }}>
+            <div><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>Name *</label><input value={presetForm.name} onChange={(e) => setPresetForm({ ...presetForm, name: e.target.value })} placeholder="e.g. Tithe" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>%</label><input type="number" value={presetForm.percentage} onChange={(e) => setPresetForm({ ...presetForm, percentage: e.target.value })} placeholder="10" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#16a34a", marginBottom: 3 }}>Category</label><input value={presetForm.category} onChange={(e) => setPresetForm({ ...presetForm, category: e.target.value })} placeholder="e.g. Giving, Savings" style={{ ...inputStyle, fontSize: 12, padding: "8px 10px" }} className="sz-input" /></div>
+            <GreenButton small onClick={handleAddPreset} disabled={!presetForm.name.trim() || !presetForm.percentage}>Add</GreenButton>
+          </div>
+        )}
+        {presets.length === 0 ? (
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: 0, textAlign: "center", padding: "12px 0" }}>No allocation rules yet. Add rules like "10% Tithe" or "10% Savings".</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {presets.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#f8fafc", borderRadius: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: presetColors[i % presetColors.length] }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{p.name}{p.category && <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400 }}> · {p.category}</span>}</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#1C3820", fontFamily: "'DM Mono', monospace" }}>{p.percentage}%</div>
+                <button onClick={() => onDeletePreset(p.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: unallocatedPct > 0 ? "#f0fdf4" : "#fef2f2", borderRadius: 8, border: `1px dashed ${unallocatedPct > 0 ? "#bbf7d0" : "#fecaca"}` }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: unallocatedPct >= 0 ? "#94a3b8" : "#dc2626" }} />
+              <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "#475569" }}>{unallocatedPct >= 0 ? "Unallocated / Spending" : "OVER-ALLOCATED"}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: unallocatedPct >= 0 ? "#16a34a" : "#dc2626", fontFamily: "'DM Mono', monospace" }}>{unallocatedPct}%</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Inflows */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <select value={filterScope} onChange={(e) => setFilterScope(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}>
+          <option value="all">All Sources</option>
+          <option value="personal">Personal Only</option>
+          {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <GreenButton small onClick={() => { resetInflow(); setShowInflow(!showInflow); }}>{Icons.plus} Log Income</GreenButton>
+      </div>
+
+      {showInflow && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Amount *</label><input type="number" value={inflowForm.amount} onChange={(e) => setInflowForm({ ...inflowForm, amount: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date</label><input type="date" value={inflowForm.date} onChange={(e) => setInflowForm({ ...inflowForm, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={inflowForm.status} onChange={(e) => setInflowForm({ ...inflowForm, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="received">Received</option><option value="upcoming">Upcoming</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Source</label><input value={inflowForm.source} onChange={(e) => setInflowForm({ ...inflowForm, source: e.target.value })} placeholder="e.g. Client payment" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Business</label><select value={inflowForm.business_id} onChange={(e) => setInflowForm({ ...inflowForm, business_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Personal</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+            <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={inflowForm.notes} onChange={(e) => setInflowForm({ ...inflowForm, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetInflow} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleAddInflow} disabled={!inflowForm.amount || Number(inflowForm.amount) <= 0}>{editingInflowId ? "Update" : "Log"}</GreenButton></div>
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💧</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Income Logged</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Log incoming money and watch it auto-allocate based on your rules.</p></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map((i) => {
+            const amt = Number(i.amount);
+            return (
+              <div key={i.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${i.status === "upcoming" ? "#fde68a" : "#e2e8f0"}`, padding: "14px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: "#16a34a", fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(amt)}</span>
+                      {i.status === "upcoming" && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#fef3c7", color: "#92400e" }}>UPCOMING</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, fontSize: 11, color: "#64748b", flexWrap: "wrap" }}>
+                      {i.source && <span style={{ fontWeight: 600, color: "#0f172a" }}>{i.source}</span>}
+                      <span>· {getBizName(i.business_id)}</span>
+                      {i.date && <span style={{ fontFamily: "'DM Mono', monospace" }}>· {fmtDate(i.date)}</span>}
+                    </div>
+                    {i.notes && <p style={{ fontSize: 11, color: "#94a3b8", margin: "4px 0 0", lineHeight: 1.4 }}>{i.notes}</p>}
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => startEditInflow(i)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                    <button onClick={() => { if (window.confirm("Delete?")) onDeleteInflow(i.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  </div>
+                </div>
+                {/* Allocation breakdown */}
+                {activePresets.length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #f1f5f9" }}>
+                    <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 8, background: "#f1f5f9" }}>
+                      {activePresets.map((p, idx) => (
+                        <div key={p.id} style={{ width: `${p.percentage}%`, background: presetColors[idx % presetColors.length] }} />
+                      ))}
+                      {unallocatedPct > 0 && <div style={{ width: `${unallocatedPct}%`, background: "#cbd5e1" }} />}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 6 }}>
+                      {activePresets.map((p, idx) => (
+                        <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: presetColors[idx % presetColors.length], flexShrink: 0 }} />
+                          <span style={{ color: "#64748b", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                          <span style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{fmtCurrency(amt * (p.percentage / 100))}</span>
+                        </div>
+                      ))}
+                      {unallocatedPct > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#cbd5e1", flexShrink: 0 }} />
+                          <span style={{ color: "#64748b", flex: 1 }}>Unallocated</span>
+                          <span style={{ fontWeight: 700, color: "#16a34a", fontFamily: "'DM Mono', monospace" }}>{fmtCurrency(amt * (unallocatedPct / 100))}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -5777,6 +5958,8 @@ export default function SuarezApp() {
   const [bizGoals, setBizGoals] = useState([]);
   const [bizMilestones, setBizMilestones] = useState([]);
   const [bizTeam, setBizTeam] = useState([]);
+  const [funnelPresets, setFunnelPresets] = useState([]);
+  const [funnelInflows, setFunnelInflows] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -5804,7 +5987,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -5842,6 +6025,8 @@ export default function SuarezApp() {
       supabase.from("business_goals").select("*").order("created_at", { ascending: false }),
       supabase.from("business_milestones").select("*").order("date", { ascending: false }),
       supabase.from("business_team").select("*").order("created_at", { ascending: true }),
+      supabase.from("funnel_presets").select("*").order("created_at", { ascending: true }),
+      supabase.from("funnel_inflows").select("*").order("date", { ascending: false }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -5884,6 +6069,8 @@ export default function SuarezApp() {
     if (bizGoalsRes.data) setBizGoals(bizGoalsRes.data);
     if (bizMilestonesRes.data) setBizMilestones(bizMilestonesRes.data);
     if (bizTeamRes.data) setBizTeam(bizTeamRes.data);
+    if (funnelPresetsRes.data) setFunnelPresets(funnelPresetsRes.data);
+    if (funnelInflowsRes.data) setFunnelInflows(funnelInflowsRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -6009,6 +6196,14 @@ export default function SuarezApp() {
   const handleUpdateBizTeam = async (id, form) => { const { data, error } = await supabase.from("business_team").update(form).eq("id", id).select().single(); if (!error && data) setBizTeam((p) => p.map((t) => t.id === id ? data : t)); };
   const handleDeleteBizTeam = async (id) => { const { error } = await supabase.from("business_team").delete().eq("id", id); if (!error) setBizTeam((p) => p.filter((t) => t.id !== id)); };
 
+  // Money Funnel CRUD
+  const handleAddFunnelPreset = async (form) => { const { data, error } = await supabase.from("funnel_presets").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setFunnelPresets((p) => [...p, data]); };
+  const handleUpdateFunnelPreset = async (id, form) => { const { data, error } = await supabase.from("funnel_presets").update(form).eq("id", id).select().single(); if (!error && data) setFunnelPresets((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteFunnelPreset = async (id) => { const { error } = await supabase.from("funnel_presets").delete().eq("id", id); if (!error) setFunnelPresets((p) => p.filter((x) => x.id !== id)); };
+  const handleAddFunnelInflow = async (form) => { const { data, error } = await supabase.from("funnel_inflows").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setFunnelInflows((p) => [data, ...p]); };
+  const handleUpdateFunnelInflow = async (id, form) => { const { data, error } = await supabase.from("funnel_inflows").update(form).eq("id", id).select().single(); if (!error && data) setFunnelInflows((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteFunnelInflow = async (id) => { const { error } = await supabase.from("funnel_inflows").delete().eq("id", id); if (!error) setFunnelInflows((p) => p.filter((x) => x.id !== id)); };
+
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
   const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
@@ -6091,7 +6286,7 @@ export default function SuarezApp() {
     if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
-      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
+      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
