@@ -425,7 +425,7 @@ function AuthScreen() {
    PROFILE VIEW
    ═══════════════════════════════════════════════════════════ */
 
-function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, appUsers, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember }) {
+function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, appUsers, robots, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember, onAddRobot, onUpdateRobot, onDeleteRobot }) {
   const [profileTab, setProfileTab] = useState("basic");
   const [usersSubTab, setUsersSubTab] = useState("active");
   const [showAddUser, setShowAddUser] = useState(false);
@@ -572,12 +572,7 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
               </>
             )}
             {usersSubTab === "robots" && (
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>🤖</div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Robots</h3>
-                <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 4px", maxWidth: 360, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>Automated agents, AI assistants, and bots that work on your behalf will appear here.</p>
-                <p style={{ fontSize: 11, color: "#cbd5e1", margin: 0 }}>Coming soon</p>
-              </div>
+              <RobotsTab isMobile={isMobile} robots={robots || []} onAdd={onAddRobot} onUpdate={onUpdateRobot} onDelete={onDeleteRobot} inputStyle={inputStyle} />
             )}
           </div>
         )}
@@ -622,6 +617,140 @@ function Row({ label, value, mono }) {
       <span style={{ color: "#64748b", fontWeight: 500 }}>{label}</span>
       <span style={{ color: "#0f172a", fontWeight: 600, fontFamily: mono ? "'DM Mono', monospace" : "'DM Sans', sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%", textAlign: "right" }}>{value}</span>
     </div>
+  );
+}
+
+function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [form, setForm] = useState({ name: "", role: "", description: "", model: "claude-sonnet-4-5", api_endpoint: "", api_key: "", system_prompt: "", status: "active", avatar_color: "#1C3820" });
+
+  const presetRobots = [
+    { name: "Alfred", role: "Personal Butler", description: "Manages calendar, reminders, daily briefings, and personal logistics", color: "#1C3820", icon: "🎩" },
+    { name: "Atlas", role: "Strategic Operator", description: "Handles business operations, data analysis, and high-level decision support", color: "#3b82f6", icon: "🌐" },
+  ];
+
+  const colors = ["#1C3820", "#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2"];
+
+  const resetForm = () => { setForm({ name: "", role: "", description: "", model: "claude-sonnet-4-5", api_endpoint: "", api_key: "", system_prompt: "", status: "active", avatar_color: "#1C3820" }); setEditingId(null); setShowForm(false); };
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    if (editingId) await onUpdate(editingId, form);
+    else await onAdd(form);
+    resetForm();
+  };
+
+  const startEdit = (r) => {
+    setForm({ name: r.name || "", role: r.role || "", description: r.description || "", model: r.model || "claude-sonnet-4-5", api_endpoint: r.api_endpoint || "", api_key: r.api_key || "", system_prompt: r.system_prompt || "", status: r.status || "active", avatar_color: r.avatar_color || "#1C3820" });
+    setEditingId(r.id);
+    setShowForm(true);
+    setExpanded(null);
+  };
+
+  const quickAdd = async (preset) => {
+    await onAdd({ name: preset.name, role: preset.role, description: preset.description, status: "active", avatar_color: preset.color, model: "claude-sonnet-4-5", system_prompt: `You are ${preset.name}, ${preset.role}. ${preset.description}` });
+  };
+
+  const missingPresets = presetRobots.filter((p) => !robots.find((r) => r.name === p.name));
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{robots.length} robot{robots.length !== 1 ? "s" : ""} configured</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} New Robot</GreenButton>
+      </div>
+
+      {missingPresets.length > 0 && !showForm && (
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Quick Setup</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {missingPresets.map((p) => (
+              <button key={p.name} onClick={() => quickAdd(p)} style={{ background: "rgba(212,192,140,0.15)", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, padding: "8px 14px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "'DM Sans', sans-serif" }}>
+                <span style={{ fontSize: 14 }}>{p.icon}</span> Add {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+          <SectionHeader text={editingId ? "Edit Robot" : "New Robot"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Alfred" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g. Personal Butler" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Description</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What does this robot do?" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Model</label><select value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+              <option value="claude-opus-4">Claude Opus 4</option>
+              <option value="claude-haiku-4">Claude Haiku 4</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gpt-4o-mini">GPT-4o Mini</option>
+              <option value="gemini-2.0">Gemini 2.0</option>
+              <option value="custom">Custom</option>
+            </select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="offline">Offline</option>
+            </select></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>API Endpoint</label><input value={form.api_endpoint} onChange={(e) => setForm({ ...form, api_endpoint: e.target.value })} placeholder="https://api.anthropic.com/v1/messages" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>API Key</label><input type="password" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="sk-..." style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>System Prompt</label><textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} placeholder="Define the robot's personality, knowledge, and behavior..." rows={5} style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Mono', monospace", fontSize: 12 }} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Avatar Color</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                {colors.map((c) => <button key={c} onClick={() => setForm({ ...form, avatar_color: c })} style={{ width: 28, height: 28, borderRadius: 8, background: c, border: form.avatar_color === c ? "3px solid #0f172a" : "2px solid #fff", cursor: "pointer", padding: 0 }} />)}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={!form.name.trim()}>{editingId ? "Update" : "Create Robot"}</GreenButton></div>
+        </div>
+      )}
+
+      {robots.length === 0 && !showForm && missingPresets.length === 0 && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🤖</div>
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No robots yet. Click "New Robot" to add one.</p>
+        </div>
+      )}
+
+      {robots.map((r) => {
+        const isExpanded = expanded === r.id;
+        const statusColors = { active: "#16a34a", paused: "#f59e0b", offline: "#94a3b8" };
+        return (
+          <div key={r.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", marginBottom: 8, overflow: "hidden" }}>
+            <div onClick={() => setExpanded(isExpanded ? null : r.id)} style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: `linear-gradient(135deg, ${r.avatar_color || "#1C3820"}, ${r.avatar_color || "#0f1f12"}cc)`, color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🤖</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{r.name}</span>
+                  <span style={{ fontSize: 8, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[r.status] || "#94a3b8"}15`, color: statusColors[r.status] || "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>● {r.status || "active"}</span>
+                </div>
+                {r.role && <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{r.role}</div>}
+              </div>
+              <span style={{ color: "#94a3b8", fontSize: 10 }}>{isExpanded ? "▲" : "▼"}</span>
+            </div>
+            {isExpanded && (
+              <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f1f5f9" }}>
+                {r.description && <p style={{ fontSize: 12, color: "#475569", margin: "12px 0", lineHeight: 1.5 }}>{r.description}</p>}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, fontSize: 11, marginBottom: 12 }}>
+                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Model</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{r.model || "—"}</div></div>
+                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>API</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.api_endpoint ? "✓ Configured" : "Not set"}</div></div>
+                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>API Key</span><div style={{ color: "#0f172a", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{r.api_key ? "•••••••• ✓" : "Not set"}</div></div>
+                  <div><span style={{ color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>System Prompt</span><div style={{ color: "#0f172a", marginTop: 2 }}>{r.system_prompt ? `${r.system_prompt.length} chars` : "—"}</div></div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={(e) => { e.stopPropagation(); startEdit(r); }} style={{ flex: 1, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", color: "#16a34a", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>
+                  <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete ${r.name}?`)) onDelete(r.id); }} style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 12px", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -6279,6 +6408,7 @@ export default function SuarezApp() {
   const [funnelInflows, setFunnelInflows] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [appUsers, setAppUsers] = useState([]);
+  const [robots, setRobots] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -6306,7 +6436,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -6348,6 +6478,7 @@ export default function SuarezApp() {
       supabase.from("funnel_inflows").select("*").order("date", { ascending: false }),
       supabase.from("team_members").select("*").order("created_at", { ascending: true }),
       supabase.from("app_users").select("*").order("created_at", { ascending: true }),
+      supabase.from("robots").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -6394,6 +6525,7 @@ export default function SuarezApp() {
     if (funnelInflowsRes.data) setFunnelInflows(funnelInflowsRes.data);
     if (teamMembersRes.data) setTeamMembers(teamMembersRes.data);
     if (appUsersRes.data) setAppUsers(appUsersRes.data);
+    if (robotsRes.data) setRobots(robotsRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -6530,6 +6662,11 @@ export default function SuarezApp() {
   const handleUpdateTeamMember = async (id, form) => { const { data, error } = await supabase.from("team_members").update(form).eq("id", id).select().single(); if (!error && data) setTeamMembers((p) => p.map((x) => x.id === id ? data : x)); };
   const handleDeleteTeamMember = async (id) => { const { error } = await supabase.from("team_members").delete().eq("id", id); if (!error) setTeamMembers((p) => p.filter((x) => x.id !== id)); };
 
+  // Robots CRUD
+  const handleAddRobot = async (form) => { const { data, error } = await supabase.from("robots").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setRobots((p) => [...p, data]); };
+  const handleUpdateRobot = async (id, form) => { const { data, error } = await supabase.from("robots").update({ ...form, updated_at: new Date().toISOString() }).eq("id", id).select().single(); if (!error && data) setRobots((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteRobot = async (id) => { const { error } = await supabase.from("robots").delete().eq("id", id); if (!error) setRobots((p) => p.filter((x) => x.id !== id)); };
+
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
   const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
@@ -6609,7 +6746,7 @@ export default function SuarezApp() {
 
   const renderPage = () => {
     if (dataLoading) return (<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}><Spinner /></div>);
-    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} appUsers={appUsers} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} />;
+    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} appUsers={appUsers} robots={robots} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} onAddRobot={handleAddRobot} onUpdateRobot={handleUpdateRobot} onDeleteRobot={handleDeleteRobot} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
