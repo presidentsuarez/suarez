@@ -6621,7 +6621,14 @@ export default function SuarezApp() {
           <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 56, background: "#fff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 110, boxShadow: "0 1px 8px rgba(0,0,0,0.04)" }}>
             <button onClick={() => setShowMobileMenu(true)} style={{ width: 40, height: 40, borderRadius: 10, border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#0f172a" }}>{Icons.menu}</button>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}><SuarezLogo size={24} /><span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.04em" }}>SUAREZ</span></div>
-            <div style={{ width: 40 }} />
+            <button onClick={() => navigate("profile")} title="Profile" style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: showProfile ? "linear-gradient(135deg, #1C3820, #15803d)" : "linear-gradient(135deg, #1C3820, #0f1f12)",
+              border: showProfile ? "2px solid #D4C08C" : "2px solid transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(28,56,32,0.25)", padding: 0,
+            }}>{initials}</button>
           </div>
         )}
         {isMobile && showMobileMenu && (<div onClick={() => setShowMobileMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.4)", animation: "fadeIn 0.2s ease" }} />)}
