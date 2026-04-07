@@ -6585,7 +6585,7 @@ export default function SuarezApp() {
               ))}
             </div>
             <button onClick={() => navigate("profile")} title={`${initials} · Owner`} style={{
-              position: "absolute", bottom: 14, left: 10,
+              position: "absolute", bottom: "max(20px, env(safe-area-inset-bottom, 20px))", left: 10,
               width: 40, height: 40, borderRadius: 12,
               background: showProfile ? "linear-gradient(135deg, #1C3820, #15803d)" : "linear-gradient(135deg, #1C3820, #0f1f12)",
               border: showProfile ? "2px solid #D4C08C" : "2px solid transparent",
