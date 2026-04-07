@@ -87,13 +87,37 @@ const SuarezLogo = ({ size = 34 }) => (
   <img src="/Favicon.png" alt="Suarez" style={{ width: size, height: size, borderRadius: size * 0.22, objectFit: "cover", flexShrink: 0 }} />
 );
 
-const PageHeader = ({ title, subtitle, isMobile, children }) => (
-  <div style={{ background: "#fff", borderBottom: "1px solid #e2e8f0", padding: isMobile ? "14px 16px" : "18px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-    <div>
-      <h1 style={{ fontSize: isMobile ? 17 : 20, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: 0, letterSpacing: "-0.02em" }}>{title}</h1>
-      {subtitle && <p style={{ fontSize: isMobile ? 11 : 12, color: "#94a3b8", margin: "3px 0 0", fontFamily: "'DM Sans', sans-serif" }}>{subtitle}</p>}
+const PageHeader = ({ title, subtitle, isMobile, children, icon, pills, stats, onBack }) => (
+  <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f1f12 100%)", padding: isMobile ? "16px 16px 20px" : "24px 32px 28px", color: "#fff", position: "relative", overflow: "hidden" }}>
+    <div style={{ position: "absolute", top: -40, right: -40, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(212,192,140,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
+    {onBack && (
+      <button onClick={onBack} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 14, display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
+    )}
+    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12, position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flex: 1, minWidth: 0 }}>
+        {icon && <div style={{ width: isMobile ? 44 : 52, height: isMobile ? 44 : 52, borderRadius: 12, background: "rgba(212,192,140,0.15)", border: "1.5px solid rgba(212,192,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: isMobile ? 20 : 24, flexShrink: 0 }}>{icon}</div>}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: "#fff", fontFamily: "'Playfair Display', serif", margin: 0, letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</h1>
+          {subtitle && <p style={{ fontSize: isMobile ? 11 : 12, color: "rgba(255,255,255,0.65)", margin: "4px 0 0", fontFamily: "'DM Sans', sans-serif" }}>{subtitle}</p>}
+          {pills && pills.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+              {pills.map((p, i) => <span key={i} style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: "rgba(212,192,140,0.15)", color: "#D4C08C", letterSpacing: "0.04em" }}>{p}</span>)}
+            </div>
+          )}
+        </div>
+      </div>
+      {children}
     </div>
-    {children}
+    {stats && stats.length > 0 && (
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(stats.length, isMobile ? 3 : 4)}, 1fr)`, gap: 8, marginTop: 16, position: "relative" }}>
+        {stats.map((s, i) => (
+          <div key={i} style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>{s.label}</div>
+            <div style={{ fontSize: isMobile ? 15 : 18, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+    )}
   </div>
 );
 
@@ -2285,7 +2309,7 @@ function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactio
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Business" subtitle="Your business entities" isMobile={isMobile} />
+      <PageHeader title="Business" subtitle="Your business entities" isMobile={isMobile} icon="💼" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <BusinessEntitiesTab isMobile={isMobile} businesses={businesses} transactions={transactions} onAdd={onAddBusiness} onUpdate={onUpdateBusiness} onDelete={onDeleteBusiness} onSelect={(id) => setSelectedBizId(id)} />
       </div>
@@ -2309,26 +2333,19 @@ function BusinessDetailView({ isMobile, biz, session, reports, goals, team, onBa
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", padding: isMobile ? "20px 16px 24px" : "28px 32px 32px", color: "#fff" }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>← Back to Business</button>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-          <div style={{ width: 60, height: 60, borderRadius: 14, background: "rgba(212,192,140,0.15)", border: "1.5px solid rgba(212,192,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: 24, fontWeight: 800, fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>{biz.name?.[0]?.toUpperCase()}</div>
-          <div style={{ flex: 1 }}>
-            <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 800, fontFamily: "'Playfair Display', serif", margin: "0 0 4px", color: "#fff" }}>{biz.name}</h1>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 6, background: "rgba(212,192,140,0.2)", color: "#D4C08C", letterSpacing: "0.05em" }}>{biz.entity_type?.toUpperCase()}</span>
-              {biz.state_of_formation && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>📍 {biz.state_of_formation}</span>}
-              {biz.industry && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>· {biz.industry}</span>}
-            </div>
-            {biz.description && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: "8px 0 0", lineHeight: 1.5 }}>{biz.description}</p>}
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 18 }}>
-          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px" }}><div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em" }}>GOALS</div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 2 }}>{bizGoalsList.length}</div></div>
-          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px" }}><div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em" }}>REPORTS</div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 2 }}>{bizReports.length}</div></div>
-          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px" }}><div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em" }}>TEAM</div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginTop: 2 }}>{bizTeamList.length}</div></div>
-        </div>
-      </div>
+      <PageHeader
+        isMobile={isMobile}
+        title={biz.name}
+        subtitle={biz.description || `${biz.entity_type || ""}${biz.industry ? " · " + biz.industry : ""}`}
+        icon={biz.name?.[0]?.toUpperCase()}
+        onBack={onBack}
+        pills={[biz.entity_type, biz.state_of_formation && `📍 ${biz.state_of_formation}`].filter(Boolean)}
+        stats={[
+          { label: "GOALS", value: bizGoalsList.length },
+          { label: "REPORTS", value: bizReports.length },
+          { label: "TEAM", value: bizTeamList.length },
+        ]}
+      />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} isMobile={isMobile} />
         {activeTab === "overview" && <BizOverview biz={biz} reports={bizReports} goals={bizGoalsList} team={bizTeamList} />}
@@ -4626,7 +4643,7 @@ function FinanceView(props) {
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Finance" subtitle="Money, wealth & insurance" isMobile={isMobile} />
+      <PageHeader title="Finance" subtitle="Money, wealth & insurance" isMobile={isMobile} icon="💰" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
@@ -4666,7 +4683,7 @@ function LifeConsolidatedView(props) {
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Life" subtitle="Family, health, planning & growth" isMobile={isMobile} />
+      <PageHeader title="Life" subtitle="Family, health, planning & growth" isMobile={isMobile} icon="🌳" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
@@ -5322,7 +5339,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
   ];
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} />
+      <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} icon="📡" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
@@ -5382,7 +5399,7 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
   if (view.level === "spaces") {
     return (
       <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title="ClickUp" subtitle="Projects, lists & tasks" isMobile={isMobile} />
+        <PageHeader title="ClickUp" subtitle="Projects, lists & tasks" isMobile={isMobile} icon="📋" />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <span style={{ fontSize: 13, color: "#64748b" }}>{spaces.length} space{spaces.length !== 1 ? "s" : ""}</span>
@@ -5432,7 +5449,7 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
     const rootLists = lists.filter((l) => l.space_id === view.spaceId && !l.folder_id);
     return (
       <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title={space.name} subtitle="Folders & lists" isMobile={isMobile} />
+        <PageHeader title={space.name} subtitle="Folders & lists" isMobile={isMobile} icon={space.name?.[0]?.toUpperCase()} onBack={() => setView({ level: "spaces" })} />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           <Breadcrumb />
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 16 }}>
@@ -5473,7 +5490,7 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
     const folderLists = lists.filter((l) => l.folder_id === view.folderId);
     return (
       <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title={folder.name} subtitle="Lists" isMobile={isMobile} />
+        <PageHeader title={folder.name} subtitle="Lists" isMobile={isMobile} icon="📁" onBack={() => setView({ level: "space", spaceId: space.id })} />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           <Breadcrumb />
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
@@ -5514,7 +5531,7 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
   if (view.level === "list") {
     return (
       <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title={list.name} subtitle="Tasks" isMobile={isMobile} />
+        <PageHeader title={list.name} subtitle="Tasks" isMobile={isMobile} icon="📄" onBack={() => setView({ level: "folder", spaceId: space.id, folderId: folder.id })} />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           <Breadcrumb />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
