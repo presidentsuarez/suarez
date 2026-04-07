@@ -5619,23 +5619,64 @@ function SocialTab({ isMobile }) {
 
 function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany }) {
   const tab = activeTab || "dashboard";
-  const tabs = [
-    { key: "dashboard", label: "📊 Dashboard" },
-    { key: "contacts", label: "📇 Contacts" },
-    { key: "inbox", label: "📨 Inbox" },
-    { key: "emails", label: "📧 Emails" },
-    { key: "social", label: "📱 Social" },
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+
+  const sections = [
+    { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
+    { key: "contacts", icon: "📇", label: "Contacts", desc: `${companies.length} contacts` },
+    { key: "inbox", icon: "📨", label: "Inbox", desc: "Chats & calls" },
+    { key: "emails", icon: "📧", label: "Emails", desc: "Email campaigns" },
+    { key: "social", icon: "📱", label: "Social", desc: "Posts & creator" },
   ];
+
+  const navigate = (k) => {
+    onTabChange(k);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const Sidebar = () => (
+    <div style={{ width: 260, background: "#0f1f12", borderRight: "1px solid rgba(255,255,255,0.06)", overflow: "auto", flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>📡 Outreach</h2>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Communications Hub</div>
+      </div>
+      <div style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
+        {sections.map((s) => {
+          const isActive = tab === s.key;
+          return (
+            <div key={s.key} onClick={() => navigate(s.key)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", cursor: "pointer", background: isActive ? "rgba(212,192,140,0.12)" : "transparent", borderLeft: `3px solid ${isActive ? "#D4C08C" : "transparent"}` }} onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }} onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: isActive ? "rgba(212,192,140,0.2)" : "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{s.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: isActive ? "#D4C08C" : "#fff" }}>{s.label}</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>{s.desc}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} icon="📡" />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
-        {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
-        {tab === "inbox" && <InboxTab isMobile={isMobile} companies={companies} onAddCompany={onAddCompany} />}
-        {tab === "emails" && <EmailsTab isMobile={isMobile} />}
-        {tab === "social" && <SocialTab isMobile={isMobile} />}
+    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><Sidebar /></div>
+        </>
+      )}
+      <div style={{ flex: 1, overflow: "auto" }}>
+        <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} icon="📡" />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
+          {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
+          {tab === "inbox" && <InboxTab isMobile={isMobile} companies={companies} onAddCompany={onAddCompany} />}
+          {tab === "emails" && <EmailsTab isMobile={isMobile} />}
+          {tab === "social" && <SocialTab isMobile={isMobile} />}
+        </div>
       </div>
     </div>
   );
