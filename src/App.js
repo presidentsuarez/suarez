@@ -1001,7 +1001,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   return (
     <>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "budgeting", l: "Budgeting" }, { k: "funnel", l: "💧 Funnel" }, { k: "accounts", l: "Accounts" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
+        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "budgeting", l: "Budgeting" }, { k: "funnel", l: "💧 Money Funnel" }, { k: "accounts", l: "Accounts" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
           <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
         ))}
       </div>
