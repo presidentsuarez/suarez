@@ -6568,9 +6568,9 @@ export default function SuarezApp() {
   return (
     <>
       <GlobalStyles />
-      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", background: "#f8fafc", overflow: "hidden", fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100dvh", minHeight: "100vh", background: "#f8fafc", overflow: "hidden", fontFamily: "'DM Sans', sans-serif" }}>
         {!isMobile && (
-          <div style={{ width: 60, background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 0 12px", flexShrink: 0 }}>
+          <div style={{ width: 60, background: "#fff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 0 12px", flexShrink: 0, height: "100%" }}>
             <SuarezLogo size={36} />
             <div style={{ height: 16 }} />
             <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center", flex: 1, overflowY: "auto", width: "100%" }}>
