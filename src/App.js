@@ -5908,9 +5908,9 @@ export default function SuarezApp() {
 
   const mobileNavItems = [
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
-    { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
-    { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
+    { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
+    { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
   ];
 
