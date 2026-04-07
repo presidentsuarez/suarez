@@ -5197,6 +5197,366 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
 }
 
 /* ═══════════════════════════════════════════════════════════
+   CLICKUP — Spaces → Folders → Lists → Tasks
+   ═══════════════════════════════════════════════════════════ */
+
+function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUpdateSpace, onDeleteSpace, onAddFolder, onUpdateFolder, onDeleteFolder, onAddList, onUpdateList, onDeleteList, onAddTask, onUpdateTask, onDeleteTask }) {
+  const [view, setView] = useState({ level: "spaces" }); // { level: 'spaces' | 'space' | 'folder' | 'list', id }
+  const [showForm, setShowForm] = useState(false);
+  const [formValue, setFormValue] = useState("");
+  const [activeTask, setActiveTask] = useState(null);
+  const [listView, setListView] = useState("list"); // 'list' | 'board'
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const space = view.level === "space" || view.level === "folder" || view.level === "list" ? spaces.find((s) => s.id === view.spaceId) : null;
+  const folder = view.level === "folder" || view.level === "list" ? folders.find((f) => f.id === view.folderId) : null;
+  const list = view.level === "list" ? lists.find((l) => l.id === view.listId) : null;
+
+  const handleCreate = async () => {
+    if (!formValue.trim()) return;
+    if (view.level === "spaces") await onAddSpace({ name: formValue, color: "#1C3820" });
+    else if (view.level === "space") await onAddFolder({ name: formValue, space_id: view.spaceId });
+    else if (view.level === "folder") await onAddList({ name: formValue, folder_id: view.folderId, space_id: view.spaceId });
+    setFormValue("");
+    setShowForm(false);
+  };
+
+  const handleAddTaskQuick = async () => {
+    if (!formValue.trim()) return;
+    await onAddTask({ name: formValue, list_id: view.listId, status: "todo", priority: "normal", progress: 0 });
+    setFormValue("");
+    setShowForm(false);
+  };
+
+  /* — Breadcrumb — */
+  const Breadcrumb = () => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "#64748b", flexWrap: "wrap" }}>
+      <button onClick={() => setView({ level: "spaces" })} style={{ background: "none", border: "none", cursor: "pointer", color: view.level === "spaces" ? "#0f172a" : "#3b82f6", fontWeight: 600, fontSize: 12, padding: 0 }}>📋 ClickUp</button>
+      {space && <><span>›</span><button onClick={() => setView({ level: "space", spaceId: space.id })} style={{ background: "none", border: "none", cursor: "pointer", color: view.level === "space" ? "#0f172a" : "#3b82f6", fontWeight: 600, fontSize: 12, padding: 0 }}>{space.name}</button></>}
+      {folder && <><span>›</span><button onClick={() => setView({ level: "folder", spaceId: space.id, folderId: folder.id })} style={{ background: "none", border: "none", cursor: "pointer", color: view.level === "folder" ? "#0f172a" : "#3b82f6", fontWeight: 600, fontSize: 12, padding: 0 }}>{folder.name}</button></>}
+      {list && <><span>›</span><span style={{ color: "#0f172a", fontWeight: 600 }}>{list.name}</span></>}
+    </div>
+  );
+
+  /* — Spaces list — */
+  if (view.level === "spaces") {
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <PageHeader title="ClickUp" subtitle="Projects, lists & tasks" isMobile={isMobile} />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <span style={{ fontSize: 13, color: "#64748b" }}>{spaces.length} space{spaces.length !== 1 ? "s" : ""}</span>
+            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New Space</GreenButton>
+          </div>
+          {showForm && (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
+              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Space name (e.g. Personal, Work, Investments)" onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+              <GreenButton small onClick={handleCreate} disabled={!formValue.trim()}>Create</GreenButton>
+            </div>
+          )}
+          {spaces.length === 0 && !showForm ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📋</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Spaces Yet</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Create your first space to organize projects and tasks.</p></div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
+              {spaces.map((s) => {
+                const spaceFolders = folders.filter((f) => f.space_id === s.id);
+                const spaceLists = lists.filter((l) => l.space_id === s.id);
+                const spaceTasks = tasks.filter((t) => spaceLists.some((l) => l.id === t.list_id));
+                return (
+                  <div key={s.id} onClick={() => setView({ level: "space", spaceId: s.id })} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1C3820"; e.currentTarget.style.transform = "translateY(-1px)"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.transform = "translateY(0)"; }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color || "#1C3820", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: 16, fontWeight: 800 }}>{s.name[0]?.toUpperCase()}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{s.name}</div>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this space and everything inside?")) onDeleteSpace(s.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#64748b" }}>
+                      <span>📁 {spaceFolders.length}</span>
+                      <span>📄 {spaceLists.length}</span>
+                      <span>✓ {spaceTasks.length}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* — Inside a space (folders) — */
+  if (view.level === "space") {
+    const spaceFolders = folders.filter((f) => f.space_id === view.spaceId);
+    const rootLists = lists.filter((l) => l.space_id === view.spaceId && !l.folder_id);
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <PageHeader title={space.name} subtitle="Folders & lists" isMobile={isMobile} />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          <Breadcrumb />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 16 }}>
+            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New Folder</GreenButton>
+          </div>
+          {showForm && (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
+              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Folder name" onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+              <GreenButton small onClick={handleCreate} disabled={!formValue.trim()}>Create</GreenButton>
+            </div>
+          )}
+          {spaceFolders.length === 0 && rootLists.length === 0 && !showForm ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📁</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add folders to organize lists</p></div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {spaceFolders.map((f) => {
+                const folderLists = lists.filter((l) => l.folder_id === f.id);
+                return (
+                  <div key={f.id} onClick={() => setView({ level: "folder", spaceId: space.id, folderId: f.id })} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+                    <div style={{ fontSize: 20 }}>📁</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{f.name}</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{folderLists.length} list{folderLists.length !== 1 ? "s" : ""}</div>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete folder and contents?")) onDeleteFolder(f.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* — Inside a folder (lists) — */
+  if (view.level === "folder") {
+    const folderLists = lists.filter((l) => l.folder_id === view.folderId);
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <PageHeader title={folder.name} subtitle="Lists" isMobile={isMobile} />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          <Breadcrumb />
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New List</GreenButton>
+          </div>
+          {showForm && (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
+              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="List name" onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+              <GreenButton small onClick={handleCreate} disabled={!formValue.trim()}>Create</GreenButton>
+            </div>
+          )}
+          {folderLists.length === 0 && !showForm ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📄</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Create your first list in this folder</p></div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {folderLists.map((l) => {
+                const listTasks = tasks.filter((t) => t.list_id === l.id && !t.parent_task_id);
+                const completed = listTasks.filter((t) => t.status === "done").length;
+                return (
+                  <div key={l.id} onClick={() => setView({ level: "list", spaceId: space.id, folderId: folder.id, listId: l.id })} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+                    <div style={{ fontSize: 20 }}>📄</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{l.name}</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{completed}/{listTasks.length} tasks completed</div>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete list and all tasks?")) onDeleteList(l.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* — Inside a list (tasks with list/board toggle) — */
+  if (view.level === "list") {
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <PageHeader title={list.name} subtitle="Tasks" isMobile={isMobile} />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          <Breadcrumb />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 4, background: "#fff", borderRadius: 8, padding: 3, border: "1px solid #e2e8f0" }}>
+              <button onClick={() => setListView("list")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "list" ? "#1C3820" : "transparent", color: listView === "list" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>☰ List</button>
+              <button onClick={() => setListView("board")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "board" ? "#1C3820" : "transparent", color: listView === "board" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>▦ Board</button>
+            </div>
+            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New Task</GreenButton>
+          </div>
+          {showForm && (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
+              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Task name" onKeyDown={(e) => e.key === "Enter" && handleAddTaskQuick()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+              <GreenButton small onClick={handleAddTaskQuick} disabled={!formValue.trim()}>Create</GreenButton>
+            </div>
+          )}
+          {listView === "list" ? (
+            <TaskListView tasks={tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id)} allTasks={tasks} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} onDelete={onDeleteTask} />
+          ) : (
+            <TaskBoardView tasks={tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id)} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} />
+          )}
+          {activeTask && <TaskDetailModal task={tasks.find((t) => t.id === activeTask.id) || activeTask} allTasks={tasks} onClose={() => setActiveTask(null)} onUpdate={onUpdateTask} onDelete={onDeleteTask} onAddTask={onAddTask} listId={view.listId} />}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+/* — Task List View — */
+function TaskListView({ tasks, allTasks, onOpen, onUpdate, onDelete }) {
+  const statusColors = { todo: "#94a3b8", "in-progress": "#3b82f6", review: "#f59e0b", done: "#16a34a" };
+  const priorityColors = { urgent: "#dc2626", high: "#f59e0b", normal: "#3b82f6", low: "#94a3b8" };
+  if (tasks.length === 0) return <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>✓</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No tasks yet</p></div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {tasks.map((t) => {
+        const subtaskCount = allTasks.filter((st) => st.parent_task_id === t.id).length;
+        return (
+          <div key={t.id} onClick={() => onOpen(t)} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+            <button onClick={(e) => { e.stopPropagation(); onUpdate(t.id, { status: t.status === "done" ? "todo" : "done", progress: t.status === "done" ? 0 : 100 }); }} style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${t.status === "done" ? "#16a34a" : "#cbd5e1"}`, background: t.status === "done" ? "#16a34a" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>{t.status === "done" && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}</button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.name}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 3, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[t.status] || "#94a3b8"}15`, color: statusColors[t.status] || "#94a3b8" }}>{(t.status || "todo").toUpperCase()}</span>
+                {t.priority && t.priority !== "normal" && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${priorityColors[t.priority]}15`, color: priorityColors[t.priority] }}>{t.priority.toUpperCase()}</span>}
+                {t.due_date && <span style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>📅 {fmtDate(t.due_date)}</span>}
+                {subtaskCount > 0 && <span style={{ fontSize: 10, color: "#64748b" }}>↳ {subtaskCount}</span>}
+                {typeof t.progress === "number" && t.progress > 0 && <span style={{ fontSize: 10, color: "#64748b" }}>{t.progress}%</span>}
+              </div>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* — Task Board View — */
+function TaskBoardView({ tasks, onOpen, onUpdate }) {
+  const columns = [{ k: "todo", l: "To Do", c: "#94a3b8" }, { k: "in-progress", l: "In Progress", c: "#3b82f6" }, { k: "review", l: "Review", c: "#f59e0b" }, { k: "done", l: "Done", c: "#16a34a" }];
+  return (
+    <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8 }}>
+      {columns.map((col) => {
+        const colTasks = tasks.filter((t) => (t.status || "todo") === col.k);
+        return (
+          <div key={col.k} style={{ minWidth: 240, flex: "0 0 240px", background: "#f1f5f9", borderRadius: 12, padding: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: col.c }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase" }}>{col.l}</span>
+              <span style={{ fontSize: 10, color: "#94a3b8" }}>{colTasks.length}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {colTasks.map((t) => (
+                <div key={t.id} onClick={() => onOpen(t)} style={{ background: "#fff", borderRadius: 8, padding: "10px 12px", cursor: "pointer", border: "1px solid #e2e8f0" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>{t.name}</div>
+                  {t.due_date && <div style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>📅 {fmtDate(t.due_date)}</div>}
+                  {typeof t.progress === "number" && t.progress > 0 && <div style={{ marginTop: 6, height: 4, borderRadius: 2, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${t.progress}%`, background: col.c }} /></div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* — Task Detail Modal — */
+function TaskDetailModal({ task, allTasks, onClose, onUpdate, onDelete, onAddTask, listId }) {
+  const [form, setForm] = useState({ name: task.name || "", description: task.description || "", status: task.status || "todo", priority: task.priority || "normal", start_date: task.start_date || "", due_date: task.due_date || "", assignee: task.assignee || "", progress: task.progress || 0, notes: task.notes || "" });
+  const [newSubtask, setNewSubtask] = useState("");
+  const [newComment, setNewComment] = useState("");
+  const [comments, setComments] = useState(task.comments || []);
+  const subtasks = allTasks.filter((t) => t.parent_task_id === task.id);
+  const inputStyle = { width: "100%", padding: "8px 12px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 7, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const save = (updates) => { setForm({ ...form, ...updates }); onUpdate(task.id, updates); };
+
+  const handleAddSubtask = async () => {
+    if (!newSubtask.trim()) return;
+    await onAddTask({ name: newSubtask, list_id: listId, parent_task_id: task.id, status: "todo", priority: "normal", progress: 0 });
+    setNewSubtask("");
+  };
+
+  const handleAddComment = () => {
+    if (!newComment.trim()) return;
+    const updated = [...comments, { text: newComment, date: new Date().toISOString() }];
+    setComments(updated);
+    onUpdate(task.id, { comments: updated });
+    setNewComment("");
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, maxWidth: 620, width: "100%", maxHeight: "90vh", overflow: "auto", padding: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} onBlur={() => save({ name: form.name })} style={{ flex: 1, fontSize: 18, fontWeight: 700, border: "none", outline: "none", color: "#0f172a", fontFamily: "'Playfair Display', serif" }} />
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#94a3b8" }}>✕</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 3, textTransform: "uppercase" }}>Status</label><select value={form.status} onChange={(e) => save({ status: e.target.value, progress: e.target.value === "done" ? 100 : form.progress })} style={{ ...inputStyle, cursor: "pointer" }}><option value="todo">To Do</option><option value="in-progress">In Progress</option><option value="review">Review</option><option value="done">Done</option></select></div>
+          <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 3, textTransform: "uppercase" }}>Priority</label><select value={form.priority} onChange={(e) => save({ priority: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+          <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 3, textTransform: "uppercase" }}>Start</label><input type="date" value={form.start_date || ""} onChange={(e) => save({ start_date: e.target.value || null })} style={inputStyle} className="sz-input" /></div>
+          <div><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 3, textTransform: "uppercase" }}>Due</label><input type="date" value={form.due_date || ""} onChange={(e) => save({ due_date: e.target.value || null })} style={inputStyle} className="sz-input" /></div>
+          <div style={{ gridColumn: "1 / -1" }}><label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 3, textTransform: "uppercase" }}>Assignee</label><input value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} onBlur={() => save({ assignee: form.assignee })} placeholder="Who owns this?" style={inputStyle} className="sz-input" /></div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" }}>Progress</label>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#1C3820" }}>{form.progress}%</span>
+          </div>
+          <input type="range" min="0" max="100" step="5" value={form.progress} onChange={(e) => setForm({ ...form, progress: Number(e.target.value) })} onMouseUp={() => save({ progress: form.progress })} onTouchEnd={() => save({ progress: form.progress })} style={{ width: "100%", accentColor: "#1C3820" }} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 3, textTransform: "uppercase" }}>Description</label>
+          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} onBlur={() => save({ description: form.description })} placeholder="Add details..." rows={3} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 6, textTransform: "uppercase" }}>Subtasks ({subtasks.length})</label>
+          {subtasks.map((st) => (
+            <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f1f5f9" }}>
+              <button onClick={() => onUpdate(st.id, { status: st.status === "done" ? "todo" : "done" })} style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${st.status === "done" ? "#16a34a" : "#cbd5e1"}`, background: st.status === "done" ? "#16a34a" : "#fff", cursor: "pointer", flexShrink: 0 }}>{st.status === "done" && <span style={{ color: "#fff", fontSize: 9 }}>✓</span>}</button>
+              <span style={{ flex: 1, fontSize: 12, color: "#0f172a", textDecoration: st.status === "done" ? "line-through" : "none" }}>{st.name}</span>
+              <button onClick={() => onDelete(st.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#dc2626" }}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <input value={newSubtask} onChange={(e) => setNewSubtask(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddSubtask()} placeholder="Add subtask..." style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+            <GreenButton small onClick={handleAddSubtask} disabled={!newSubtask.trim()}>+</GreenButton>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 6, textTransform: "uppercase" }}>Comments ({comments.length})</label>
+          {comments.map((c, i) => (
+            <div key={i} style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px", marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: "#0f172a" }}>{c.text}</div>
+              <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 3 }}>{fmtDate(c.date)}</div>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <input value={newComment} onChange={(e) => setNewComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddComment()} placeholder="Add comment..." style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+            <GreenButton small onClick={handleAddComment} disabled={!newComment.trim()}>+</GreenButton>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 16, paddingTop: 16, borderTop: "1px solid #f1f5f9" }}>
+          <button onClick={() => { if (window.confirm("Delete task?")) { onDelete(task.id); onClose(); } }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #fecaca", background: "#fef2f2", fontSize: 12, fontWeight: 600, color: "#dc2626", cursor: "pointer" }}>Delete</button>
+          <button onClick={onClose} style={{ padding: "8px 20px", borderRadius: 8, border: "none", background: "#1C3820", fontSize: 12, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════════════════════ */
 
@@ -5250,6 +5610,10 @@ export default function SuarezApp() {
   const [businessReports, setBusinessReports] = useState([]);
   const [bizGoals, setBizGoals] = useState([]);
   const [bizMilestones, setBizMilestones] = useState([]);
+  const [cuSpaces, setCuSpaces] = useState([]);
+  const [cuFolders, setCuFolders] = useState([]);
+  const [cuLists, setCuLists] = useState([]);
+  const [cuTasks, setCuTasks] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
@@ -5273,7 +5637,7 @@ export default function SuarezApp() {
   const loadData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -5310,6 +5674,10 @@ export default function SuarezApp() {
       supabase.from("business_reports").select("*").order("created_at", { ascending: false }),
       supabase.from("business_goals").select("*").order("created_at", { ascending: false }),
       supabase.from("business_milestones").select("*").order("date", { ascending: false }),
+      supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
+      supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
+      supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
+      supabase.from("cu_tasks").select("*").order("created_at", { ascending: true }),
     ]);
     if (acctRes.data) setAccounts(acctRes.data);
     if (uploadRes.data) setUploads(uploadRes.data);
@@ -5347,6 +5715,10 @@ export default function SuarezApp() {
     if (bizReportsRes.data) setBusinessReports(bizReportsRes.data);
     if (bizGoalsRes.data) setBizGoals(bizGoalsRes.data);
     if (bizMilestonesRes.data) setBizMilestones(bizMilestonesRes.data);
+    if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
+    if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
+    if (cuListsRes.data) setCuLists(cuListsRes.data);
+    if (cuTasksRes.data) setCuTasks(cuTasksRes.data);
     setDataLoading(false);
   }, [session]);
 
@@ -5464,6 +5836,20 @@ export default function SuarezApp() {
   const handleDeleteBizGoal = async (id) => { const { error } = await supabase.from("business_goals").delete().eq("id", id); if (!error) setBizGoals((p) => p.filter((g) => g.id !== id)); };
   const handleAddBizMilestone = async (form) => { const { data, error } = await supabase.from("business_milestones").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBizMilestones((p) => [data, ...p]); };
   const handleDeleteBizMilestone = async (id) => { const { error } = await supabase.from("business_milestones").delete().eq("id", id); if (!error) setBizMilestones((p) => p.filter((m) => m.id !== id)); };
+
+  // ClickUp CRUD
+  const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
+  const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
+  const handleDeleteSpace = async (id) => { const { error } = await supabase.from("cu_spaces").delete().eq("id", id); if (!error) setCuSpaces((p) => p.filter((s) => s.id !== id)); };
+  const handleAddFolder = async (form) => { const { data, error } = await supabase.from("cu_folders").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuFolders((p) => [...p, data]); };
+  const handleUpdateFolder = async (id, form) => { const { data, error } = await supabase.from("cu_folders").update(form).eq("id", id).select().single(); if (!error && data) setCuFolders((p) => p.map((f) => f.id === id ? data : f)); };
+  const handleDeleteFolder = async (id) => { const { error } = await supabase.from("cu_folders").delete().eq("id", id); if (!error) setCuFolders((p) => p.filter((f) => f.id !== id)); };
+  const handleAddList = async (form) => { const { data, error } = await supabase.from("cu_lists").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuLists((p) => [...p, data]); };
+  const handleUpdateList = async (id, form) => { const { data, error } = await supabase.from("cu_lists").update(form).eq("id", id).select().single(); if (!error && data) setCuLists((p) => p.map((l) => l.id === id ? data : l)); };
+  const handleDeleteList = async (id) => { const { error } = await supabase.from("cu_lists").delete().eq("id", id); if (!error) setCuLists((p) => p.filter((l) => l.id !== id)); };
+  const handleAddTask2 = async (form) => { const { data, error } = await supabase.from("cu_tasks").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setCuTasks((p) => [...p, data]); return data; };
+  const handleUpdateTask2 = async (id, form) => { const { data, error } = await supabase.from("cu_tasks").update(form).eq("id", id).select().single(); if (!error && data) setCuTasks((p) => p.map((t) => t.id === id ? data : t)); };
+  const handleDeleteTask2 = async (id) => { const { error } = await supabase.from("cu_tasks").delete().eq("id", id); if (!error) setCuTasks((p) => p.filter((t) => t.id !== id && t.parent_task_id !== id)); };
   const handleAddBloodWork = async (form) => { const { data, error } = await supabase.from("blood_work").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBloodWork((p) => [data, ...p]); };
   const handleDeleteBloodWork = async (id) => { const { error } = await supabase.from("blood_work").delete().eq("id", id); if (!error) setBloodWork((p) => p.filter((b) => b.id !== id)); };
 
@@ -5515,13 +5901,14 @@ export default function SuarezApp() {
     { id: "overview", label: "Command Center", icon: <span style={{ fontSize: 18 }}>🌍</span> },
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
+    { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "finance", label: "Finance", featured: true, icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
   ];
 
   const mobileNavItems = [
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
-    { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
+    { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
@@ -5536,6 +5923,7 @@ export default function SuarezApp() {
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
+      case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       default: return null;
     }
   };
