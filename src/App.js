@@ -5549,232 +5549,398 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
    ═══════════════════════════════════════════════════════════ */
 
 function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUpdateSpace, onDeleteSpace, onAddFolder, onUpdateFolder, onDeleteFolder, onAddList, onUpdateList, onDeleteList, onAddTask, onUpdateTask, onDeleteTask }) {
-  const [view, setView] = useState({ level: "spaces" }); // { level: 'spaces' | 'space' | 'folder' | 'list', id }
-  const [showForm, setShowForm] = useState(false);
-  const [formValue, setFormValue] = useState("");
+  const [view, setView] = useState({ level: "spaces" });
   const [activeTask, setActiveTask] = useState(null);
-  const [listView, setListView] = useState("list"); // 'list' | 'board'
+  const [listView, setListView] = useState("list");
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [expandedSpaces, setExpandedSpaces] = useState({});
+  const [expandedFolders, setExpandedFolders] = useState({});
+  const [createMenu, setCreateMenu] = useState(null); // {type, parentId}
+  const [createValue, setCreateValue] = useState("");
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
-  const space = view.level === "space" || view.level === "folder" || view.level === "list" ? spaces.find((s) => s.id === view.spaceId) : null;
-  const folder = view.level === "folder" || view.level === "list" ? folders.find((f) => f.id === view.folderId) : null;
-  const list = view.level === "list" ? lists.find((l) => l.id === view.listId) : null;
+  const space = view.spaceId ? spaces.find((s) => s.id === view.spaceId) : null;
+  const folder = view.folderId ? folders.find((f) => f.id === view.folderId) : null;
+  const list = view.listId ? lists.find((l) => l.id === view.listId) : null;
+
+  const navigate = (newView) => {
+    setView(newView);
+    if (newView.spaceId) setExpandedSpaces((p) => ({ ...p, [newView.spaceId]: true }));
+    if (newView.folderId) setExpandedFolders((p) => ({ ...p, [newView.folderId]: true }));
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const toggleSpace = (id) => setExpandedSpaces((p) => ({ ...p, [id]: !p[id] }));
+  const toggleFolder = (id) => setExpandedFolders((p) => ({ ...p, [id]: !p[id] }));
 
   const handleCreate = async () => {
-    if (!formValue.trim()) return;
-    if (view.level === "spaces") await onAddSpace({ name: formValue, color: "#1C3820" });
-    else if (view.level === "space") await onAddFolder({ name: formValue, space_id: view.spaceId });
-    else if (view.level === "folder") await onAddList({ name: formValue, folder_id: view.folderId, space_id: view.spaceId });
-    setFormValue("");
-    setShowForm(false);
+    if (!createValue.trim() || !createMenu) return;
+    if (createMenu.type === "space") await onAddSpace({ name: createValue, color: "#1C3820" });
+    else if (createMenu.type === "folder") await onAddFolder({ name: createValue, space_id: createMenu.parentId });
+    else if (createMenu.type === "list") await onAddList({ name: createValue, folder_id: createMenu.folderId || null, space_id: createMenu.parentId });
+    else if (createMenu.type === "task") await onAddTask({ name: createValue, list_id: createMenu.parentId, status: "todo", priority: "normal", progress: 0 });
+    setCreateValue("");
+    setCreateMenu(null);
   };
 
-  const handleAddTaskQuick = async () => {
-    if (!formValue.trim()) return;
-    await onAddTask({ name: formValue, list_id: view.listId, status: "todo", priority: "normal", progress: 0 });
-    setFormValue("");
-    setShowForm(false);
-  };
-
-  /* — Breadcrumb — */
-  const Breadcrumb = () => (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontSize: 12, color: "#64748b", flexWrap: "wrap" }}>
-      <button onClick={() => setView({ level: "spaces" })} style={{ background: "none", border: "none", cursor: "pointer", color: view.level === "spaces" ? "#0f172a" : "#3b82f6", fontWeight: 600, fontSize: 12, padding: 0 }}>📋 ClickUp</button>
-      {space && <><span>›</span><button onClick={() => setView({ level: "space", spaceId: space.id })} style={{ background: "none", border: "none", cursor: "pointer", color: view.level === "space" ? "#0f172a" : "#3b82f6", fontWeight: 600, fontSize: 12, padding: 0 }}>{space.name}</button></>}
-      {folder && <><span>›</span><button onClick={() => setView({ level: "folder", spaceId: space.id, folderId: folder.id })} style={{ background: "none", border: "none", cursor: "pointer", color: view.level === "folder" ? "#0f172a" : "#3b82f6", fontWeight: 600, fontSize: 12, padding: 0 }}>{folder.name}</button></>}
-      {list && <><span>›</span><span style={{ color: "#0f172a", fontWeight: 600 }}>{list.name}</span></>}
+  /* — Sidebar tree — */
+  const Sidebar = () => (
+    <div style={{ width: 260, background: "#0f1f12", borderRight: "1px solid rgba(255,255,255,0.06)", overflow: "auto", flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: 0, fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>📋 ClickUp</h2>
+          <button onClick={() => setCreateMenu({ type: "space" })} title="New Space" style={{ background: "rgba(212,192,140,0.15)", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 6, color: "#D4C08C", width: 22, height: 22, fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>+</button>
+        </div>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Workspace</div>
+      </div>
+      <div style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
+        {spaces.length === 0 && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center", padding: "20px 12px", margin: 0 }}>No spaces yet. Click + to add one.</p>}
+        {spaces.map((s) => {
+          const isExpanded = expandedSpaces[s.id];
+          const spaceFolders = folders.filter((f) => f.space_id === s.id);
+          const rootLists = lists.filter((l) => l.space_id === s.id && !l.folder_id);
+          const isActiveSpace = view.spaceId === s.id;
+          return (
+            <div key={s.id} style={{ marginBottom: 2 }}>
+              <div onClick={() => { toggleSpace(s.id); navigate({ level: "space", spaceId: s.id }); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", cursor: "pointer", background: isActiveSpace && view.level === "space" ? "rgba(212,192,140,0.12)" : "transparent", borderLeft: `3px solid ${isActiveSpace ? "#D4C08C" : "transparent"}` }} onMouseEnter={(e) => { if (!isActiveSpace) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }} onMouseLeave={(e) => { if (!isActiveSpace || view.level !== "space") e.currentTarget.style.background = "transparent"; else e.currentTarget.style.background = "rgba(212,192,140,0.12)"; }}>
+                <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 9 }}>{isExpanded ? "▼" : "▶"}</span>
+                <div style={{ width: 18, height: 18, borderRadius: 5, background: s.color || "#1C3820", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: 10, fontWeight: 800, flexShrink: 0 }}>{s.name[0]?.toUpperCase()}</div>
+                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                <button onClick={(e) => { e.stopPropagation(); setCreateMenu({ type: "folder", parentId: s.id }); }} title="New Folder" style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 14, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>+</button>
+              </div>
+              {isExpanded && (
+                <>
+                  {rootLists.map((l) => {
+                    const isActive = view.listId === l.id;
+                    const listTasks = tasks.filter((t) => t.list_id === l.id && !t.parent_task_id);
+                    return (
+                      <div key={l.id} onClick={() => navigate({ level: "list", spaceId: s.id, listId: l.id })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 14px 5px 38px", cursor: "pointer", background: isActive ? "rgba(212,192,140,0.12)" : "transparent", borderLeft: `3px solid ${isActive ? "#D4C08C" : "transparent"}` }}>
+                        <span style={{ fontSize: 11 }}>📄</span>
+                        <span style={{ flex: 1, fontSize: 11, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+                        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)" }}>{listTasks.length}</span>
+                      </div>
+                    );
+                  })}
+                  {spaceFolders.map((f) => {
+                    const folderExpanded = expandedFolders[f.id];
+                    const folderLists = lists.filter((l) => l.folder_id === f.id);
+                    const isActiveFolder = view.folderId === f.id;
+                    return (
+                      <div key={f.id}>
+                        <div onClick={() => { toggleFolder(f.id); navigate({ level: "folder", spaceId: s.id, folderId: f.id }); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 14px 5px 28px", cursor: "pointer", background: isActiveFolder && view.level === "folder" ? "rgba(212,192,140,0.08)" : "transparent" }}>
+                          <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 8 }}>{folderExpanded ? "▼" : "▶"}</span>
+                          <span style={{ fontSize: 11 }}>📁</span>
+                          <span style={{ flex: 1, fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                          <button onClick={(e) => { e.stopPropagation(); setCreateMenu({ type: "list", parentId: s.id, folderId: f.id }); }} title="New List" style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>+</button>
+                        </div>
+                        {folderExpanded && folderLists.map((l) => {
+                          const isActive = view.listId === l.id;
+                          const listTasks = tasks.filter((t) => t.list_id === l.id && !t.parent_task_id);
+                          return (
+                            <div key={l.id} onClick={() => navigate({ level: "list", spaceId: s.id, folderId: f.id, listId: l.id })} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 14px 5px 52px", cursor: "pointer", background: isActive ? "rgba(212,192,140,0.12)" : "transparent", borderLeft: `3px solid ${isActive ? "#D4C08C" : "transparent"}` }}>
+                              <span style={{ fontSize: 10 }}>📄</span>
+                              <span style={{ flex: 1, fontSize: 11, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+                              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)" }}>{listTasks.length}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  <div onClick={() => setCreateMenu({ type: "list", parentId: s.id })} style={{ padding: "5px 14px 5px 38px", fontSize: 10, color: "rgba(255,255,255,0.4)", cursor: "pointer" }}>+ Add list</div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 
-  /* — Spaces list — */
-  if (view.level === "spaces") {
-    return (
-      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title="ClickUp" subtitle="Projects, lists & tasks" isMobile={isMobile} icon="📋" />
+  /* — Main content area — */
+  const renderContent = () => {
+    // Spaces overview (no space selected)
+    if (view.level === "spaces") {
+      return (
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <span style={{ fontSize: 13, color: "#64748b" }}>{spaces.length} space{spaces.length !== 1 ? "s" : ""}</span>
-            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New Space</GreenButton>
-          </div>
-          {showForm && (
-            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
-              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Space name (e.g. Personal, Work, Investments)" onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
-              <GreenButton small onClick={handleCreate} disabled={!formValue.trim()}>Create</GreenButton>
-            </div>
-          )}
-          {spaces.length === 0 && !showForm ? (
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📋</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Spaces Yet</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Create your first space to organize projects and tasks.</p></div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
-              {spaces.map((s) => {
-                const spaceFolders = folders.filter((f) => f.space_id === s.id);
-                const spaceLists = lists.filter((l) => l.space_id === s.id);
-                const spaceTasks = tasks.filter((t) => spaceLists.some((l) => l.id === t.list_id));
-                return (
-                  <div key={s.id} onClick={() => setView({ level: "space", spaceId: s.id })} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1C3820"; e.currentTarget.style.transform = "translateY(-1px)"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.transform = "translateY(0)"; }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color || "#1C3820", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: 16, fontWeight: 800 }}>{s.name[0]?.toUpperCase()}</div>
-                      <div style={{ flex: 1 }}>
+          <PageHeader title="ClickUp" subtitle="Projects, lists & tasks" isMobile={isMobile} icon="📋" />
+          <div style={{ marginTop: 16 }}>
+            {spaces.length === 0 ? (
+              <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Spaces Yet</h3>
+                <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Create your first space to organize projects and tasks.</p>
+                <GreenButton small onClick={() => setCreateMenu({ type: "space" })}>{Icons.plus} New Space</GreenButton>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
+                {spaces.map((s) => {
+                  const spaceLists = lists.filter((l) => l.space_id === s.id);
+                  const spaceTasks = tasks.filter((t) => spaceLists.some((l) => l.id === t.list_id));
+                  return (
+                    <div key={s.id} onClick={() => navigate({ level: "space", spaceId: s.id })} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 20px", cursor: "pointer" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color || "#1C3820", display: "flex", alignItems: "center", justifyContent: "center", color: "#D4C08C", fontSize: 16, fontWeight: 800 }}>{s.name[0]?.toUpperCase()}</div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{s.name}</div>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete this space and everything inside?")) onDeleteSpace(s.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                      <div style={{ fontSize: 11, color: "#64748b" }}>{spaceLists.length} lists · {spaceTasks.length} tasks</div>
                     </div>
-                    <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#64748b" }}>
-                      <span>📁 {spaceFolders.length}</span>
-                      <span>📄 {spaceLists.length}</span>
-                      <span>✓ {spaceTasks.length}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  /* — Inside a space (folders) — */
-  if (view.level === "space") {
-    const spaceFolders = folders.filter((f) => f.space_id === view.spaceId);
-    const rootLists = lists.filter((l) => l.space_id === view.spaceId && !l.folder_id);
-    return (
-      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title={space.name} subtitle="Folders & lists" isMobile={isMobile} icon={space.name?.[0]?.toUpperCase()} onBack={() => setView({ level: "spaces" })} />
-        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-          <Breadcrumb />
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 16 }}>
-            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New Folder</GreenButton>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          {showForm && (
-            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
-              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Folder name" onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
-              <GreenButton small onClick={handleCreate} disabled={!formValue.trim()}>Create</GreenButton>
-            </div>
-          )}
-          {spaceFolders.length === 0 && rootLists.length === 0 && !showForm ? (
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📁</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add folders to organize lists</p></div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {spaceFolders.map((f) => {
-                const folderLists = lists.filter((l) => l.folder_id === f.id);
-                return (
-                  <div key={f.id} onClick={() => setView({ level: "folder", spaceId: space.id, folderId: f.id })} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-                    <div style={{ fontSize: 20 }}>📁</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{f.name}</div>
-                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{folderLists.length} list{folderLists.length !== 1 ? "s" : ""}</div>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete folder and contents?")) onDeleteFolder(f.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  /* — Inside a folder (lists) — */
-  if (view.level === "folder") {
-    const folderLists = lists.filter((l) => l.folder_id === view.folderId);
-    return (
-      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title={folder.name} subtitle="Lists" isMobile={isMobile} icon="📁" onBack={() => setView({ level: "space", spaceId: space.id })} />
+    // Space dashboard
+    if (view.level === "space") {
+      const spaceFolders = folders.filter((f) => f.space_id === view.spaceId);
+      const spaceLists = lists.filter((l) => l.space_id === view.spaceId);
+      const spaceTasks = tasks.filter((t) => spaceLists.some((l) => l.id === t.list_id) && !t.parent_task_id);
+      const byStatus = { todo: 0, "in-progress": 0, review: 0, done: 0 };
+      spaceTasks.forEach((t) => { byStatus[t.status || "todo"] = (byStatus[t.status || "todo"] || 0) + 1; });
+      const byPriority = { urgent: 0, high: 0, normal: 0, low: 0 };
+      spaceTasks.forEach((t) => { byPriority[t.priority || "normal"] = (byPriority[t.priority || "normal"] || 0) + 1; });
+      const completionPct = spaceTasks.length > 0 ? Math.round((byStatus.done / spaceTasks.length) * 100) : 0;
+      return (
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-          <Breadcrumb />
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New List</GreenButton>
-          </div>
-          {showForm && (
-            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
-              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="List name" onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
-              <GreenButton small onClick={handleCreate} disabled={!formValue.trim()}>Create</GreenButton>
+          <PageHeader title={space.name} subtitle="Space Dashboard" isMobile={isMobile} icon={space.name?.[0]?.toUpperCase()} stats={[
+            { label: "LISTS", value: spaceLists.length },
+            { label: "TASKS", value: spaceTasks.length },
+            { label: "DONE", value: `${completionPct}%` },
+          ]} />
+          <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+              <SectionHeader text="Tasks by Status" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[{ k: "todo", l: "To Do", c: "#94a3b8" }, { k: "in-progress", l: "In Progress", c: "#3b82f6" }, { k: "review", l: "Review", c: "#f59e0b" }, { k: "done", l: "Done", c: "#16a34a" }].map((s) => {
+                  const count = byStatus[s.k] || 0;
+                  const pct = spaceTasks.length > 0 ? (count / spaceTasks.length) * 100 : 0;
+                  return (
+                    <div key={s.k}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                        <span style={{ color: "#475569", fontWeight: 600 }}>{s.l}</span>
+                        <span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{count}</span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: s.c }} /></div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          )}
-          {folderLists.length === 0 && !showForm ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+              <SectionHeader text="Tasks by Priority" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[{ k: "urgent", l: "🚩 Urgent", c: "#dc2626" }, { k: "high", l: "🟡 High", c: "#f59e0b" }, { k: "normal", l: "🔵 Normal", c: "#3b82f6" }, { k: "low", l: "⚪ Low", c: "#94a3b8" }].map((p) => {
+                  const count = byPriority[p.k] || 0;
+                  const pct = spaceTasks.length > 0 ? (count / spaceTasks.length) * 100 : 0;
+                  return (
+                    <div key={p.k}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                        <span style={{ color: "#475569", fontWeight: 600 }}>{p.l}</span>
+                        <span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{count}</span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: p.c }} /></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", gridColumn: isMobile ? "1" : "1 / -1" }}>
+              <SectionHeader text="Lists Overview" />
+              {spaceLists.length === 0 ? <p style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", margin: 0, padding: "12px 0" }}>No lists yet. Use the sidebar + button to add one.</p> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {spaceLists.map((l) => {
+                    const lt = tasks.filter((t) => t.list_id === l.id && !t.parent_task_id);
+                    const done = lt.filter((t) => t.status === "done").length;
+                    const pct = lt.length > 0 ? Math.round((done / lt.length) * 100) : 0;
+                    const f = folders.find((fo) => fo.id === l.folder_id);
+                    return (
+                      <div key={l.id} onClick={() => navigate({ level: "list", spaceId: space.id, folderId: l.folder_id, listId: l.id })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: "#f8fafc", cursor: "pointer" }}>
+                        <span style={{ fontSize: 13 }}>📄</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "#0f172a" }}>{l.name}</div>
+                          {f && <div style={{ fontSize: 9, color: "#94a3b8" }}>📁 {f.name}</div>}
+                        </div>
+                        <div style={{ width: 80 }}>
+                          <div style={{ height: 4, borderRadius: 2, background: "#e2e8f0", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: "#16a34a" }} /></div>
+                        </div>
+                        <span style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono', monospace", minWidth: 36, textAlign: "right" }}>{done}/{lt.length}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Folder view
+    if (view.level === "folder") {
+      const folderLists = lists.filter((l) => l.folder_id === view.folderId);
+      return (
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          <PageHeader title={folder.name} subtitle={`📁 ${space.name}`} isMobile={isMobile} icon="📁" onBack={() => navigate({ level: "space", spaceId: space.id })} />
+          <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <GreenButton small onClick={() => setCreateMenu({ type: "list", parentId: space.id, folderId: folder.id })}>{Icons.plus} New List</GreenButton>
+          </div>
+          {folderLists.length === 0 ? (
             <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📄</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Create your first list in this folder</p></div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {folderLists.map((l) => {
-                const listTasks = tasks.filter((t) => t.list_id === l.id && !t.parent_task_id);
-                const completed = listTasks.filter((t) => t.status === "done").length;
+                const lt = tasks.filter((t) => t.list_id === l.id && !t.parent_task_id);
+                const done = lt.filter((t) => t.status === "done").length;
                 return (
-                  <div key={l.id} onClick={() => setView({ level: "list", spaceId: space.id, folderId: folder.id, listId: l.id })} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
-                    <div style={{ fontSize: 20 }}>📄</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{l.name}</div>
-                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{completed}/{listTasks.length} tasks completed</div>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete list and all tasks?")) onDeleteList(l.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  <div key={l.id} onClick={() => navigate({ level: "list", spaceId: space.id, folderId: folder.id, listId: l.id })} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+                    <span style={{ fontSize: 18 }}>📄</span>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{l.name}</div><div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{done}/{lt.length} tasks completed</div></div>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  /* — Inside a list (tasks with list/board toggle) — */
-  if (view.level === "list") {
-    return (
-      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title={list.name} subtitle="Tasks" isMobile={isMobile} icon="📄" onBack={() => setView({ level: "folder", spaceId: space.id, folderId: folder.id })} />
+    // List view (tasks grouped by priority)
+    if (view.level === "list") {
+      const listTasks = tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id);
+      return (
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-          <Breadcrumb />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+          <PageHeader title={list.name} subtitle={folder ? `📁 ${folder.name}` : `${space.name}`} isMobile={isMobile} icon="📄" onBack={() => navigate(folder ? { level: "folder", spaceId: space.id, folderId: folder.id } : { level: "space", spaceId: space.id })} />
+          <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
             <div style={{ display: "flex", gap: 4, background: "#fff", borderRadius: 8, padding: 3, border: "1px solid #e2e8f0" }}>
               <button onClick={() => setListView("list")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "list" ? "#1C3820" : "transparent", color: listView === "list" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>☰ List</button>
               <button onClick={() => setListView("board")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "board" ? "#1C3820" : "transparent", color: listView === "board" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>▦ Board</button>
             </div>
-            <GreenButton small onClick={() => { setFormValue(""); setShowForm(!showForm); }}>{Icons.plus} New Task</GreenButton>
+            <GreenButton small onClick={() => setCreateMenu({ type: "task", parentId: view.listId })}>{Icons.plus} New Task</GreenButton>
           </div>
-          {showForm && (
-            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #16a34a", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 8 }}>
-              <input value={formValue} onChange={(e) => setFormValue(e.target.value)} placeholder="Task name" onKeyDown={(e) => e.key === "Enter" && handleAddTaskQuick()} autoFocus style={{ ...inputStyle, flex: 1 }} className="sz-input" />
-              <GreenButton small onClick={handleAddTaskQuick} disabled={!formValue.trim()}>Create</GreenButton>
-            </div>
-          )}
           {listView === "list" ? (
-            <TaskListView tasks={tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id)} allTasks={tasks} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} onDelete={onDeleteTask} />
+            <TaskListView tasks={listTasks} allTasks={tasks} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} onDelete={onDeleteTask} isMobile={isMobile} />
           ) : (
-            <TaskBoardView tasks={tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id)} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} />
+            <TaskBoardView tasks={listTasks} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} />
           )}
           {activeTask && <TaskDetailModal task={tasks.find((t) => t.id === activeTask.id) || activeTask} allTasks={tasks} onClose={() => setActiveTask(null)} onUpdate={onUpdateTask} onDelete={onDeleteTask} onAddTask={onAddTask} listId={view.listId} />}
         </div>
-      </div>
-    );
-  }
-  return null;
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {/* Mobile sidebar toggle */}
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 14, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {/* Sidebar */}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><Sidebar /></div>
+        </>
+      )}
+      {/* Main content */}
+      <div style={{ flex: 1, overflow: "auto" }}>{renderContent()}</div>
+
+      {/* Create modal */}
+      {createMenu && (
+        <div onClick={() => setCreateMenu(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 400 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", margin: "0 0 12px", fontFamily: "'Playfair Display', serif" }}>New {createMenu.type.charAt(0).toUpperCase() + createMenu.type.slice(1)}</h3>
+            <input value={createValue} onChange={(e) => setCreateValue(e.target.value)} placeholder={`${createMenu.type} name`} onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={inputStyle} className="sz-input" />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+              <button onClick={() => { setCreateMenu(null); setCreateValue(""); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+              <GreenButton small onClick={handleCreate} disabled={!createValue.trim()}>Create</GreenButton>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-/* — Task List View — */
-function TaskListView({ tasks, allTasks, onOpen, onUpdate, onDelete }) {
-  const statusColors = { todo: "#94a3b8", "in-progress": "#3b82f6", review: "#f59e0b", done: "#16a34a" };
-  const priorityColors = { urgent: "#dc2626", high: "#f59e0b", normal: "#3b82f6", low: "#94a3b8" };
+/* — Task List View grouped by Priority — */
+function TaskListView({ tasks, allTasks, onOpen, onUpdate, onDelete, isMobile }) {
+  const [collapsed, setCollapsed] = useState({});
+  const priorityGroups = [
+    { k: "urgent", l: "Urgent", c: "#dc2626", flag: "🚩" },
+    { k: "high", l: "High", c: "#f59e0b", flag: "🟡" },
+    { k: "normal", l: "Normal", c: "#3b82f6", flag: "🔵" },
+    { k: "low", l: "Low", c: "#94a3b8", flag: "⚪" },
+    { k: "none", l: "No Priority", c: "#cbd5e1", flag: "⬜" },
+  ];
   if (tasks.length === 0) return <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>✓</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No tasks yet</p></div>;
+
+  const getInitials = (name) => { if (!name) return "?"; const parts = name.split(" "); return parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase(); };
+  const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#0891b2"];
+  const getAvatarColor = (name) => avatarColors[Math.abs([...(name || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      {tasks.map((t) => {
-        const subtaskCount = allTasks.filter((st) => st.parent_task_id === t.id).length;
+    <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+      {priorityGroups.map((group, gIdx) => {
+        const groupTasks = tasks.filter((t) => {
+          const p = t.priority || "normal";
+          return group.k === "none" ? !t.priority || t.priority === "none" : p === group.k;
+        });
+        if (groupTasks.length === 0) return null;
+        const isCollapsed = collapsed[group.k];
         return (
-          <div key={t.id} onClick={() => onOpen(t)} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-            <button onClick={(e) => { e.stopPropagation(); onUpdate(t.id, { status: t.status === "done" ? "todo" : "done", progress: t.status === "done" ? 0 : 100 }); }} style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${t.status === "done" ? "#16a34a" : "#cbd5e1"}`, background: t.status === "done" ? "#16a34a" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>{t.status === "done" && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}</button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.name}</div>
-              <div style={{ display: "flex", gap: 6, marginTop: 3, alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[t.status] || "#94a3b8"}15`, color: statusColors[t.status] || "#94a3b8" }}>{(t.status || "todo").toUpperCase()}</span>
-                {t.priority && t.priority !== "normal" && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${priorityColors[t.priority]}15`, color: priorityColors[t.priority] }}>{t.priority.toUpperCase()}</span>}
-                {t.due_date && <span style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>📅 {fmtDate(t.due_date)}</span>}
-                {subtaskCount > 0 && <span style={{ fontSize: 10, color: "#64748b" }}>↳ {subtaskCount}</span>}
-                {typeof t.progress === "number" && t.progress > 0 && <span style={{ fontSize: 10, color: "#64748b" }}>{t.progress}%</span>}
-              </div>
+          <div key={group.k} style={{ borderTop: gIdx > 0 ? "1px solid #f1f5f9" : "none" }}>
+            <div onClick={() => setCollapsed((p) => ({ ...p, [group.k]: !p[group.k] }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#f8fafc", cursor: "pointer", borderBottom: isCollapsed ? "none" : "1px solid #f1f5f9" }}>
+              <span style={{ color: "#94a3b8", fontSize: 9, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▼</span>
+              <span style={{ fontSize: 14 }}>{group.flag}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: group.c, textTransform: "uppercase", letterSpacing: "0.05em" }}>{group.l}</span>
+              <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600 }}>{groupTasks.length}</span>
             </div>
-            <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+            {!isCollapsed && (
+              <>
+                {/* Column headers (desktop only) */}
+                {!isMobile && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 100px 100px 40px", gap: 12, padding: "6px 14px 6px 38px", borderBottom: "1px solid #f1f5f9", fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <div>Name</div>
+                    <div>Assignee</div>
+                    <div>Start</div>
+                    <div>Due</div>
+                    <div></div>
+                  </div>
+                )}
+                {groupTasks.map((t) => {
+                  const subCount = allTasks.filter((st) => st.parent_task_id === t.id).length;
+                  const overdue = t.due_date && new Date(t.due_date) < new Date() && t.status !== "done";
+                  return (
+                    <div key={t.id} onClick={() => onOpen(t)} style={{ display: isMobile ? "flex" : "grid", gridTemplateColumns: "1fr 100px 100px 100px 40px", alignItems: "center", gap: isMobile ? 8 : 12, padding: "10px 14px 10px 38px", cursor: "pointer", borderBottom: "1px solid #f8fafc", fontSize: 12 }} onMouseEnter={(e) => e.currentTarget.style.background = "#fafbfc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: isMobile ? 1 : "unset" }}>
+                        <button onClick={(e) => { e.stopPropagation(); onUpdate(t.id, { status: t.status === "done" ? "todo" : "done", progress: t.status === "done" ? 0 : 100 }); }} style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${t.status === "done" ? "#16a34a" : "#cbd5e1"}`, background: t.status === "done" ? "#16a34a" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>{t.status === "done" && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}</button>
+                        <span style={{ fontWeight: 600, color: "#0f172a", textDecoration: t.status === "done" ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                        {subCount > 0 && <span style={{ fontSize: 10, color: "#94a3b8", flexShrink: 0 }}>↳{subCount}</span>}
+                      </div>
+                      {!isMobile && (
+                        <>
+                          <div>{t.assignee ? <div title={t.assignee} style={{ width: 22, height: 22, borderRadius: "50%", background: getAvatarColor(t.assignee), color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{getInitials(t.assignee)}</div> : <div style={{ width: 22, height: 22, borderRadius: "50%", border: "1.5px dashed #cbd5e1" }} />}</div>
+                          <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{t.start_date ? fmtDate(t.start_date) : "—"}</div>
+                          <div style={{ fontSize: 11, color: overdue ? "#dc2626" : "#64748b", fontFamily: "'DM Mono', monospace", fontWeight: overdue ? 700 : 400 }}>{t.due_date ? fmtDate(t.due_date) : "—"}</div>
+                          <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                        </>
+                      )}
+                      {isMobile && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          {t.due_date && <span style={{ fontSize: 10, color: overdue ? "#dc2626" : "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{fmtDate(t.due_date)}</span>}
+                          {t.assignee && <div title={t.assignee} style={{ width: 20, height: 20, borderRadius: "50%", background: getAvatarColor(t.assignee), color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{getInitials(t.assignee)}</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         );
       })}
