@@ -943,8 +943,51 @@ function OverviewView({ isMobile, session, accounts, uploads, assets, transactio
    MONEY (Tabbed: Bookkeeping, Spending, Statements, Accounts)
    ═══════════════════════════════════════════════════════════ */
 
-const EXPENSE_CATEGORIES = ["Housing", "Utilities", "Food", "Transport", "Insurance", "Healthcare", "Entertainment", "Education", "Clothing", "Personal", "Debt Payment", "Other"];
-const INCOME_CATEGORIES = ["Salary", "Freelance", "Investment", "Rental", "Business", "Gift", "Refund", "Other"];
+const EXPENSE_CATEGORIES = ["Housing", "Utilities", "Food", "Transport", "Insurance", "Healthcare", "Entertainment", "Education", "Clothing", "Personal", "Debt Payment", "Transfer", "Shareholder Loan", "Other"];
+const INCOME_CATEGORIES = ["Salary", "Freelance", "Investment", "Rental", "Business", "Gift", "Refund", "Transfer", "Shareholder Loan", "Other"];
+
+/* ── Auto-Categorization Engine ── */
+const AUTO_CAT_RULES = [
+  // Transfers
+  { p: /TRANSFER|XFER|Online Transfer|Ext Trnsfr|ACH W\/D|ACH PUSH|ACH PULL|RTP CREDIT|WIRE|Money Transfer/i, c: "Transfer" },
+  // Food & Dining
+  { p: /UBER\s*\*?\s*EATS|DOORDASH|GRUBHUB|POSTMATES|MCDONALD|WENDY|BURGER KING|CHICK-FIL-A|TACO BELL|SUBWAY|CHIPOTLE|POPEYE|DUNKIN|STARBUCKS|PANERA|DOMINO|PIZZA HUT|PAPA JOHN|SONIC|ARBY|KFC|FIVE GUYS|WHATABURGER|JACK IN THE BOX|IHOP|DENNY|WAFFLE HOUSE|CRACKER BARREL|APPLEBEE|OUTBACK|OLIVE GARDEN|RED LOBSTER|CHILI|BUFFALO WILD|WINGSTOP|ZAXBY|RAISING CANE|IN-N-OUT|SHAKE SHACK|PANDA EXPRESS|JIMMY JOHN|JASON.?S DELI|FIREHOUSE SUB|JERSEY MIKE|RESTAURANT|CAFE|GRILL|DINER|EATERY|BISTRO|TAVERN|KITCHEN|SUSHI|RAMEN|THAI|CHINESE|MEXICAN|ITALIAN|BBQ|STEAKHOUSE|SEAFOOD|BAKERY|VALLARTAS|CARIBBEAN TWIST|LATTE VINO|FIRST WATCH|REVELATIONS CAFE|WAL.?MART|WM SUPERCENTER|PUBLIX|KROGER|ALDI|WHOLE FOODS|TRADER JOE|SAFEWAY|FOOD LION|WINN.?DIXIE|PIGGLY|SAVE.?A.?LOT|COSTCO|SAM.?S CLUB|BJ.?S WHOLESALE|GROCERY|MARKET|FRESH|7.ELEVEN|CIRCLE K|WAWA|SHEETZ|QuikTrip|Racetrac|LEGENDS.*CONC/i, c: "Food" },
+  // Housing
+  { p: /RENT|MORTGAGE|HOME DEPOT|LOWE.?S|MENARD|ACE HARDWARE|PROPERTY|HOA|ESCROW|BELL LAND|ZILLOW|REALTOR|REALTY/i, c: "Housing" },
+  // Utilities
+  { p: /DUKE ENERGY|FPL|POWER|ELECTRIC|WATER|SEWER|GAS BILL|INTERNET|COMCAST|XFINITY|AT.?T|VERIZON|T-MOBILE|SPRINT|SPECTRUM|COX|CENTURY.?LINK|FRONTIER|PASCO COUNTY|CITY TAMPA|CITY OF|GOOGLE.*VOICE|GOOGLE.*FI/i, c: "Utilities" },
+  // Transport
+  { p: /UBER(?!\s*\*?\s*EAT)|LYFT|PARKING|TOLL|GAS STATION|SHELL|CHEVRON|EXXON|BP |CITGO|SUNOCO|VALERO|MARATHON|TEXACO|SPEEDWAY|PILOT|LOVES|AUTO ZONE|O.?REILLY|ADVANCE AUTO|NAPA|PEP BOYS|JIFFY|MEINEKE|FIRESTONE|GOODYEAR|DISCOUNT TIRE|CARWASH|CAR WASH|AUTOMATED PETROLEUM/i, c: "Transport" },
+  // Insurance
+  { p: /INSURANCE|GEICO|STATE FARM|ALLSTATE|PROGRESSIVE|USAA.*INS|LIBERTY MUTUAL|NATIONWIDE|FARMERS/i, c: "Insurance" },
+  // Healthcare
+  { p: /PHARMACY|CVS|WALGREEN|RITE AID|DOCTOR|HOSPITAL|MEDICAL|DENTAL|VISION|HEALTH|CLINIC|URGENT CARE|LABCORP|QUEST DIAG/i, c: "Healthcare" },
+  // Entertainment
+  { p: /NETFLIX|HULU|DISNEY|HBO|SPOTIFY|APPLE MUSIC|YOUTUBE.*PREM|AMAZON PRIME|PARAMOUNT|PEACOCK|SEATGEEK|TICKETMASTER|STUBHUB|MOVIE|CINEMA|THEATER|BOWLING|ARCADE|AMUSEMENT|CONCERT|GAME|XBOX|PLAYSTATION|NINTENDO|STEAM/i, c: "Entertainment" },
+  // Education
+  { p: /SCHOOL|UNIVERSITY|COLLEGE|TUITION|UDEMY|COURSERA|SKILLSHARE|MASTERCLASS|TEXTBOOK|STAPLES|OFFICE DEPOT/i, c: "Education" },
+  // Clothing
+  { p: /CLOTHING|APPAREL|NIKE|ADIDAS|ZARA|H&M|GAP|OLD NAVY|FOREVER 21|NORDSTROM|MACY|ROSS|TJ.?MAXX|MARSHALL|BURLINGTON|FOOT LOCKER|SHOE|LEGENDS.*RETAI/i, c: "Clothing" },
+  // Personal
+  { p: /AMAZON|APPLE\.COM|GOOGLE PLAY|TARGET|DOLLAR|FAMILY DOLLAR|DOLLAR TREE|DOLLAR GENERAL|BATH.?BODY|SALON|BARBER|BEAUTY|LAUNDRY|BRIGHT SKY|KIDS R KIDS|DRY CLEAN/i, c: "Personal" },
+  // Debt Payment
+  { p: /LOAN PAYMENT|CREDIT CARD PAYMENT|STUDENT LOAN|AUTO PAY.*LOAN|NAVIENT|SALLIE MAE|SOFI|LENDING|LOAN FUNDING/i, c: "Debt Payment" },
+  // Business tools (flagged for AR/AP)
+  { p: /ATLASSIAN|CLICKUP|WIX\.COM|HUBSTAFF|GLIDEAPPS|GLIDE\.COM|MANYCHAT|DOCUSIGN|OPENPHONE|QUO.*OPENPHONE|MSNANALYTICS|LOOM\.COM|BUILDIUM|MOJO.*DIALER|ZOOM\s|ZOOM\.US|GOOGLE\s+APPS|SUAREZCOMPANIES|CANVA|NOTION|SLACK|TRELLO|ASANA|ZAPIER|MAILCHIMP|SQUARESPACE|SHOPIFY|GODADDY|NAMECHEAP|CLOUDFLARE|DIGITAL.?OCEAN|AWS|HEROKU|NETLIFY|VERCEL|TWILIO|SENDGRID|FRESHBOOKS|QUICKBOOKS|XERO|WAVE.*APPS|GUSTO|RIPPLING|JUSTWORKS|CALENDLY|TYPEFORM|AIRTABLE|MONDAY\.COM|FIGMA|MIRO|WEBFLOW|BUBBLE\.IO|RETOOL|MAKE\.COM|OKOBOJI|ALPHA REALTY/i, c: "Shareholder Loan", biz: true },
+];
+
+function autoCategorize(description, type) {
+  if (!description) return null;
+  const d = description.toUpperCase();
+  for (const rule of AUTO_CAT_RULES) {
+    if (rule.p.test(d)) {
+      // Business tool check: if rule is flagged as biz, only apply to expenses
+      if (rule.biz && type !== "expense") continue;
+      return rule.c;
+    }
+  }
+  return null;
+}
 const LIFE_CATEGORIES = ["Food & Dining", "Transport", "Entertainment", "Shopping", "Health", "Travel", "Subscriptions", "Education", "Gifts", "Personal Care", "Pets", "Other"];
 
 const TabBar = ({ tabs, active, onChange, isMobile }) => (
@@ -1325,7 +1368,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   return (
     <>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "budgeting", l: "Budgeting" }, { k: "funnel", l: "💧 Money Funnel" }, { k: "accounts", l: "Accounts" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
+        {[{ k: "ledger", l: "Transactions" }, { k: "statements", l: "Statements" }, { k: "budgeting", l: "Budgeting" }, { k: "loans", l: "Shareholder Loans" }, { k: "funnel", l: "💧 Money Funnel" }, { k: "accounts", l: "Accounts" }, { k: "uploader", l: "Uploader" }].map(({ k, l }) => (
           <button key={k} onClick={() => setSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${subView === k ? "#0f172a" : "#e2e8f0"}`, background: subView === k ? "#0f172a" : "#fff", color: subView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>{l}</button>
         ))}
       </div>
@@ -1337,6 +1380,8 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         <MonthlyBillsTab isMobile={isMobile} bills={bills || []} onAdd={onAddBill} onUpdate={onUpdateBill} onDelete={onDeleteBill} />
       ) : subView === "accounts" ? (
         <AccountsTab isMobile={isMobile} accounts={accounts} onAdd={onAddAccount} onToggle={onToggleAccount} onDelete={onDeleteAccount} />
+      ) : subView === "loans" ? (
+        <ShareholderLoansTab isMobile={isMobile} transactions={transactions} accounts={accounts} />
       ) : subView === "funnel" ? (
         <FunnelTab isMobile={isMobile} businesses={businesses || []} presets={funnelPresets || []} inflows={funnelInflows || []} onAddPreset={onAddFunnelPreset} onUpdatePreset={onUpdateFunnelPreset} onDeletePreset={onDeleteFunnelPreset} onAddInflow={onAddFunnelInflow} onUpdateInflow={onUpdateFunnelInflow} onDeleteInflow={onDeleteFunnelInflow} />
       ) : (
@@ -1409,7 +1454,7 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
               <tbody>{filtered.map((t) => (
                 <tr key={t.id} style={{ borderBottom: "1px solid #f8fafc" }}>
                   <td style={{ padding: "8px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{fmtDate(t.date)}</td>
-                  <td style={{ padding: "8px 14px", fontWeight: 600, color: "#0f172a" }}>{t.description}</td>
+                  <td style={{ padding: "8px 14px", fontWeight: 600, color: "#0f172a" }}>{t.description}{t.loan_type === "shareholder_receivable" && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "#eff6ff", color: "#3b82f6", fontWeight: 700 }}>AR</span>}{t.loan_type === "shareholder_payable" && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "#fef2f2", color: "#dc2626", fontWeight: 700 }}>AP</span>}</td>
                   <td style={{ padding: "8px 14px", color: "#64748b" }}>{t.category || "—"}</td>
                   <td style={{ padding: "8px 14px", textAlign: "center" }}><VisibilityBadge visibility={t.visibility || "personal"} /></td>
                   <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, fontFamily: "'DM Mono', monospace", color: t.type === "income" ? "#16a34a" : "#dc2626" }}>{t.type === "income" ? "+" : "−"}{fmtCurrencyExact(t.amount)}</td>
@@ -1421,6 +1466,88 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         )}
       </div>
     </>
+      )}
+    </>
+  );
+}
+
+/* — Shareholder Loans Tab — */
+function ShareholderLoansTab({ isMobile, transactions, accounts }) {
+  const arEntries = transactions.filter((t) => t.loan_type === "shareholder_receivable");
+  const apEntries = transactions.filter((t) => t.loan_type === "shareholder_payable");
+  const arTotal = arEntries.reduce((s, t) => s + Number(t.amount), 0);
+  const apTotal = apEntries.reduce((s, t) => s + Number(t.amount), 0);
+
+  const getAcctName = (id) => { const a = accounts.find((a) => a.id === id); return a?.name || "Unknown"; };
+
+  // Group AR by month
+  const arByMonth = {};
+  arEntries.forEach((t) => {
+    const m = t.date?.slice(0, 7) || "unknown";
+    arByMonth[m] = (arByMonth[m] || 0) + Number(t.amount);
+  });
+
+  const cardStyle = { background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 };
+  const thStyle = { textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
+        <StatCard label="Owed to Javier (AR)" value={fmtCurrency(arTotal)} accent="#3b82f6" compact />
+        <StatCard label="TDG Owes (AP)" value={fmtCurrency(apTotal)} accent="#dc2626" compact />
+        <StatCard label="Linked Pairs" value={`${arEntries.length}`} accent="#7c3aed" compact />
+      </div>
+
+      <div style={cardStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: 0 }}>Business Expenses on Personal Accounts</h3>
+          <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{arEntries.length} items · {fmtCurrency(arTotal)}</span>
+        </div>
+        <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 12px" }}>Business tools/services paid from personal accounts. TDG owes Javier this amount.</p>
+        {arEntries.length === 0 ? (
+          <div style={{ padding: "24px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No shareholder loan entries found</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+              <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <th style={thStyle}>Date</th>
+                <th style={thStyle}>Description</th>
+                <th style={thStyle}>Personal Account</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
+                <th style={{ ...thStyle, textAlign: "center" }}>Linked?</th>
+              </tr></thead>
+              <tbody>{arEntries.sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => (
+                <tr key={t.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                  <td style={{ padding: "8px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{fmtDate(t.date)}</td>
+                  <td style={{ padding: "8px 14px", fontWeight: 600, color: "#0f172a", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description}</td>
+                  <td style={{ padding: "8px 14px", color: "#64748b", fontSize: 11 }}>{getAcctName(t.account_id)}</td>
+                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#dc2626" }}>{fmtCurrencyExact(t.amount)}</td>
+                  <td style={{ padding: "8px 14px", textAlign: "center" }}>{t.linked_transaction_id ? <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", fontWeight: 700 }}>Linked</span> : <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#fef2f2", color: "#dc2626", fontWeight: 700 }}>Unlinked</span>}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {Object.keys(arByMonth).length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 12px" }}>Monthly Breakdown</h3>
+          {Object.entries(arByMonth).sort().map(([month, amt]) => {
+            const pct = arTotal > 0 ? Math.round((amt / arTotal) * 100) : 0;
+            return (
+              <div key={month} style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                  <span style={{ color: "#475569", fontWeight: 600 }}>{month}</span>
+                  <span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{fmtCurrencyExact(amt)} ({pct}%)</span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", borderRadius: 3 }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </>
   );
@@ -1737,7 +1864,8 @@ function UploaderTab({ isMobile, accounts, onAddTransaction, transactions, onLog
       const isDup = existingTxns.some((t) => t.date === parsedDate && t.description === desc.trim() && Math.abs(Number(t.amount) - amount) < 0.01);
       if (isDup) { skipped++; continue; }
 
-      await onAddTransaction({ description: desc.trim(), amount, type, category: null, account_id: selectedAccount, date: parsedDate, visibility: acct?.visibility || "personal" });
+      const autoCategory = autoCategorize(desc.trim(), type);
+      await onAddTransaction({ description: desc.trim(), amount, type, category: autoCategory, account_id: selectedAccount, date: parsedDate, visibility: acct?.visibility || "personal" });
       imported++;
     }
 
