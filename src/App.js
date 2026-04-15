@@ -4996,10 +4996,10 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
    ═══════════════════════════════════════════════════════════ */
 
 function FinDashboardTab({ isMobile, transactions, accounts, assets, investments, monthlyBills, policies }) {
-  const curMonth = new Date().toISOString().slice(0, 7);
-  const monthTxns = transactions.filter((t) => t.date && t.date.startsWith(curMonth));
-  const monthIncome = monthTxns.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const monthExpenses = monthTxns.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const curYear = new Date().getFullYear().toString();
+  const ytdTxns = transactions.filter((t) => t.date && t.date.startsWith(curYear));
+  const ytdIncome = ytdTxns.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+  const ytdExpenses = ytdTxns.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
   const totalBills = (monthlyBills || []).filter((b) => b.active !== false).reduce((s, b) => s + Number(b.amount || 0), 0);
   const totalAssets = (assets || []).reduce((s, a) => s + Number(a.estimated_value || 0), 0);
   const portfolioValue = (investments || []).reduce((s, i) => s + Number(i.current_value || i.amount_invested || 0), 0);
@@ -5008,9 +5008,9 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
   const activePolicies = (policies || []).filter((p) => p.status === "Active" || p.status === "active").length;
 
   const cards = [
-    { label: "Monthly Income", value: fmtCurrency(monthIncome), accent: "#16a34a" },
-    { label: "Monthly Expenses", value: fmtCurrency(monthExpenses), accent: "#dc2626" },
-    { label: "Net Flow", value: fmtCurrency(monthIncome - monthExpenses), accent: monthIncome - monthExpenses >= 0 ? "#3b82f6" : "#f59e0b" },
+    { label: "YTD Income", value: fmtCurrency(ytdIncome), accent: "#16a34a" },
+    { label: "YTD Expenses", value: fmtCurrency(ytdExpenses), accent: "#dc2626" },
+    { label: "YTD Net Flow", value: fmtCurrency(ytdIncome - ytdExpenses), accent: ytdIncome - ytdExpenses >= 0 ? "#3b82f6" : "#f59e0b" },
     { label: "Monthly Bills", value: fmtCurrency(totalBills), accent: "#7c3aed" },
     { label: "Total Assets", value: fmtCurrency(totalAssets), accent: "#0891b2" },
     { label: "Portfolio", value: fmtCurrency(portfolioValue), accent: "#059669" },
@@ -5027,7 +5027,7 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[
               { label: "Active Accounts", value: activeAccounts.length, emoji: "🏦" },
-              { label: "Transactions This Month", value: monthTxns.length, emoji: "📒" },
+              { label: `Transactions YTD ${curYear}`, value: ytdTxns.length, emoji: "📒" },
               { label: "Uncategorized", value: uncategorized, emoji: uncategorized > 0 ? "⚠️" : "✅" },
               { label: "Active Insurance Policies", value: activePolicies, emoji: "🛡️" },
               { label: "Real Estate Holdings", value: (investments || []).filter((i) => i.asset_type === "Real Estate").length, emoji: "🏠" },
@@ -5040,13 +5040,13 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
           </div>
         </div>
         <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
-          <SectionHeader text="Top Expenses This Month" />
+          <SectionHeader text={`Top Expenses YTD ${curYear}`} />
           {(() => {
             const expByCategory = {};
-            monthTxns.filter((t) => t.type === "expense").forEach((t) => { const c = t.category || "Uncategorized"; expByCategory[c] = (expByCategory[c] || 0) + Number(t.amount); });
+            ytdTxns.filter((t) => t.type === "expense").forEach((t) => { const c = t.category || "Uncategorized"; expByCategory[c] = (expByCategory[c] || 0) + Number(t.amount); });
             const sorted = Object.entries(expByCategory).sort((a, b) => b[1] - a[1]).slice(0, 5);
-            return sorted.length === 0 ? <p style={{ fontSize: 13, color: "#94a3b8" }}>No expenses this month</p> : sorted.map(([cat, amt]) => {
-              const pct = monthExpenses > 0 ? Math.round((amt / monthExpenses) * 100) : 0;
+            return sorted.length === 0 ? <p style={{ fontSize: 13, color: "#94a3b8" }}>No expenses this year</p> : sorted.map(([cat, amt]) => {
+              const pct = ytdExpenses > 0 ? Math.round((amt / ytdExpenses) * 100) : 0;
               return (<div key={cat} style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}><span style={{ color: "#475569", fontWeight: 600 }}>{cat}</span><span style={{ color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{fmtCurrency(amt)} ({pct}%)</span></div><div style={{ height: 5, borderRadius: 3, background: "#f1f5f9", overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(135deg, #dc2626, #b91c1c)", borderRadius: 3 }} /></div></div>);
             });
           })()}
