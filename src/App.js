@@ -6706,22 +6706,55 @@ export default function SuarezApp() {
 
   const loadData = useCallback(async () => {
     if (!session) return;
-    setDataLoading(true);
+    // Try cache first for instant render
+    try {
+      const cached = localStorage.getItem(`sz_cache_${session.user.id}`);
+      if (cached) {
+        const c = JSON.parse(cached);
+        if (c.accounts) setAccounts(c.accounts);
+        if (c.transactions) setTransactions(c.transactions);
+        if (c.assets) setAssets(c.assets);
+        if (c.investments) setInvestments(c.investments);
+        if (c.businesses) setBusinesses(c.businesses);
+        if (c.companies) setCompanies(c.companies);
+        if (c.policies) setPolicies(c.policies);
+        if (c.homes) setHomes(c.homes);
+        if (c.utilityBills) setUtilityBills(c.utilityBills);
+        if (c.lifeExpenses) setLifeExpenses(c.lifeExpenses);
+        if (c.plannerTasks) setPlannerTasks(c.plannerTasks);
+        if (c.calendarEvents) setCalendarEvents(c.calendarEvents);
+        if (c.kids) setKids(c.kids);
+        if (c.monthlyBills) setMonthlyBills(c.monthlyBills);
+        if (c.savedLinks) setSavedLinks(c.savedLinks);
+        if (c.goals) setGoals(c.goals);
+        if (c.habits) setHabits(c.habits);
+        if (c.cuSpaces) setCuSpaces(c.cuSpaces);
+        if (c.cuFolders) setCuFolders(c.cuFolders);
+        if (c.cuLists) setCuLists(c.cuLists);
+        if (c.cuTasks) setCuTasks(c.cuTasks);
+        if (c.robots) setRobots(c.robots);
+        // Show cached data immediately, refresh in background
+        setDataLoading(false);
+      } else {
+        setDataLoading(true);
+      }
+    } catch (e) { setDataLoading(true); }
+
     const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
-      supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }),
+      supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }).limit(50),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
-      supabase.from("transactions").select("*").order("date", { ascending: false }),
+      supabase.from("transactions").select("*").order("date", { ascending: false }).limit(2000),
       supabase.from("investments").select("*").order("created_at", { ascending: true }),
-      supabase.from("net_worth_snapshots").select("*").order("snapshot_date", { ascending: false }),
+      supabase.from("net_worth_snapshots").select("*").order("snapshot_date", { ascending: false }).limit(100),
       supabase.from("businesses").select("*").order("created_at", { ascending: true }),
       supabase.from("companies").select("*").order("name", { ascending: true }),
       supabase.from("insurance_policies").select("*").order("created_at", { ascending: true }),
       supabase.from("homes").select("*").order("created_at", { ascending: true }),
       supabase.from("utility_bills").select("*").order("created_at", { ascending: false }),
-      supabase.from("life_expenses").select("*").order("date", { ascending: false }),
-      supabase.from("planner_tasks").select("*").order("created_at", { ascending: false }),
-      supabase.from("calendar_events").select("*").order("event_date", { ascending: true }),
+      supabase.from("life_expenses").select("*").order("date", { ascending: false }).limit(500),
+      supabase.from("planner_tasks").select("*").order("created_at", { ascending: false }).limit(500),
+      supabase.from("calendar_events").select("*").order("event_date", { ascending: true }).limit(500),
       supabase.from("kids").select("*").order("created_at", { ascending: true }),
       supabase.from("kid_grades").select("*").order("created_at", { ascending: false }),
       supabase.from("kid_milestones").select("*").order("date", { ascending: false }),
@@ -6738,9 +6771,9 @@ export default function SuarezApp() {
       supabase.from("saved_links").select("*").order("created_at", { ascending: false }),
       supabase.from("goals").select("*").order("created_at", { ascending: false }),
       supabase.from("habits").select("*").order("created_at", { ascending: true }),
-      supabase.from("habit_logs").select("*").order("date", { ascending: false }),
+      supabase.from("habit_logs").select("*").order("date", { ascending: false }).limit(1000),
       supabase.from("learning_items").select("*").order("created_at", { ascending: false }),
-      supabase.from("upload_logs").select("*").order("created_at", { ascending: false }),
+      supabase.from("upload_logs").select("*").order("created_at", { ascending: false }).limit(50),
       supabase.from("business_reports").select("*").order("created_at", { ascending: false }),
       supabase.from("business_goals").select("*").order("created_at", { ascending: false }),
       supabase.from("business_milestones").select("*").order("date", { ascending: false }),
@@ -6802,6 +6835,35 @@ export default function SuarezApp() {
     if (cuListsRes.data) setCuLists(cuListsRes.data);
     if (cuTasksRes.data) setCuTasks(cuTasksRes.data);
     setDataLoading(false);
+
+    // Save cache for instant load next time
+    try {
+      const cacheData = {
+        accounts: acctRes.data || [],
+        transactions: txnRes.data || [],
+        assets: assetRes.data || [],
+        investments: invRes.data || [],
+        businesses: bizRes.data || [],
+        companies: coRes.data || [],
+        policies: polRes.data || [],
+        homes: homeRes.data || [],
+        utilityBills: utilRes.data || [],
+        lifeExpenses: lifeRes.data || [],
+        plannerTasks: taskRes.data || [],
+        calendarEvents: eventRes.data || [],
+        kids: kidsRes.data || [],
+        monthlyBills: mbRes.data || [],
+        savedLinks: linksRes.data || [],
+        goals: goalsRes.data || [],
+        habits: habitsRes.data || [],
+        cuSpaces: cuSpacesRes.data || [],
+        cuFolders: cuFoldersRes.data || [],
+        cuLists: cuListsRes.data || [],
+        cuTasks: cuTasksRes.data || [],
+        robots: robotsRes.data || [],
+      };
+      localStorage.setItem(`sz_cache_${session.user.id}`, JSON.stringify(cacheData));
+    } catch (e) { console.warn("Cache save failed:", e); }
   }, [session]);
 
   useEffect(() => { loadData(); }, [loadData]);
