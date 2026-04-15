@@ -845,93 +845,66 @@ function RobotChatModal({ robot, onClose, isMobile }) {
    ═══════════════════════════════════════════════════════════ */
 
 function OverviewView({ isMobile, session, accounts, uploads, assets, transactions, investments, lifeExpenses, homes, utilityBills, policies, monthlyBills, onNavigate }) {
-  const [dashScope, setDashScope] = useState("all");
   const userName = session?.user?.user_metadata?.full_name || fmtUserName(session?.user?.email) || "there";
   const firstName = userName.split(" ")[0];
   const quarter = getCurrentQuarter();
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
-  const thisMonth = now.toISOString().slice(0, 7);
 
-  const scopeFilter = (item) => dashScope === "all" || (item.visibility || "personal") === dashScope;
-
-  const portfolioValue = investments.filter(scopeFilter).reduce((s, i) => {
-    if (i.asset_type === "Real Estate" || i.asset_type === "Business Equity") return s + Number(i.current_price || 0);
-    return s + Number(i.shares || 0) * Number(i.current_price || 0);
-  }, 0);
-  const monthTxnIncome = transactions.filter((t) => t.type === "income" && t.date?.startsWith(thisMonth)).filter(scopeFilter).reduce((s, t) => s + Number(t.amount), 0);
-  const reMonthlyIncome = investments.filter((i) => i.asset_type === "Real Estate").reduce((s, i) => s + Number(i.monthly_income || 0), 0);
-  const bizMonthlyIncome = investments.filter((i) => i.asset_type === "Business Equity").reduce((s, i) => s + Number(i.monthly_income || 0), 0);
-  const monthIncome = monthTxnIncome + reMonthlyIncome + bizMonthlyIncome;
-  const monthTxnExpenses = transactions.filter((t) => t.type === "expense" && t.date?.startsWith(thisMonth)).filter(scopeFilter).reduce((s, t) => s + Number(t.amount), 0);
-  const monthLifeExpenses = (lifeExpenses || []).filter((e) => e.date?.startsWith(thisMonth)).filter(scopeFilter).reduce((s, e) => s + Number(e.amount), 0);
-  const monthExpenses = monthTxnExpenses + monthLifeExpenses;
-
-  // Monthly obligations rollup
-  const debtPayments = accounts.filter((a) => a.active && Number(a.monthly_payment) > 0).filter(scopeFilter);
-  const debtTotal = debtPayments.reduce((s, a) => s + Number(a.monthly_payment), 0);
-  const housingPayments = homes.filter((h) => Number(h.monthly_payment) > 0);
-  const housingTotal = housingPayments.reduce((s, h) => s + Number(h.monthly_payment), 0);
-  const utilityTotal = utilityBills.reduce((s, b) => s + Number(b.amount || 0), 0);
-  const insuranceTotal = (policies || []).filter((p) => p.active).filter(scopeFilter).reduce((s, p) => s + Number(p.monthly_cost || 0), 0);
-  const activeBills = (monthlyBills || []).filter((b) => b.active !== false).filter(scopeFilter);
-  const billsTotal = activeBills.reduce((s, b) => s + Number(b.amount || 0), 0);
-  const reInvestments = investments.filter((i) => i.asset_type === "Real Estate");
-  const reDebtService = reInvestments.reduce((s, i) => s + Number(i.monthly_debt_service || 0), 0);
-  const reMonthlyExp = reInvestments.reduce((s, i) => s + Number(i.monthly_expenses || 0), 0);
-  const bizMonthlyExp = investments.filter((i) => i.asset_type === "Business Equity").reduce((s, i) => s + Number(i.monthly_expenses || 0), 0);
-  const reLoanBalances = reInvestments.reduce((s, i) => s + Number(i.loan_balance || 0), 0);
-  const totalMonthlyObligations = debtTotal + housingTotal + utilityTotal + insuranceTotal + billsTotal + reDebtService + reMonthlyExp + bizMonthlyExp;
+  const pillars = [
+    {
+      label: "Mission",
+      icon: "🎯",
+      body: "To build and steward a multi-generational enterprise that creates lasting value through real estate, intentional investing, and disciplined operations — empowering family, partners, and community to thrive.",
+    },
+    {
+      label: "Vision",
+      icon: "🌅",
+      body: "A diversified holding company anchored in faith and family — known for integrity, excellence, and the long view. A platform that compounds wealth, wisdom, and influence across generations.",
+    },
+    {
+      label: "Purpose",
+      icon: "✨",
+      body: "To live with purpose, lead with conviction, and leave a legacy worth inheriting. Every decision is made through the lens of stewardship — for the people we love and the work we are called to do.",
+    },
+  ];
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title={`${greeting}, ${firstName}`} subtitle={`${now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })} · ${quarter}`} isMobile={isMobile}>
-        <div style={{ display: "flex", gap: 4 }}>
-          {["all", "personal", "business"].map((s) => (
-            <button key={s} onClick={() => setDashScope(s)} style={{ padding: "6px 14px", borderRadius: 7, border: `1px solid ${dashScope === s ? "#16a34a" : "#e2e8f0"}`, background: dashScope === s ? "#f0fdf4" : "transparent", color: dashScope === s ? "#16a34a" : "#94a3b8", fontSize: 11, fontWeight: 700, cursor: "pointer", textTransform: "capitalize", fontFamily: "'DM Sans', sans-serif" }}>{s === "all" ? "All" : s}</button>
+      <PageHeader title={`${greeting}, ${firstName}`} subtitle={`${now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })} · ${quarter}`} isMobile={isMobile} />
+      <div style={{ padding: isMobile ? "16px 12px" : "32px 32px" }}>
+
+        {/* Mission / Vision / Purpose pillars */}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+          {pillars.map((p) => (
+            <div key={p.label} style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f1f12 100%)", borderRadius: 16, padding: isMobile ? "24px 22px" : "28px 26px", color: "#fff", position: "relative", overflow: "hidden", minHeight: isMobile ? "auto" : 280 }}>
+              <div style={{ position: "absolute", top: -30, right: -30, width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(212,192,140,0.1) 0%, transparent 70%)", pointerEvents: "none" }} />
+              <div style={{ position: "relative" }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: "rgba(212,192,140,0.15)", border: "1.5px solid rgba(212,192,140,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, marginBottom: 16 }}>{p.icon}</div>
+                <div style={{ fontSize: 10, color: "#D4C08C", fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 8 }}>{p.label}</div>
+                <p style={{ fontSize: isMobile ? 14 : 14, color: "rgba(255,255,255,0.92)", lineHeight: 1.65, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>{p.body}</p>
+              </div>
+            </div>
           ))}
         </div>
-      </PageHeader>
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <DashboardCards isMobile={isMobile} monthIncome={monthIncome} monthExpenses={monthExpenses} totalMonthlyObligations={totalMonthlyObligations} portfolioValue={portfolioValue} assets={assets} accounts={accounts} reLoanBalances={reLoanBalances} scopeFilter={scopeFilter} />
 
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px", marginBottom: 20 }}>
-          <SectionHeader text="Quick Actions" />
+        {/* Quick Actions */}
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px" }}>
+          <SectionHeader text="Jump Into" />
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 12 }}>
             {[
-              { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: <span style={{ fontSize: 22 }}>💰</span> },
-              { label: "Business", desc: "Entities & contacts", nav: "business", icon: <span style={{ fontSize: 22 }}>💼</span> },
-              { label: "Life", desc: "Home, family & health", nav: "life", icon: <span style={{ fontSize: 22 }}>🌳</span> },
-              { label: "Outreach", desc: "Communications & social", nav: "outreach", icon: <span style={{ fontSize: 22 }}>📡</span> },
+              { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: "💰" },
+              { label: "Business", desc: "Entities & contacts", nav: "business", icon: "💼" },
+              { label: "Life", desc: "Home, family & health", nav: "life", icon: "🌳" },
+              { label: "Outreach", desc: "Communications & social", nav: "outreach", icon: "📡" },
             ].map((a, i) => (
-              <div key={i} onClick={() => onNavigate(a.nav)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#16a34a"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, color: "#16a34a" }}>{a.icon}</div>
+              <div key={i} onClick={() => onNavigate(a.nav)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1C3820"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, fontSize: 20 }}>{a.icon}</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", fontFamily: "'DM Sans', sans-serif", marginBottom: 4 }}>{a.label}</div>
                 <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'DM Sans', sans-serif" }}>{a.desc}</div>
               </div>
             ))}
           </div>
-        </div>
-
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: isMobile ? "20px" : "24px 28px" }}>
-          <SectionHeader text="Recent Transactions" />
-          {transactions.length === 0 ? (
-            <div style={{ padding: "32px 0", textAlign: "center" }}>
-              <p style={{ fontSize: 14, color: "#64748b", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, margin: "0 0 4px" }}>No transactions yet</p>
-              <p style={{ fontSize: 12, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif", margin: 0 }}>Start tracking in Financials</p>
-            </div>
-          ) : transactions.slice(0, 6).map((t) => (
-            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid #f1f5f9" }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: t.type === "income" ? "#f0fdf4" : "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.type === "income" ? "#16a34a" : "#dc2626"} strokeWidth={2.5}><polyline points={t.type === "income" ? "7 13 12 8 17 13" : "7 11 12 16 17 11"}/></svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", fontFamily: "'DM Sans', sans-serif" }}>{t.description}</div>
-                <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif" }}>{t.category || "—"} · {fmtDate(t.date)}</div>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: t.type === "income" ? "#16a34a" : "#dc2626", flexShrink: 0 }}>{t.type === "income" ? "+" : "−"}{fmtCurrencyExact(t.amount)}</div>
-            </div>
-          ))}
         </div>
       </div>
     </div>
