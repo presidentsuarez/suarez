@@ -1309,10 +1309,36 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   const [form, setForm] = useState({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" });
   const [saving, setSaving] = useState(false);
   const [filterType, setFilterType] = useState("all");
+  const [filterPeriod, setFilterPeriod] = useState("month"); // month | quarter | ytd | year | all | custom
   const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [filterVis, setFilterVis] = useState("all");
   const [filterCat, setFilterCat] = useState("all");
   const [filterAccount, setFilterAccount] = useState("all");
+
+  // Compute date range from period
+  const getDateRange = () => {
+    const now = new Date();
+    const yr = now.getFullYear();
+    const mo = now.getMonth();
+    if (filterPeriod === "month") {
+      const start = new Date(filterMonth + "-01");
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+      return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), label: start.toLocaleString("en-US", { month: "long", year: "numeric" }) };
+    }
+    if (filterPeriod === "quarter") {
+      const q = Math.floor(mo / 3);
+      const start = new Date(yr, q * 3, 1);
+      const end = new Date(yr, q * 3 + 3, 0);
+      return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), label: `Q${q + 1} ${yr}` };
+    }
+    if (filterPeriod === "ytd") return { start: `${yr}-01-01`, end: now.toISOString().slice(0, 10), label: `YTD ${yr}` };
+    if (filterPeriod === "year") return { start: `${yr}-01-01`, end: `${yr}-12-31`, label: `${yr}` };
+    if (filterPeriod === "custom" && customStart && customEnd) return { start: customStart, end: customEnd, label: `${fmtDate(customStart)} → ${fmtDate(customEnd)}` };
+    return { start: null, end: null, label: "All Time" };
+  };
+  const dateRange = getDateRange();
 
   const resetForm = () => { setForm({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" }); setShowForm(false); };
 
@@ -1326,7 +1352,8 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   const filtered = transactions.filter((t) => {
     if (filterType !== "all" && t.type !== filterType) return false;
     if (filterVis !== "all" && t.visibility !== filterVis) return false;
-    if (filterMonth && t.date && !t.date.startsWith(filterMonth)) return false;
+    if (dateRange.start && t.date && t.date < dateRange.start) return false;
+    if (dateRange.end && t.date && t.date > dateRange.end) return false;
     if (filterCat === "uncategorized" && t.category && t.category !== "" && t.category !== "Uncategorized") return false;
     if (filterCat === "categorized" && (!t.category || t.category === "" || t.category === "Uncategorized")) return false;
     if (filterAccount !== "all" && t.account_id !== filterAccount) return false;
@@ -1365,13 +1392,39 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
         <StatCard label="Net Flow" value={fmtCurrency(totalIncome - totalExpenses)} accent={totalIncome - totalExpenses >= 0 ? "#3b82f6" : "#f59e0b"} compact />
       </div>
       <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "10px 14px", marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        {/* Period selector */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {[
+            { k: "month", l: "Month" },
+            { k: "quarter", l: "Quarter" },
+            { k: "ytd", l: "YTD" },
+            { k: "year", l: "Year" },
+            { k: "all", l: "All Time" },
+            { k: "custom", l: "Custom" },
+          ].map(({ k, l }) => (
+            <button key={k} onClick={() => setFilterPeriod(k)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${filterPeriod === k ? "#1C3820" : "#e2e8f0"}`, background: filterPeriod === k ? "#1C3820" : "transparent", color: filterPeriod === k ? "#D4C08C" : "#94a3b8", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
+          ))}
+          <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: "auto", fontFamily: "'DM Mono', monospace" }}>{dateRange.label}</span>
+        </div>
+        {/* Conditional pickers */}
+        {filterPeriod === "month" && (
+          <div style={{ marginBottom: 8 }}>
+            <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+          </div>
+        )}
+        {filterPeriod === "custom" && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} placeholder="Start" style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>→</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} placeholder="End" style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Mono', monospace", outline: "none" }} />
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 6, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 4 }}>
             {["all", "income", "expense"].map((t) => (
               <button key={t} onClick={() => setFilterType(t)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${filterType === t ? "#16a34a" : "#e2e8f0"}`, background: filterType === t ? "#f0fdf4" : "transparent", color: filterType === t ? "#16a34a" : "#94a3b8", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "capitalize" }}>{t}</button>
             ))}
           </div>
-          <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 10, fontFamily: "'DM Mono', monospace", outline: "none" }} />
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <div style={{ display: "flex", gap: 4 }}>
