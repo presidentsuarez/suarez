@@ -4995,7 +4995,7 @@ function SettingsView({ isMobile, session, activeTab, onTabChange }) {
    FINANCE (Tabbed: Money, Wealth)
    ═══════════════════════════════════════════════════════════ */
 
-function FinDashboardTab({ isMobile, transactions, accounts, assets, investments, monthlyBills, policies }) {
+function FinDashboardTab({ isMobile, transactions, accounts, assets, investments, monthlyBills, policies, snapshots }) {
   const curYear = new Date().getFullYear().toString();
   const ytdTxns = transactions.filter((t) => t.date && t.date.startsWith(curYear));
   const ytdIncome = ytdTxns.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
@@ -5006,6 +5006,12 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
   const activeAccounts = (accounts || []).filter((a) => a.active !== false);
   const uncategorized = transactions.filter((t) => !t.category || t.category === "Uncategorized").length;
   const activePolicies = (policies || []).filter((p) => p.status === "Active" || p.status === "active").length;
+
+  // Net Worth calculation
+  const cashOnHand = activeAccounts.reduce((s, a) => s + Number(a.balance || 0), 0);
+  const totalDebt = activeAccounts.filter((a) => Number(a.balance || 0) < 0 || a.account_type === "credit" || a.account_type === "loan").reduce((s, a) => s + Math.abs(Number(a.balance || 0)), 0);
+  const totalEquity = totalAssets + portfolioValue + Math.max(cashOnHand, 0);
+  const netWorth = totalEquity - totalDebt;
 
   const cards = [
     { label: "YTD Income", value: fmtCurrency(ytdIncome), accent: "#16a34a" },
@@ -5021,7 +5027,8 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
         {cards.map((c) => <StatCard key={c.label} label={c.label} value={c.value} accent={c.accent} compact />)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
         <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
           <SectionHeader text="Quick Stats" />
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -5052,6 +5059,40 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
           })()}
         </div>
       </div>
+
+      {/* Net Worth Summary */}
+      <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f1f12 100%)", borderRadius: 14, padding: isMobile ? "20px 22px" : "24px 28px", color: "#fff", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(212,192,140,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "relative" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, color: "#D4C08C", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>Net Worth</div>
+              <div style={{ fontSize: isMobile ? 28 : 36, fontWeight: 800, fontFamily: "'Playfair Display', serif", color: netWorth >= 0 ? "#fff" : "#fca5a5" }}>{fmtCurrency(netWorth)}</div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
+            <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Cash</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(Math.max(cashOnHand, 0))}</div>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Assets</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(totalAssets)}</div>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Portfolio</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(portfolioValue)}</div>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: 9, color: "rgba(252,165,165,0.8)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Debt</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fca5a5", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(totalDebt)}</div>
+            </div>
+          </div>
+          {snapshots && snapshots.length > 0 && (
+            <div style={{ marginTop: 12, fontSize: 10, color: "rgba(212,192,140,0.6)", textAlign: "right" }}>{snapshots.length} historical snapshot{snapshots.length !== 1 ? "s" : ""}</div>
+          )}
+        </div>
+      </div>
     </>
   );
 }
@@ -5075,17 +5116,7 @@ function FinanceView(props) {
       <PageHeader title="Finance" subtitle="Money, wealth & insurance" isMobile={isMobile} icon="💰" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
-        {tab === "dashboard" && (
-          <>
-            <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-              {[{ k: "dashboard", l: "Dashboard" }, { k: "networth", l: "Net Worth" }].map(({ k, l }) => (
-                <button key={k} onClick={() => setDashSubView(k)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${dashSubView === k ? "#0f172a" : "#e2e8f0"}`, background: dashSubView === k ? "#0f172a" : "#fff", color: dashSubView === k ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{l}</button>
-              ))}
-            </div>
-            {dashSubView === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} />}
-            {dashSubView === "networth" && <NetWorthTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} investments={props.investments} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
-          </>
-        )}
+        {tab === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
         {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} onAddAccount={props.onAddAccount} onToggleAccount={props.onToggleAccount} onDeleteAccount={props.onDeleteAccount} businesses={props.businesses} funnelPresets={props.funnelPresets} funnelInflows={props.funnelInflows} onAddFunnelPreset={props.onAddFunnelPreset} onUpdateFunnelPreset={props.onUpdateFunnelPreset} onDeleteFunnelPreset={props.onDeleteFunnelPreset} onAddFunnelInflow={props.onAddFunnelInflow} onUpdateFunnelInflow={props.onUpdateFunnelInflow} onDeleteFunnelInflow={props.onDeleteFunnelInflow} />}
         {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={(props.investments || []).filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
         {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={props.investments?.filter((i) => i.asset_type === "Real Estate") || []} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
