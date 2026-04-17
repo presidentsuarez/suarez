@@ -3780,16 +3780,18 @@ function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, c
    FAMILY (Tabbed: Members, Grades, Life Events, Prayer Wall)
    ═══════════════════════════════════════════════════════════ */
 
-function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer, nested }) {
-  const tab = activeTab || "members";
-  const setTab = onTabChange;
+function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onUpdateMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer, habits, habitLogs, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, nested }) {
+  const [selectedMemberId, setSelectedMemberId] = useState(null);
+
+  // If a member is selected, show their detail view
+  if (selectedMemberId) {
+    const member = kids.find((k) => k.id === selectedMemberId);
+    if (!member) { setSelectedMemberId(null); return null; }
+    return <FamilyMemberDetailView isMobile={isMobile} member={member} grades={grades} habits={habits || []} habitLogs={habitLogs || []} prayers={prayers || []} onBack={() => setSelectedMemberId(null)} onAddGrade={onAddGrade} onDeleteGrade={onDeleteGrade} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddHabitLog={onAddHabitLog} onDeleteHabitLog={onDeleteHabitLog} onAddPrayer={onAddPrayer} onUpdatePrayer={onUpdatePrayer} onDeletePrayer={onDeletePrayer} />;
+  }
 
   const content = (
-    <>
-      <TabBar tabs={[{ key: "members", label: "Members" }, { key: "grades", label: "Grades" }]} active={tab} onChange={setTab} isMobile={isMobile} />
-      {tab === "members" && <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} />}
-      {tab === "grades" && <GradesTab isMobile={isMobile} kids={kids} grades={grades} onAdd={onAddGrade} onDelete={onDeleteGrade} />}
-    </>
+    <FamilyMembersTab isMobile={isMobile} kids={kids} onAdd={onAddKid} onUpdate={onUpdateKid} onDelete={onDeleteKid} onSelect={(id) => setSelectedMemberId(id)} />
   );
 
   if (nested) return content;
@@ -3802,8 +3804,43 @@ function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones
   );
 }
 
+/* — Family Member Detail View — */
+function FamilyMemberDetailView({ isMobile, member, grades, habits, habitLogs, prayers, onBack, onAddGrade, onDeleteGrade, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, onAddPrayer, onUpdatePrayer, onDeletePrayer }) {
+  const [activeTab, setActiveTab] = useState("grades");
+  const memberGrades = grades.filter((g) => g.kid_id === member.id);
+  const getAge = (dob) => { if (!dob) return null; const d = new Date(dob); const now = new Date(); let age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; return age; };
+  const age = getAge(member.date_of_birth);
+
+  const tabs = [
+    { key: "grades", label: "📝 Grades" },
+    { key: "habits", label: "⚡ Habits" },
+    { key: "prayers", label: "✝️ Prayers" },
+  ];
+
+  const pills = [member.role || "Child"];
+  if (age != null) pills.push(`Age ${age}`);
+  if (member.school) pills.push(member.school);
+  if (member.grade_level) pills.push(member.grade_level);
+
+  return (
+    <>
+      <PageHeader isMobile={isMobile} title={member.name} subtitle={member.notes || `${member.role || "Family Member"}`} icon={member.name?.[0]?.toUpperCase()} onBack={onBack} pills={pills} stats={[
+        { label: "GRADES", value: memberGrades.length },
+        { label: "HABITS", value: habits.length },
+        { label: "PRAYERS", value: prayers.length },
+      ]} />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} isMobile={isMobile} />
+        {activeTab === "grades" && <GradesTab isMobile={isMobile} kids={[member]} grades={memberGrades} onAdd={onAddGrade} onDelete={onDeleteGrade} singleKid />}
+        {activeTab === "habits" && <HabitsTab isMobile={isMobile} habits={habits} habitLogs={habitLogs} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddLog={onAddHabitLog} onDeleteLog={onDeleteHabitLog} />}
+        {activeTab === "prayers" && <PrayerWallTab isMobile={isMobile} prayers={prayers} onAdd={onAddPrayer} onUpdate={onUpdatePrayer} onDelete={onDeletePrayer} />}
+      </div>
+    </>
+  );
+}
+
 /* — Family Members Tab (replaces old Kids-only tab) — */
-function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete }) {
+function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete, onSelect }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" });
@@ -3868,7 +3905,7 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete }) {
             const age = getAge(kid.date_of_birth);
             const rc = roleColor(kid.role || "Child");
             return (
-              <div key={kid.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "18px 20px", position: "relative", overflow: "hidden" }}>
+              <div key={kid.id} onClick={() => onSelect && onSelect(kid.id)} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "18px 20px", position: "relative", overflow: "hidden", cursor: onSelect ? "pointer" : "default" }} onMouseEnter={(e) => { if (onSelect) e.currentTarget.style.borderColor = "#1C3820"; }} onMouseLeave={(e) => { if (onSelect) e.currentTarget.style.borderColor = "#e2e8f0"; }}>
                 <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: rc.bg }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ width: 42, height: 42, borderRadius: 12, background: rc.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{kid.name.charAt(0).toUpperCase()}</div>
@@ -3882,8 +3919,8 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete }) {
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    <button onClick={() => startEdit(kid)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button>
-                    <button onClick={() => { if (window.confirm("Remove " + kid.name + "?")) onDelete(kid.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                    <button onClick={(e) => { e.stopPropagation(); startEdit(kid); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button>
+                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove " + kid.name + "?")) onDelete(kid.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
                   </div>
                 </div>
                 {kid.notes && <p style={{ fontSize: 12, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>{kid.notes}</p>}
@@ -3896,7 +3933,7 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete }) {
   );
 }
 /* — Grades Tab — */
-function GradesTab({ isMobile, kids, grades, onAdd, onDelete }) {
+function GradesTab({ isMobile, kids, grades, onAdd, onDelete, singleKid }) {
   const [selectedKid, setSelectedKid] = useState(kids[0]?.id || null);
   const [showForm, setShowForm] = useState(false);
   const curYear = new Date().getFullYear();
@@ -3924,7 +3961,7 @@ function GradesTab({ isMobile, kids, grades, onAdd, onDelete }) {
   return (
     <>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        {kids.map((k) => (
+        {!singleKid && kids.map((k) => (
           <button key={k.id} onClick={() => setSelectedKid(k.id)} style={{ padding: "7px 16px", borderRadius: 8, border: `1.5px solid ${selectedKid === k.id ? "#3b82f6" : "#e2e8f0"}`, background: selectedKid === k.id ? "#eff6ff" : "#fff", color: selectedKid === k.id ? "#3b82f6" : "#64748b", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{k.name}</button>
         ))}
         <div style={{ flex: 1 }} />
