@@ -3929,7 +3929,16 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete, onSelect 
               {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>School</th>}
               {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Grade</th>}
             </tr></thead>
-            <tbody>{kids.map((kid) => {
+            <tbody>{[...kids].sort((a, b) => {
+              const order = { Parent: 0, Spouse: 1, Child: 2, Grandparent: 3, Other: 4 };
+              const ra = order[a.role] ?? 4, rb = order[b.role] ?? 4;
+              if (ra !== rb) return ra - rb;
+              // Within same role, sort by DOB ascending (oldest first)
+              if (a.date_of_birth && b.date_of_birth) return new Date(a.date_of_birth) - new Date(b.date_of_birth);
+              if (a.date_of_birth) return -1;
+              if (b.date_of_birth) return 1;
+              return 0;
+            }).map((kid) => {
               const age = getAge(kid.date_of_birth);
               const rc = roleColors[kid.role] || "#f59e0b";
               return (
