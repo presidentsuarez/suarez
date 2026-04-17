@@ -2342,13 +2342,13 @@ function NetWorthTab({ isMobile, assets, accounts, investments, snapshots, onAdd
 function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, onDelete, onSelect, asTab }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name: "", entity_type: "LLC", ein: "", state_of_formation: "", date_formed: "", industry: "", description: "" });
+  const [form, setForm] = useState({ name: "", entity_type: "LLC", ein: "", state_of_formation: "", date_formed: "", industry: "", description: "", value: "", net: "" });
   const [saving, setSaving] = useState(false);
 
   const entityTypes = ["LLC", "S-Corp", "C-Corp", "Sole Proprietorship", "Partnership", "Non-Profit", "Other"];
 
   const resetForm = () => {
-    setForm({ name: "", entity_type: "LLC", ein: "", state_of_formation: "", date_formed: "", industry: "", description: "" });
+    setForm({ name: "", entity_type: "LLC", ein: "", state_of_formation: "", date_formed: "", industry: "", description: "", value: "", net: "" });
     setEditingId(null);
     setShowForm(false);
   };
@@ -2364,6 +2364,8 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
       date_formed: form.date_formed || null,
       industry: form.industry || null,
       description: form.description || null,
+      value: form.value ? Number(form.value) : 0,
+      net: form.net ? Number(form.net) : 0,
     };
     if (editingId) {
       await onUpdate(editingId, payload);
@@ -2379,6 +2381,7 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
       name: biz.name || "", entity_type: biz.entity_type || "LLC", ein: biz.ein || "",
       state_of_formation: biz.state_of_formation || "", date_formed: biz.date_formed || "",
       industry: biz.industry || "", description: biz.description || "",
+      value: biz.value || "", net: biz.net || "",
     });
     setEditingId(biz.id);
     setShowForm(true);
@@ -2424,6 +2427,14 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Description</label>
                 <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes" style={inputStyle} className="sz-input" />
               </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Value ($)</label>
+                <input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Net ($)</label>
+                <input type="number" value={form.net} onChange={(e) => setForm({ ...form, net: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" />
+              </div>
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={resetForm} style={{ padding: "9px 20px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 13, fontWeight: 600, color: "#64748b", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>Cancel</button>
@@ -2446,9 +2457,10 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
                 <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
                   <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Business</th>
                   <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Type</th>
-                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>EIN</th>
                   <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>State</th>
                   <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Industry</th>
+                  <th style={{ textAlign: "right", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Value</th>
+                  <th style={{ textAlign: "right", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Net</th>
                   <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Status</th>
                   <th style={{ width: 80 }}></th>
                 </tr></thead>
@@ -2456,9 +2468,10 @@ function BusinessesView({ isMobile, businesses, transactions, onAdd, onUpdate, o
                   <tr key={biz.id} onClick={() => onSelect && onSelect(biz.id)} style={{ borderBottom: "1px solid #f8fafc", cursor: onSelect ? "pointer" : "default" }} onMouseEnter={(e) => { if (onSelect) e.currentTarget.style.background = "#f8fafc"; }} onMouseLeave={(e) => { if (onSelect) e.currentTarget.style.background = "transparent"; }}>
                     <td style={{ padding: "10px 14px" }}><div style={{ fontWeight: 600, color: "#0f172a" }}>{biz.name}</div>{biz.description && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{biz.description}</div>}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.entity_type}</td>
-                    <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{biz.ein || "—"}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b" }}>{biz.state_of_formation || "—"}</td>
                     <td style={{ padding: "10px 14px", color: "#64748b" }}>{biz.industry || "—"}</td>
+                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'DM Mono', monospace", color: "#0f172a", fontWeight: 600 }}>{biz.value ? fmtCurrency(biz.value) : "—"}</td>
+                    <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'DM Mono', monospace", color: Number(biz.net || 0) >= 0 ? "#16a34a" : "#dc2626", fontWeight: 600 }}>{biz.net ? fmtCurrency(biz.net) : "—"}</td>
                     <td style={{ padding: "10px 14px", textAlign: "center" }}><span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", fontFamily: "'DM Mono', monospace", padding: "3px 8px", borderRadius: 6, background: biz.active ? "#f0fdf4" : "#f8fafc", color: biz.active ? "#16a34a" : "#94a3b8", border: `1px solid ${biz.active ? "#bbf7d0" : "#e2e8f0"}` }}>{biz.active ? "ACTIVE" : "INACTIVE"}</span></td>
                     <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, justifyContent: "center" }}><button onClick={(e) => { e.stopPropagation(); startEdit(biz); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button><button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete " + biz.name + "?")) onDelete(biz.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
                   </tr>
@@ -2928,14 +2941,14 @@ function BizTeamTab({ isMobile, bizId, team, onAdd, onUpdate, onDelete }) {
 }
 
 /* — Business Goals Tab — */
-function BizGoalsTab({ isMobile, businesses, goals, onAdd, onUpdate, onDelete }) {
+function BizGoalsTab({ isMobile, businesses, goals, onAdd, onUpdate, onDelete, hideFilter, defaultBizId }) {
   const [filterBiz, setFilterBiz] = useState("all");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", business_id: "", target_date: "", notes: "" });
+  const [form, setForm] = useState({ title: "", business_id: defaultBizId || "", target_date: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
-  const resetForm = () => { setForm({ title: "", business_id: "", target_date: "", notes: "" }); setShowForm(false); };
-  const handleSubmit = async () => { if (!form.title.trim() || !form.business_id) return; setSaving(true); await onAdd({ title: form.title, business_id: form.business_id, target_date: form.target_date || null, notes: form.notes || null, status: "active" }); resetForm(); setSaving(false); };
+  const resetForm = () => { setForm({ title: "", business_id: defaultBizId || "", target_date: "", notes: "" }); setShowForm(false); };
+  const handleSubmit = async () => { const bizId = defaultBizId || form.business_id; if (!form.title.trim() || !bizId) return; setSaving(true); await onAdd({ title: form.title, business_id: bizId, target_date: form.target_date || null, notes: form.notes || null, status: "active" }); resetForm(); setSaving(false); };
   const toggleStatus = (g) => onUpdate(g.id, { status: g.status === "active" ? "done" : "active" });
   const filtered = filterBiz === "all" ? goals : goals.filter((g) => g.business_id === filterBiz);
   const active = filtered.filter((g) => g.status === "active");
@@ -2945,18 +2958,19 @@ function BizGoalsTab({ isMobile, businesses, goals, onAdd, onUpdate, onDelete })
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
-        <select value={filterBiz} onChange={(e) => setFilterBiz(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}><option value="all">All Businesses</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+        {!hideFilter && <select value={filterBiz} onChange={(e) => setFilterBiz(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#475569" }}><option value="all">All Businesses</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
+        {hideFilter && <span style={{ fontSize: 13, color: "#64748b" }}>{filtered.length} goal{filtered.length !== 1 ? "s" : ""}</span>}
         <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Goal</GreenButton>
       </div>
       {showForm && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Goal *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Launch new product line" style={inputStyle} className="sz-input" /></div>
-            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Business *</label><select value={form.business_id} onChange={(e) => setForm({ ...form, business_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+            {!defaultBizId && <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Business *</label><select value={form.business_id} onChange={(e) => setForm({ ...form, business_id: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option>{businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>}
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Target Date</label><input type="date" value={form.target_date} onChange={(e) => setForm({ ...form, target_date: e.target.value })} style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.business_id}>{saving ? "..." : "Save"}</GreenButton></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim() || (!defaultBizId && !form.business_id)}>{saving ? "..." : "Save"}</GreenButton></div>
         </div>
       )}
       {filtered.length === 0 && !showForm ? (
