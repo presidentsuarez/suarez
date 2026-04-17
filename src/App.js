@@ -3965,8 +3965,9 @@ function GradesTab({ isMobile, kids, grades, onAdd, onDelete }) {
 }
 
 /* — Life Events Tab — */
-function LifeEventsTab({ isMobile, kids, milestones, onAdd, onDelete }) {
+function LifeEventsTab({ isMobile, kids, milestones, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ title: "", date: "", description: "" });
   const [saving, setSaving] = useState(false);
   const [orderedIds, setOrderedIds] = useState(null);
@@ -3974,13 +3975,23 @@ function LifeEventsTab({ isMobile, kids, milestones, onAdd, onDelete }) {
   // Maintain local order — initialize from milestones sorted by date
   const sorted = orderedIds ? orderedIds.map((id) => milestones.find((m) => m.id === id)).filter(Boolean) : [...milestones].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
 
-  const resetForm = () => { setForm({ title: "", date: "", description: "" }); setShowForm(false); };
+  const resetForm = () => { setForm({ title: "", date: "", description: "" }); setEditingId(null); setShowForm(false); };
   const handleSubmit = async () => {
     if (!form.title.trim()) return;
     setSaving(true);
-    await onAdd({ title: form.title, date: form.date || null, description: form.description || null });
+    if (editingId) {
+      await onUpdate(editingId, { title: form.title, date: form.date || null, description: form.description || null });
+    } else {
+      await onAdd({ title: form.title, date: form.date || null, description: form.description || null });
+      setOrderedIds(null);
+    }
     resetForm(); setSaving(false);
-    setOrderedIds(null); // reset order to pick up new item
+  };
+
+  const startEdit = (m) => {
+    setForm({ title: m.title || "", date: m.date || "", description: m.description || "" });
+    setEditingId(m.id);
+    setShowForm(true);
   };
 
   const moveUp = (idx) => {
@@ -4011,7 +4022,7 @@ function LifeEventsTab({ isMobile, kids, milestones, onAdd, onDelete }) {
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Target Date</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} className="sz-input" /></div>
             <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Details</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Strategy, dependencies, notes..." style={inputStyle} className="sz-input" /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim()}>{saving ? "..." : "Add"}</GreenButton></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={saving || !form.title.trim()}>{saving ? "..." : editingId ? "Update" : "Add"}</GreenButton></div>
         </div>
       )}
       {sorted.length === 0 && !showForm ? (
@@ -4040,6 +4051,7 @@ function LifeEventsTab({ isMobile, kids, milestones, onAdd, onDelete }) {
                   <button onClick={() => moveUp(idx)} disabled={idx === 0} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", fontSize: 14, color: idx === 0 ? "#e2e8f0" : "#64748b", padding: "2px 4px", lineHeight: 1 }}>▲</button>
                   <button onClick={() => moveDown(idx)} disabled={idx >= sorted.length - 1} style={{ background: "none", border: "none", cursor: idx >= sorted.length - 1 ? "default" : "pointer", fontSize: 14, color: idx >= sorted.length - 1 ? "#e2e8f0" : "#64748b", padding: "2px 4px", lineHeight: 1 }}>▼</button>
                 </div>
+                <button onClick={() => startEdit(m)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}>{Icons.edit}</button>
                 <button onClick={() => { if (window.confirm("Delete this move?")) { onDelete(m.id); setOrderedIds(null); } }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}>{Icons.trash}</button>
               </div>
             </div>
@@ -5375,7 +5387,6 @@ function LifeConsolidatedView(props) {
     { key: "calendar", label: "📅 Calendar" },
     { key: "planner", label: "📝 Planner" },
     { key: "links", label: "🔗 Links" },
-    { key: "goals", label: "🎯 Goals" },
     { key: "habits", label: "⚡ Habits" },
     { key: "learning", label: "📚 Learning" },
     { key: "chess", label: "♟️ Chess" },
@@ -5392,10 +5403,9 @@ function LifeConsolidatedView(props) {
         {tab === "calendar" && <CalendarView isMobile={isMobile} events={props.calendarEvents} onAdd={props.onAddEvent} onDelete={props.onDeleteEvent} asTab />}
         {tab === "planner" && <PlannerView isMobile={isMobile} tasks={props.plannerTasks} onAdd={props.onAddTask} onUpdate={props.onUpdateTask} onDelete={props.onDeleteTask} asTab />}
         {tab === "links" && <LinksTab isMobile={isMobile} links={props.savedLinks || []} onAdd={props.onAddLink} onDelete={props.onDeleteLink} />}
-        {tab === "goals" && <GoalsTab isMobile={isMobile} goals={props.goals || []} onAdd={props.onAddGoal} onUpdate={props.onUpdateGoal} onDelete={props.onDeleteGoal} />}
         {tab === "habits" && <HabitsTab isMobile={isMobile} habits={props.habits || []} habitLogs={props.habitLogs || []} onAddHabit={props.onAddHabit} onDeleteHabit={props.onDeleteHabit} onAddLog={props.onAddHabitLog} onDeleteLog={props.onDeleteHabitLog} />}
         {tab === "learning" && <LearningTab isMobile={isMobile} items={props.learningItems || []} onAdd={props.onAddLearning} onUpdate={props.onUpdateLearning} onDelete={props.onDeleteLearning} />}
-        {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onDelete={props.onDeleteMilestone} />}
+        {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onUpdate={props.onUpdateMilestone} onDelete={props.onDeleteMilestone} />}
         {tab === "faith" && <PrayerWallTab isMobile={isMobile} prayers={props.prayers || []} onAdd={props.onAddPrayer} onUpdate={props.onUpdatePrayer} onDelete={props.onDeletePrayer} />}
       </div>
     </div>
@@ -6930,6 +6940,7 @@ export default function SuarezApp() {
   const handleDeleteKidGrade = async (id) => { const { error } = await supabase.from("kid_grades").delete().eq("id", id); if (!error) setKidGrades((p) => p.filter((g) => g.id !== id)); };
   const handleAddKidMilestone = async (form) => { const { data, error } = await supabase.from("kid_milestones").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setKidMilestones((p) => [data, ...p]); };
   const handleDeleteKidMilestone = async (id) => { const { error } = await supabase.from("kid_milestones").delete().eq("id", id); if (!error) setKidMilestones((p) => p.filter((m) => m.id !== id)); };
+  const handleUpdateKidMilestone = async (id, form) => { const { data, error } = await supabase.from("kid_milestones").update(form).eq("id", id).select().single(); if (!error && data) setKidMilestones((p) => p.map((m) => m.id === id ? data : m)); };
   const handleAddScorecard = async (form) => { const { data, error } = await supabase.from("life_scorecards").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setScorecards((p) => [data, ...p]); };
   const handleDeleteScorecard = async (id) => { const { error } = await supabase.from("life_scorecards").delete().eq("id", id); if (!error) setScorecards((p) => p.filter((s) => s.id !== id)); };
   const handleAddPrayer = async (form) => { const { data, error } = await supabase.from("prayer_wall").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setPrayers((p) => [data, ...p]); };
@@ -7084,7 +7095,7 @@ export default function SuarezApp() {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
-      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
+      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       default: return null;
