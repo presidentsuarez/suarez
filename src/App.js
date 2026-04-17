@@ -5445,16 +5445,15 @@ function FunnelTab({ isMobile, businesses, presets, inflows, onAddPreset, onUpda
 
 function LifeConsolidatedView(props) {
   const { isMobile, activeTab, onTabChange } = props;
-  const tab = activeTab || "family";
+  const tab = activeTab || "chess";
   const [familyTab, setFamilyTab] = useState(null);
   const [healthTab, setHealthTab] = useState(null);
   const tabs = [
-    { key: "family", label: "Family" },
-    { key: "health", label: "Health" },
+    { key: "chess", label: "♟️ Chess" },
+    { key: "family", label: "👨‍👩‍👧‍👦 Family" },
+    { key: "health", label: "💪 Health" },
     { key: "calendar", label: "📅 Calendar" },
     { key: "links", label: "🔗 Links" },
-    { key: "chess", label: "♟️ Chess" },
-    { key: "faith", label: "✝️ Faith" },
   ];
 
   return (
@@ -5462,12 +5461,11 @@ function LifeConsolidatedView(props) {
       <PageHeader title="Life" subtitle="Family, health, planning & growth" isMobile={isMobile} icon="🌳" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
+        {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onUpdate={props.onUpdateMilestone} onDelete={props.onDeleteMilestone} />}
         {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
         {tab === "health" && <HealthView {...props} activeTab={healthTab} onTabChange={setHealthTab} nested />}
         {tab === "calendar" && <CalendarView isMobile={isMobile} events={props.calendarEvents} onAdd={props.onAddEvent} onDelete={props.onDeleteEvent} asTab />}
         {tab === "links" && <LinksTab isMobile={isMobile} links={props.savedLinks || []} onAdd={props.onAddLink} onDelete={props.onDeleteLink} />}
-        {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onUpdate={props.onUpdateMilestone} onDelete={props.onDeleteMilestone} />}
-        {tab === "faith" && <PrayerWallTab isMobile={isMobile} prayers={props.prayers || []} onAdd={props.onAddPrayer} onUpdate={props.onUpdatePrayer} onDelete={props.onDeletePrayer} />}
       </div>
     </div>
   );
