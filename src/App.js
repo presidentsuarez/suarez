@@ -3780,14 +3780,13 @@ function HomeLifeView({ isMobile, activeTab, onTabChange, homes, utilityBills, c
    FAMILY (Tabbed: Members, Grades, Life Events, Prayer Wall)
    ═══════════════════════════════════════════════════════════ */
 
-function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onUpdateMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer, habits, habitLogs, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, nested }) {
+function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones, prayers, onAddKid, onUpdateKid, onDeleteKid, onAddGrade, onDeleteGrade, onAddMilestone, onUpdateMilestone, onDeleteMilestone, onAddPrayer, onUpdatePrayer, onDeletePrayer, habits, habitLogs, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, learningItems, onAddLearning, onUpdateLearning, onDeleteLearning, nested }) {
   const [selectedMemberId, setSelectedMemberId] = useState(null);
 
-  // If a member is selected, show their detail view
   if (selectedMemberId) {
     const member = kids.find((k) => k.id === selectedMemberId);
     if (!member) { setSelectedMemberId(null); return null; }
-    return <FamilyMemberDetailView isMobile={isMobile} member={member} grades={grades} habits={habits || []} habitLogs={habitLogs || []} prayers={prayers || []} onBack={() => setSelectedMemberId(null)} onAddGrade={onAddGrade} onDeleteGrade={onDeleteGrade} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddHabitLog={onAddHabitLog} onDeleteHabitLog={onDeleteHabitLog} onAddPrayer={onAddPrayer} onUpdatePrayer={onUpdatePrayer} onDeletePrayer={onDeletePrayer} />;
+    return <FamilyMemberDetailView isMobile={isMobile} member={member} grades={grades} habits={habits || []} habitLogs={habitLogs || []} prayers={prayers || []} learningItems={learningItems || []} onBack={() => setSelectedMemberId(null)} onUpdate={onUpdateKid} onDelete={onDeleteKid} onAddGrade={onAddGrade} onDeleteGrade={onDeleteGrade} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddHabitLog={onAddHabitLog} onDeleteHabitLog={onDeleteHabitLog} onAddPrayer={onAddPrayer} onUpdatePrayer={onUpdatePrayer} onDeletePrayer={onDeletePrayer} onAddLearning={onAddLearning} onUpdateLearning={onUpdateLearning} onDeleteLearning={onDeleteLearning} />;
   }
 
   const content = (
@@ -3805,16 +3804,26 @@ function FamilyView({ isMobile, activeTab, onTabChange, kids, grades, milestones
 }
 
 /* — Family Member Detail View — */
-function FamilyMemberDetailView({ isMobile, member, grades, habits, habitLogs, prayers, onBack, onAddGrade, onDeleteGrade, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, onAddPrayer, onUpdatePrayer, onDeletePrayer }) {
+function FamilyMemberDetailView({ isMobile, member, grades, habits, habitLogs, prayers, learningItems, onBack, onUpdate, onDelete, onAddGrade, onDeleteGrade, onAddHabit, onDeleteHabit, onAddHabitLog, onDeleteHabitLog, onAddPrayer, onUpdatePrayer, onDeletePrayer, onAddLearning, onUpdateLearning, onDeleteLearning }) {
   const [activeTab, setActiveTab] = useState("grades");
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ name: member.name, role: member.role || "Child", date_of_birth: member.date_of_birth || "", school: member.school || "", grade_level: member.grade_level || "", notes: member.notes || "" });
   const memberGrades = grades.filter((g) => g.kid_id === member.id);
   const getAge = (dob) => { if (!dob) return null; const d = new Date(dob); const now = new Date(); let age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; return age; };
   const age = getAge(member.date_of_birth);
+  const roles = ["Parent", "Child", "Spouse", "Grandparent", "Other"];
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const handleSave = async () => {
+    await onUpdate(member.id, { name: form.name, role: form.role, date_of_birth: form.date_of_birth || null, school: form.school || null, grade_level: form.grade_level || null, notes: form.notes || null });
+    setEditing(false);
+  };
 
   const tabs = [
     { key: "grades", label: "📝 Grades" },
     { key: "habits", label: "⚡ Habits" },
     { key: "prayers", label: "✝️ Prayers" },
+    { key: "learning", label: "📚 Learning" },
   ];
 
   const pills = [member.role || "Child"];
@@ -3828,12 +3837,32 @@ function FamilyMemberDetailView({ isMobile, member, grades, habits, habitLogs, p
         { label: "GRADES", value: memberGrades.length },
         { label: "HABITS", value: habits.length },
         { label: "PRAYERS", value: prayers.length },
-      ]} />
+      ]}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setEditing(!editing)} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{editing ? "✕ Cancel" : "✏️ Edit"}</button>
+          <button onClick={() => { if (window.confirm("Remove " + member.name + "?")) { onDelete(member.id); onBack(); } }} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🗑</button>
+        </div>
+      </PageHeader>
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        {editing && (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+            <SectionHeader text="Edit Member" />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Date of Birth</label><input type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>School</label><input value={form.school} onChange={(e) => setForm({ ...form, school: e.target.value })} placeholder="School name" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Grade Level</label><input value={form.grade_level} onChange={(e) => setForm({ ...form, grade_level: e.target.value })} placeholder="e.g. 5th Grade" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><GreenButton small onClick={handleSave} disabled={!form.name.trim()}>Save</GreenButton></div>
+          </div>
+        )}
         <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} isMobile={isMobile} />
         {activeTab === "grades" && <GradesTab isMobile={isMobile} kids={[member]} grades={memberGrades} onAdd={onAddGrade} onDelete={onDeleteGrade} singleKid />}
         {activeTab === "habits" && <HabitsTab isMobile={isMobile} habits={habits} habitLogs={habitLogs} onAddHabit={onAddHabit} onDeleteHabit={onDeleteHabit} onAddLog={onAddHabitLog} onDeleteLog={onDeleteHabitLog} />}
         {activeTab === "prayers" && <PrayerWallTab isMobile={isMobile} prayers={prayers} onAdd={onAddPrayer} onUpdate={onUpdatePrayer} onDelete={onDeletePrayer} />}
+        {activeTab === "learning" && <LearningTab isMobile={isMobile} items={learningItems || []} onAdd={onAddLearning} onUpdate={onUpdateLearning} onDelete={onDeleteLearning} />}
       </div>
     </>
   );
@@ -3842,42 +3871,33 @@ function FamilyMemberDetailView({ isMobile, member, grades, habits, habitLogs, p
 /* — Family Members Tab (replaces old Kids-only tab) — */
 function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete, onSelect }) {
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" });
   const [saving, setSaving] = useState(false);
 
   const roles = ["Parent", "Child", "Spouse", "Grandparent", "Other"];
-  const resetForm = () => { setForm({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" }); setEditingId(null); setShowForm(false); };
+  const resetForm = () => { setForm({ name: "", date_of_birth: "", school: "", grade_level: "", notes: "", role: "Child" }); setShowForm(false); };
   const handleSubmit = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    const payload = { name: form.name, role: form.role, date_of_birth: form.date_of_birth || null, school: form.school || null, grade_level: form.grade_level || null, notes: form.notes || null };
-    if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
+    await onAdd({ name: form.name, role: form.role, date_of_birth: form.date_of_birth || null, school: form.school || null, grade_level: form.grade_level || null, notes: form.notes || null });
     resetForm(); setSaving(false);
   };
-  const startEdit = (kid) => { setForm({ name: kid.name || "", role: kid.role || "Child", date_of_birth: kid.date_of_birth || "", school: kid.school || "", grade_level: kid.grade_level || "", notes: kid.notes || "" }); setEditingId(kid.id); setShowForm(true); };
 
   const getAge = (dob) => { if (!dob) return null; const d = new Date(dob); const now = new Date(); let age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; return age; };
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
-  const roleColor = (role) => {
-    switch(role) {
-      case "Parent": case "Spouse": return { bg: "linear-gradient(135deg, #16a34a, #15803d)", border: "#bbf7d0" };
-      case "Child": return { bg: "linear-gradient(135deg, #3b82f6, #2563eb)", border: "#bfdbfe" };
-      case "Grandparent": return { bg: "linear-gradient(135deg, #7c3aed, #6d28d9)", border: "#e9d5ff" };
-      default: return { bg: "linear-gradient(135deg, #f59e0b, #d97706)", border: "#fde68a" };
-    }
-  };
+  const roleColors = { Parent: "#16a34a", Spouse: "#16a34a", Child: "#3b82f6", Grandparent: "#7c3aed", Other: "#f59e0b" };
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{kids.length} member{kids.length !== 1 ? "s" : ""}</span>
         <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Member</GreenButton>
       </div>
       {showForm && (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
-          <SectionHeader text={editingId ? "Edit Family Member" : "New Family Member"} />
+          <SectionHeader text="New Family Member" />
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
             <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>
@@ -3888,7 +3908,7 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete, onSelect 
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
-            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : editingId ? "Update" : "Add Member"}</GreenButton>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : "Add Member"}</GreenButton>
           </div>
         </div>
       )}
@@ -3900,33 +3920,34 @@ function FamilyMembersTab({ isMobile, kids, onAdd, onUpdate, onDelete, onSelect 
           <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Member</GreenButton>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 14 }}>
-          {kids.map((kid) => {
-            const age = getAge(kid.date_of_birth);
-            const rc = roleColor(kid.role || "Child");
-            return (
-              <div key={kid.id} onClick={() => onSelect && onSelect(kid.id)} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", padding: "18px 20px", position: "relative", overflow: "hidden", cursor: onSelect ? "pointer" : "default" }} onMouseEnter={(e) => { if (onSelect) e.currentTarget.style.borderColor = "#1C3820"; }} onMouseLeave={(e) => { if (onSelect) e.currentTarget.style.borderColor = "#e2e8f0"; }}>
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: rc.bg }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 12, background: rc.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{kid.name.charAt(0).toUpperCase()}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'DM Sans', sans-serif" }}>{kid.name}</div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${rc.border}40`, color: "#475569", border: `1px solid ${rc.border}`, fontFamily: "'DM Mono', monospace", textTransform: "uppercase" }}>{kid.role || "Child"}</span>
-                      {age != null && <span style={{ fontSize: 11, color: "#64748b" }}>Age {age}</span>}
-                      {kid.grade_level && <span style={{ fontSize: 11, color: "#64748b" }}>· {kid.grade_level}</span>}
-                      {kid.school && <span style={{ fontSize: 11, color: "#94a3b8" }}>· {kid.school}</span>}
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+            <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Name</th>
+              <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Role</th>
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Age</th>}
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>School</th>}
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Grade</th>}
+            </tr></thead>
+            <tbody>{kids.map((kid) => {
+              const age = getAge(kid.date_of_birth);
+              const rc = roleColors[kid.role] || "#f59e0b";
+              return (
+                <tr key={kid.id} onClick={() => onSelect && onSelect(kid.id)} style={{ borderBottom: "1px solid #f8fafc", cursor: "pointer" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                  <td style={{ padding: "10px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: rc, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{kid.name.charAt(0).toUpperCase()}</div>
+                      <div style={{ fontWeight: 600, color: "#0f172a" }}>{kid.name}</div>
                     </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    <button onClick={(e) => { e.stopPropagation(); startEdit(kid); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#64748b" }}>{Icons.edit}</button>
-                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm("Remove " + kid.name + "?")) onDelete(kid.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
-                  </div>
-                </div>
-                {kid.notes && <p style={{ fontSize: 12, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>{kid.notes}</p>}
-              </div>
-            );
-          })}
+                  </td>
+                  <td style={{ padding: "10px 14px" }}><span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${rc}15`, color: rc, textTransform: "uppercase", letterSpacing: "0.05em" }}>{kid.role || "Child"}</span></td>
+                  {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b" }}>{age != null ? age : "—"}</td>}
+                  {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b" }}>{kid.school || "—"}</td>}
+                  {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b" }}>{kid.grade_level || "—"}</td>}
+                </tr>
+              );
+            })}</tbody>
+          </table>
         </div>
       )}
     </>
@@ -5422,10 +5443,7 @@ function LifeConsolidatedView(props) {
     { key: "family", label: "Family" },
     { key: "health", label: "Health" },
     { key: "calendar", label: "📅 Calendar" },
-    { key: "planner", label: "📝 Planner" },
     { key: "links", label: "🔗 Links" },
-    { key: "habits", label: "⚡ Habits" },
-    { key: "learning", label: "📚 Learning" },
     { key: "chess", label: "♟️ Chess" },
     { key: "faith", label: "✝️ Faith" },
   ];
@@ -5438,10 +5456,7 @@ function LifeConsolidatedView(props) {
         {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
         {tab === "health" && <HealthView {...props} activeTab={healthTab} onTabChange={setHealthTab} nested />}
         {tab === "calendar" && <CalendarView isMobile={isMobile} events={props.calendarEvents} onAdd={props.onAddEvent} onDelete={props.onDeleteEvent} asTab />}
-        {tab === "planner" && <PlannerView isMobile={isMobile} tasks={props.plannerTasks} onAdd={props.onAddTask} onUpdate={props.onUpdateTask} onDelete={props.onDeleteTask} asTab />}
         {tab === "links" && <LinksTab isMobile={isMobile} links={props.savedLinks || []} onAdd={props.onAddLink} onDelete={props.onDeleteLink} />}
-        {tab === "habits" && <HabitsTab isMobile={isMobile} habits={props.habits || []} habitLogs={props.habitLogs || []} onAddHabit={props.onAddHabit} onDeleteHabit={props.onDeleteHabit} onAddLog={props.onAddHabitLog} onDeleteLog={props.onDeleteHabitLog} />}
-        {tab === "learning" && <LearningTab isMobile={isMobile} items={props.learningItems || []} onAdd={props.onAddLearning} onUpdate={props.onUpdateLearning} onDelete={props.onDeleteLearning} />}
         {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onUpdate={props.onUpdateMilestone} onDelete={props.onDeleteMilestone} />}
         {tab === "faith" && <PrayerWallTab isMobile={isMobile} prayers={props.prayers || []} onAdd={props.onAddPrayer} onUpdate={props.onUpdatePrayer} onDelete={props.onDeletePrayer} />}
       </div>
