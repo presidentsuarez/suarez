@@ -7133,9 +7133,9 @@ export default function SuarezApp() {
   const navItems = [
     { id: "overview", label: "Command Center", icon: <span style={{ fontSize: 18 }}>🌍</span> },
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
+    { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
-    { id: "finance", label: "Finance", featured: true, icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
   ];
 
@@ -7173,10 +7173,10 @@ export default function SuarezApp() {
               {navItems.map((item) => (
                 <button key={item.id} onClick={() => navigate(item.id)} title={item.label} style={{
                   width: 40, height: 40, borderRadius: 10, border: "none",
-                  background: activeNav === item.id && !showProfile ? (item.featured ? "linear-gradient(135deg, #16a34a, #15803d)" : "#f0fdf4") : "transparent",
-                  color: activeNav === item.id && !showProfile ? (item.featured ? "#fff" : "#16a34a") : "#94a3b8",
+                  background: activeNav === item.id && !showProfile ? "linear-gradient(135deg, #16a34a, #15803d)" : "transparent",
+                  color: activeNav === item.id && !showProfile ? "#fff" : "#94a3b8",
                   cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
-                  boxShadow: activeNav === item.id && item.featured && !showProfile ? "0 2px 8px rgba(22,163,74,0.3)" : "none", flexShrink: 0,
+                  boxShadow: activeNav === item.id && !showProfile ? "0 2px 8px rgba(22,163,74,0.3)" : "none", flexShrink: 0,
                 }}>{item.icon}</button>
               ))}
             </div>
