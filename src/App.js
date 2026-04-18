@@ -6178,6 +6178,237 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
 }
 
 /* ═══════════════════════════════════════════════════════════
+   TEAM — Staff & Team Management
+   ═══════════════════════════════════════════════════════════ */
+
+function TeamView({ isMobile, staff, businesses, onAdd, onUpdate, onDelete }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "", department: "", organizations: [], status: "active", hire_date: "", hourly_rate: "", notes: "", avatar_color: "#1C3820" });
+  const [saving, setSaving] = useState(false);
+  const [orgInput, setOrgInput] = useState("");
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const colors = ["#1C3820", "#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#ec4899", "#0891b2"];
+
+  const resetForm = () => { setForm({ name: "", email: "", phone: "", role: "", department: "", organizations: [], status: "active", hire_date: "", hourly_rate: "", notes: "", avatar_color: "#1C3820" }); setOrgInput(""); setShowForm(false); };
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    const payload = { ...form, hourly_rate: form.hourly_rate ? Number(form.hourly_rate) : 0, organizations: JSON.stringify(form.organizations) };
+    await onAdd(payload);
+    resetForm(); setSaving(false);
+  };
+
+  const addOrg = () => { if (orgInput.trim() && !form.organizations.includes(orgInput.trim())) { setForm({ ...form, organizations: [...form.organizations, orgInput.trim()] }); setOrgInput(""); } };
+
+  // Detail view
+  if (selectedId) {
+    const member = staff.find((s) => s.id === selectedId);
+    if (!member) { setSelectedId(null); return null; }
+    return <TeamMemberDetailView isMobile={isMobile} member={member} onBack={() => setSelectedId(null)} onUpdate={onUpdate} onDelete={onDelete} />;
+  }
+
+  const activeStaff = staff.filter((s) => s.status !== "inactive");
+  const inactiveStaff = staff.filter((s) => s.status === "inactive");
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Team" subtitle={`${staff.length} team member${staff.length !== 1 ? "s" : ""}`} isMobile={isMobile} icon="👥" />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Member</GreenButton>
+        </div>
+
+        {showForm && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+            <SectionHeader text="New Team Member" />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role / Title</label><input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g. Virtual Assistant" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 555 000 0000" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Department</label><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="e.g. Operations" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Hourly Rate ($)</label><input type="number" value={form.hourly_rate} onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Organizations</label>
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <input value={orgInput} onChange={(e) => setOrgInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addOrg())} placeholder="Type org name and press Enter" style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+                  <button onClick={addOrg} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 12, fontWeight: 600, color: "#475569", cursor: "pointer" }}>Add</button>
+                </div>
+                {form.organizations.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{form.organizations.map((o, i) => <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: 4 }}>{o} <button onClick={() => setForm({ ...form, organizations: form.organizations.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12, padding: 0, lineHeight: 1 }}>×</button></span>)}</div>}
+              </div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+              <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : "Add Member"}</GreenButton>
+            </div>
+          </div>
+        )}
+
+        {staff.length === 0 && !showForm ? (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>👥</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Team Members</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Add your team — VAs, contractors, employees, anyone you work with.</p>
+            <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Member</GreenButton>
+          </div>
+        ) : (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+              <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Name</th>
+                <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Organization(s)</th>
+                {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Phone</th>}
+                {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Email</th>}
+                <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Status</th>
+              </tr></thead>
+              <tbody>{activeStaff.concat(inactiveStaff).map((s) => {
+                const orgs = Array.isArray(s.organizations) ? s.organizations : (typeof s.organizations === "string" ? JSON.parse(s.organizations || "[]") : []);
+                const statusColors = { active: "#16a34a", onleave: "#f59e0b", inactive: "#94a3b8" };
+                const sc = statusColors[s.status] || "#94a3b8";
+                const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#0891b2"];
+                const ac = s.avatar_color || avatarColors[Math.abs([...(s.name || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+                return (
+                  <tr key={s.id} onClick={() => setSelectedId(s.id)} style={{ borderBottom: "1px solid #f8fafc", cursor: "pointer", opacity: s.status === "inactive" ? 0.5 : 1 }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: ac, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{s.name.charAt(0).toUpperCase()}</div>
+                        <div><div style={{ fontWeight: 600, color: "#0f172a" }}>{s.name}</div>{s.role && <div style={{ fontSize: 10, color: "#94a3b8" }}>{s.role}</div>}</div>
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {orgs.length > 0 ? orgs.map((o, i) => <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>{o}</span>) : <span style={{ color: "#94a3b8", fontSize: 11 }}>—</span>}
+                      </div>
+                    </td>
+                    {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{s.phone || "—"}</td>}
+                    {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{s.email || "—"}</td>}
+                    <td style={{ padding: "10px 14px", textAlign: "center" }}><span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${sc}15`, color: sc, textTransform: "uppercase", letterSpacing: "0.05em" }}>● {s.status || "active"}</span></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamMemberDetailView({ isMobile, member, onBack, onUpdate, onDelete }) {
+  const [activeTab, setActiveTab] = useState("overview");
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ name: member.name, email: member.email || "", phone: member.phone || "", role: member.role || "", department: member.department || "", status: member.status || "active", hire_date: member.hire_date || "", hourly_rate: member.hourly_rate || "", notes: member.notes || "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const orgs = Array.isArray(member.organizations) ? member.organizations : (typeof member.organizations === "string" ? JSON.parse(member.organizations || "[]") : []);
+
+  const handleSave = async () => {
+    await onUpdate(member.id, { name: form.name, email: form.email || null, phone: form.phone || null, role: form.role || null, department: form.department || null, status: form.status, hire_date: form.hire_date || null, hourly_rate: form.hourly_rate ? Number(form.hourly_rate) : 0, notes: form.notes || null });
+    setEditing(false);
+  };
+
+  const tabs = [
+    { key: "overview", label: "📋 Overview" },
+    { key: "documents", label: "📄 Documents" },
+    { key: "timetracking", label: "⏱ Time" },
+    { key: "billing", label: "💵 Billing" },
+  ];
+
+  const pills = [member.role, member.department, ...(orgs || [])].filter(Boolean);
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader isMobile={isMobile} title={member.name} subtitle={member.role || "Team Member"} icon={member.name?.[0]?.toUpperCase()} onBack={onBack} pills={pills} stats={[
+        { label: "STATUS", value: (member.status || "active").toUpperCase() },
+        { label: "RATE", value: member.hourly_rate ? `$${member.hourly_rate}/hr` : "—" },
+        { label: "SINCE", value: member.hire_date ? fmtDate(member.hire_date) : "—" },
+      ]}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setEditing(!editing)} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{editing ? "✕ Cancel" : "✏️ Edit"}</button>
+          <button onClick={() => { if (window.confirm("Remove " + member.name + "?")) { onDelete(member.id); onBack(); } }} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🗑</button>
+        </div>
+      </PageHeader>
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        {editing && (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+            <SectionHeader text="Edit Member" />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Department</label><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="active">Active</option><option value="onleave">On Leave</option><option value="inactive">Inactive</option></select></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Hire Date</label><input type="date" value={form.hire_date} onChange={(e) => setForm({ ...form, hire_date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Hourly Rate ($)</label><input type="number" value={form.hourly_rate} onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><GreenButton small onClick={handleSave} disabled={!form.name.trim()}>Save</GreenButton></div>
+          </div>
+        )}
+        <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} isMobile={isMobile} />
+        {activeTab === "overview" && (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+              <SectionHeader text="Contact Info" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📧 Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{member.email || "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📱 Phone</span><span style={{ fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{member.phone || "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>🏢 Department</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{member.department || "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📅 Hire Date</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{member.hire_date ? fmtDate(member.hire_date) : "—"}</span></div>
+              </div>
+            </div>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+              <SectionHeader text="Organizations" />
+              {orgs.length === 0 ? <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No organizations assigned</p> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {orgs.map((o, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "#f8fafc", borderRadius: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a" }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{o}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {member.notes && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", gridColumn: isMobile ? "1" : "1 / -1" }}>
+                <SectionHeader text="Notes" />
+                <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, margin: 0 }}>{member.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+        {activeTab === "documents" && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Documents</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Contracts, onboarding docs, and files for {member.name} will live here.</p>
+          </div>
+        )}
+        {activeTab === "timetracking" && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>⏱</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Time Tracking</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Hours logged, timesheets, and attendance for {member.name}.</p>
+          </div>
+        )}
+        {activeTab === "billing" && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>💵</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Billing</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Charges, invoices, and payment history for {member.name}.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    CLICKUP — Spaces → Folders → Lists → Tasks
    ═══════════════════════════════════════════════════════════ */
 
@@ -6763,6 +6994,7 @@ export default function SuarezApp() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [appUsers, setAppUsers] = useState([]);
   const [robots, setRobots] = useState([]);
+  const [staffMembers, setStaffMembers] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -6823,7 +7055,7 @@ export default function SuarezApp() {
       }
     } catch (e) { setDataLoading(true); }
 
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }).limit(50),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -6866,6 +7098,7 @@ export default function SuarezApp() {
       supabase.from("team_members").select("*").order("created_at", { ascending: true }),
       supabase.from("app_users").select("*").order("created_at", { ascending: true }),
       supabase.from("robots").select("*").order("created_at", { ascending: true }),
+      supabase.from("staff_members").select("*").order("name", { ascending: true }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -6913,6 +7146,7 @@ export default function SuarezApp() {
     if (teamMembersRes.data) setTeamMembers(teamMembersRes.data);
     if (appUsersRes.data) setAppUsers(appUsersRes.data);
     if (robotsRes.data) setRobots(robotsRes.data);
+    if (staffRes.data) setStaffMembers(staffRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -7084,6 +7318,11 @@ export default function SuarezApp() {
   const handleUpdateRobot = async (id, form) => { const { data, error } = await supabase.from("robots").update({ ...form, updated_at: new Date().toISOString() }).eq("id", id).select().single(); if (!error && data) setRobots((p) => p.map((x) => x.id === id ? data : x)); };
   const handleDeleteRobot = async (id) => { const { error } = await supabase.from("robots").delete().eq("id", id); if (!error) setRobots((p) => p.filter((x) => x.id !== id)); };
 
+  // Staff CRUD
+  const handleAddStaff = async (form) => { const { data, error } = await supabase.from("staff_members").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setStaffMembers((p) => [...p, data]); };
+  const handleUpdateStaff = async (id, form) => { const { data, error } = await supabase.from("staff_members").update({ ...form, updated_at: new Date().toISOString() }).eq("id", id).select().single(); if (!error && data) setStaffMembers((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteStaff = async (id) => { const { error } = await supabase.from("staff_members").delete().eq("id", id); if (!error) setStaffMembers((p) => p.filter((x) => x.id !== id)); };
+
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
   const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
@@ -7151,6 +7390,7 @@ export default function SuarezApp() {
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
+    { id: "team", label: "Team", icon: <span style={{ fontSize: 18 }}>👥</span> },
   ];
 
   const mobileNavItems = [
@@ -7171,6 +7411,7 @@ export default function SuarezApp() {
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
+      case "team": return <TeamView isMobile={isMobile} staff={staffMembers} businesses={businesses} onAdd={handleAddStaff} onUpdate={handleUpdateStaff} onDelete={handleDeleteStaff} />;
       default: return null;
     }
   };
