@@ -916,8 +916,8 @@ function OverviewView({ isMobile, session, accounts, uploads, assets, transactio
    MONEY (Tabbed: Bookkeeping, Spending, Statements, Accounts)
    ═══════════════════════════════════════════════════════════ */
 
-const EXPENSE_CATEGORIES = ["Housing", "Utilities", "Food", "Transport", "Insurance", "Healthcare", "Entertainment", "Education", "Clothing", "Personal", "Debt Payment", "Transfer", "Shareholder Loan", "Other"];
-const INCOME_CATEGORIES = ["Salary", "Freelance", "Investment", "Rental", "Business", "Gift", "Refund", "Transfer", "Shareholder Loan", "Other"];
+const EXPENSE_CATEGORIES = ["Real Estate", "Software/SaaS", "Contractor/Payroll", "Marketing", "Office/Supplies", "Food/Dining", "Transport/Auto", "Utilities", "Housing", "Insurance", "Healthcare", "Health/Fitness", "Giving/Tithe", "Education", "Entertainment", "Travel", "Clothing", "Shopping", "Storage", "Debt Payment", "Legal/Professional", "Government/Fees", "Bank Fees", "Transfer", "Remittance", "Shareholder Loan", "Personal", "Other"];
+const INCOME_CATEGORIES = ["Rental Income", "Business Revenue", "Investment Returns", "Salary", "Contractor Income", "Refund", "Interest Income", "Transfer", "Shareholder Loan", "Other"];
 
 /* ── Auto-Categorization Engine ── */
 const AUTO_CAT_RULES = [
@@ -1303,7 +1303,7 @@ function CompaniesWealthTab({ isMobile, investments, onAdd, onUpdate, onDelete }
   );
 }
 /* — Bookkeeping Tab — */
-function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onAdd, onDelete, onUpload, onDeleteUpload, onLogUpload, bills, onAddBill, onUpdateBill, onDeleteBill, onAddAccount, onToggleAccount, onDeleteAccount, businesses, funnelPresets, funnelInflows, onAddFunnelPreset, onUpdateFunnelPreset, onDeleteFunnelPreset, onAddFunnelInflow, onUpdateFunnelInflow, onDeleteFunnelInflow }) {
+function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onAdd, onUpdate, onDelete, onUpload, onDeleteUpload, onLogUpload, bills, onAddBill, onUpdateBill, onDeleteBill, onAddAccount, onToggleAccount, onDeleteAccount, businesses, funnelPresets, funnelInflows, onAddFunnelPreset, onUpdateFunnelPreset, onDeleteFunnelPreset, onAddFunnelInflow, onUpdateFunnelInflow, onDeleteFunnelInflow }) {
   const [subView, setSubView] = useState("ledger");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ description: "", amount: "", type: "expense", category: "", account_id: "", date: new Date().toISOString().split("T")[0], visibility: "personal" });
@@ -1316,6 +1316,23 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
   const [filterVis, setFilterVis] = useState("all");
   const [filterCat, setFilterCat] = useState("all");
   const [filterAccount, setFilterAccount] = useState("all");
+  const [expandedTxn, setExpandedTxn] = useState(null);
+  const [tagInput, setTagInput] = useState("");
+  const PRESET_TAGS = ["#review", "#tax-deductible", "#reimbursable", "#recurring", "#personal", "#business", "#flagged"];
+
+  const handleCategoryChange = async (txnId, newCategory) => { await onUpdate(txnId, { category: newCategory }); };
+  const handleAddTag = async (txn, val) => {
+    const tag = (val || tagInput).trim();
+    if (!tag) return;
+    const t = tag.startsWith("#") ? tag : `#${tag}`;
+    const cur = Array.isArray(txn.tags) ? txn.tags : [];
+    if (!cur.includes(t)) await onUpdate(txn.id, { tags: JSON.stringify([...cur, t]) });
+    setTagInput("");
+  };
+  const handleRemoveTag = async (txn, tag) => {
+    const cur = Array.isArray(txn.tags) ? txn.tags : [];
+    await onUpdate(txn.id, { tags: JSON.stringify(cur.filter((t) => t !== tag)) });
+  };
 
   // Compute date range from period
   const getDateRange = () => {
@@ -1477,16 +1494,50 @@ function BookkeepingTab({ isMobile, transactions, accounts, assets, uploads, onA
                 <th style={{ textAlign: "right", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Amount</th>
                 <th style={{ width: 36 }}></th>
               </tr></thead>
-              <tbody>{filtered.map((t) => (
-                <tr key={t.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+              <tbody>{filtered.map((t) => {
+                const tags = Array.isArray(t.tags) ? t.tags : [];
+                const isExpanded = expandedTxn === t.id;
+                const tagColors = { "#review": "#f59e0b", "#tax-deductible": "#16a34a", "#reimbursable": "#3b82f6", "#recurring": "#7c3aed", "#personal": "#ec4899", "#business": "#0891b2", "#flagged": "#dc2626" };
+                return (
+                <React.Fragment key={t.id}>
+                <tr onClick={() => setExpandedTxn(isExpanded ? null : t.id)} style={{ borderBottom: isExpanded ? "none" : "1px solid #f8fafc", cursor: "pointer" }} onMouseEnter={(e) => e.currentTarget.style.background = "#fafbfc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                   <td style={{ padding: "8px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{fmtDate(t.date)}</td>
-                  <td style={{ padding: "8px 14px", fontWeight: 600, color: "#0f172a" }}>{t.description}{t.loan_type === "shareholder_receivable" && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "#eff6ff", color: "#3b82f6", fontWeight: 700 }}>AR</span>}{t.loan_type === "shareholder_payable" && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "#fef2f2", color: "#dc2626", fontWeight: 700 }}>AP</span>}</td>
-                  <td style={{ padding: "8px 14px", color: "#64748b" }}>{t.category || "—"}</td>
+                  <td style={{ padding: "8px 14px" }}>
+                    <div style={{ fontWeight: 600, color: "#0f172a" }}>{t.description}{t.loan_type === "shareholder_receivable" && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "#eff6ff", color: "#3b82f6", fontWeight: 700 }}>AR</span>}{t.loan_type === "shareholder_payable" && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "#fef2f2", color: "#dc2626", fontWeight: 700 }}>AP</span>}</div>
+                    {tags.length > 0 && <div style={{ display: "flex", gap: 3, marginTop: 3, flexWrap: "wrap" }}>{tags.map((tag, i) => <span key={i} style={{ fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: `${tagColors[tag] || "#94a3b8"}15`, color: tagColors[tag] || "#94a3b8" }}>{tag}</span>)}</div>}
+                  </td>
+                  <td style={{ padding: "8px 14px", color: "#64748b", fontSize: 11 }}>{t.category || "—"}</td>
                   <td style={{ padding: "8px 14px", textAlign: "center" }}><VisibilityBadge visibility={t.visibility || "personal"} /></td>
                   <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, fontFamily: "'DM Mono', monospace", color: t.type === "income" ? "#16a34a" : "#dc2626" }}>{t.type === "income" ? "+" : "−"}{fmtCurrencyExact(t.amount)}</td>
-                  <td style={{ padding: "8px 14px" }}><button onClick={() => { if (window.confirm("Delete?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></td>
+                  <td style={{ padding: "8px 14px" }}><button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></td>
                 </tr>
-              ))}</tbody>
+                {isExpanded && (
+                <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <td colSpan={6} style={{ padding: "10px 14px 14px", background: "#f8fafc" }}>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                      <div style={{ flex: "1 1 200px" }}>
+                        <label style={{ display: "block", fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Category</label>
+                        <select value={t.category || ""} onChange={(e) => handleCategoryChange(t.id, e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11, fontFamily: "'DM Sans', sans-serif", outline: "none", cursor: "pointer", color: "#0f172a", width: "100%" }}>
+                          <option value="">Uncategorized</option>
+                          {(t.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ flex: "2 1 300px" }}>
+                        <label style={{ display: "block", fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Tags</label>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+                          {tags.map((tag, i) => <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: `${tagColors[tag] || "#94a3b8"}15`, color: tagColors[tag] || "#64748b", border: `1px solid ${tagColors[tag] || "#e2e8f0"}`, display: "flex", alignItems: "center", gap: 4 }}>{tag} <button onClick={() => handleRemoveTag(t, tag)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 11, padding: 0, lineHeight: 1 }}>×</button></span>)}
+                        </div>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {PRESET_TAGS.filter((pt) => !tags.includes(pt)).map((pt) => <button key={pt} onClick={() => handleAddTag(t, pt)} style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#fff", border: "1px solid #e2e8f0", color: "#94a3b8", cursor: "pointer" }}>{pt}</button>)}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                )}
+                </React.Fragment>
+                );
+              })}</tbody>
             </table>
           </div>
         )}
@@ -5263,7 +5314,7 @@ function FinanceView(props) {
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={onTabChange} isMobile={isMobile} />
         {tab === "dashboard" && <FinDashboardTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} investments={props.investments} monthlyBills={props.monthlyBills} policies={props.policies} snapshots={props.snapshots} onAddSnapshot={props.onAddSnapshot} onDeleteSnapshot={props.onDeleteSnapshot} />}
-        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} onAddAccount={props.onAddAccount} onToggleAccount={props.onToggleAccount} onDeleteAccount={props.onDeleteAccount} businesses={props.businesses} funnelPresets={props.funnelPresets} funnelInflows={props.funnelInflows} onAddFunnelPreset={props.onAddFunnelPreset} onUpdateFunnelPreset={props.onUpdateFunnelPreset} onDeleteFunnelPreset={props.onDeleteFunnelPreset} onAddFunnelInflow={props.onAddFunnelInflow} onUpdateFunnelInflow={props.onUpdateFunnelInflow} onDeleteFunnelInflow={props.onDeleteFunnelInflow} />}
+        {tab === "bookkeeping" && <BookkeepingTab isMobile={isMobile} transactions={props.transactions} accounts={props.accounts} assets={props.assets} uploads={props.uploads} onAdd={props.onAddTransaction} onUpdate={props.onUpdateTransaction} onDelete={props.onDeleteTransaction} onUpload={props.onUpload} onDeleteUpload={props.onDeleteUpload} onLogUpload={props.onLogUpload} bills={props.monthlyBills} onAddBill={props.onAddMonthlyBill} onUpdateBill={props.onUpdateMonthlyBill} onDeleteBill={props.onDeleteMonthlyBill} onAddAccount={props.onAddAccount} onToggleAccount={props.onToggleAccount} onDeleteAccount={props.onDeleteAccount} businesses={props.businesses} funnelPresets={props.funnelPresets} funnelInflows={props.funnelInflows} onAddFunnelPreset={props.onAddFunnelPreset} onUpdateFunnelPreset={props.onUpdateFunnelPreset} onDeleteFunnelPreset={props.onDeleteFunnelPreset} onAddFunnelInflow={props.onAddFunnelInflow} onUpdateFunnelInflow={props.onUpdateFunnelInflow} onDeleteFunnelInflow={props.onDeleteFunnelInflow} />}
         {tab === "stocks" && <PortfolioTab isMobile={isMobile} investments={(props.investments || []).filter((i) => !["Real Estate", "Business Equity"].includes(i.asset_type))} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
         {tab === "realestate" && <RealEstateTab isMobile={isMobile} investments={props.investments?.filter((i) => i.asset_type === "Real Estate") || []} onAdd={props.onAddInvestment} onUpdate={props.onUpdateInvestment} onDelete={props.onDeleteInvestment} />}
         {tab === "assets" && <AssetsTab isMobile={isMobile} assets={props.assets} accounts={props.accounts} onAdd={props.onAddAsset} onUpdate={props.onUpdateAsset} onDelete={props.onDeleteAsset} />}
@@ -7212,6 +7263,7 @@ export default function SuarezApp() {
   const handleUpdateAsset = async (id, form) => { const { data, error } = await supabase.from("assets").update(form).eq("id", id).select().single(); if (!error && data) setAssets((p) => p.map((a) => a.id === id ? data : a)); };
   const handleDeleteAsset = async (id) => { const { error } = await supabase.from("assets").delete().eq("id", id); if (!error) setAssets((p) => p.filter((a) => a.id !== id)); };
   const handleAddTransaction = async (form) => { const { data, error } = await supabase.from("transactions").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setTransactions((p) => [data, ...p]); };
+  const handleUpdateTransaction = async (id, form) => { const { data, error } = await supabase.from("transactions").update(form).eq("id", id).select().single(); if (!error && data) setTransactions((p) => p.map((t) => t.id === id ? data : t)); };
   const handleDeleteTransaction = async (id) => { const { error } = await supabase.from("transactions").delete().eq("id", id); if (!error) setTransactions((p) => p.filter((t) => t.id !== id)); };
   const handleAddInvestment = async (form) => { const { data, error } = await supabase.from("investments").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setInvestments((p) => [...p, data]); };
   const handleUpdateInvestment = async (id, form) => { const { data, error } = await supabase.from("investments").update(form).eq("id", id).select().single(); if (!error && data) setInvestments((p) => p.map((i) => i.id === id ? data : i)); };
@@ -7406,7 +7458,7 @@ export default function SuarezApp() {
     if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} appUsers={appUsers} robots={robots} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} onAddRobot={handleAddRobot} onUpdateRobot={handleUpdateRobot} onDeleteRobot={handleDeleteRobot} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
-      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
+      case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
