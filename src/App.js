@@ -1045,7 +1045,7 @@ function WealthView({ isMobile, activeTab, onTabChange, investments, assets, acc
 function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const emptyForm = { name: "", ticker: "", shares: "", purchase_price: "", current_price: "", date_purchased: "", visibility: "business", monthly_income: "", monthly_expenses: "", loan_balance: "", monthly_debt_service: "", cap_rate: "6.5", ownership_pct: "100", lender: "" };
+  const emptyForm = { name: "", ticker: "", shares: "", purchase_price: "", current_value: "", improvements_value: "", current_price: "", date_purchased: "", visibility: "business", monthly_income: "", monthly_expenses: "", loan_balance: "", monthly_debt_service: "", cap_rate: "6.5", ownership_pct: "100", lender: "" };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
@@ -1061,7 +1061,9 @@ function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
     const payload = {
       name: form.name, asset_type: "Real Estate", ticker: form.ticker || null,
       shares: parseFloat(form.shares) || 1, purchase_price: parseFloat(form.purchase_price) || 0,
-      current_price: autoValue, date_purchased: form.date_purchased || null, visibility: form.visibility,
+      current_value: parseFloat(form.current_value) || 0,
+      improvements_value: parseFloat(form.improvements_value) || 0,
+      current_price: parseFloat(form.current_value) || autoValue, date_purchased: form.date_purchased || null, visibility: form.visibility,
       monthly_income: mIncome, monthly_expenses: mExpenses, loan_balance: parseFloat(form.loan_balance) || 0,
       monthly_debt_service: parseFloat(form.monthly_debt_service) || 0, cap_rate: capRate,
       ownership_pct: parseFloat(form.ownership_pct) || 100, lender: form.lender || null,
@@ -1069,13 +1071,15 @@ function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
     if (editingId) { await onUpdate(editingId, payload); } else { await onAdd(payload); }
     resetForm(); setSaving(false);
   };
-  const startEdit = (inv) => { setForm({ name: inv.name || "", ticker: inv.ticker || "", shares: inv.shares?.toString() || "1", purchase_price: inv.purchase_price?.toString() || "", current_price: inv.current_price?.toString() || "", date_purchased: inv.date_purchased || "", visibility: inv.visibility || "business", monthly_income: inv.monthly_income?.toString() || "", monthly_expenses: inv.monthly_expenses?.toString() || "", loan_balance: inv.loan_balance?.toString() || "", monthly_debt_service: inv.monthly_debt_service?.toString() || "", cap_rate: inv.cap_rate?.toString() || "6.5", ownership_pct: inv.ownership_pct?.toString() || "100", lender: inv.lender || "" }); setEditingId(inv.id); setShowForm(true); };
+  const startEdit = (inv) => { setForm({ name: inv.name || "", ticker: inv.ticker || "", shares: inv.shares?.toString() || "1", purchase_price: inv.purchase_price?.toString() || "", current_value: inv.current_value?.toString() || inv.current_price?.toString() || "", improvements_value: inv.improvements_value?.toString() || "", current_price: inv.current_price?.toString() || "", date_purchased: inv.date_purchased || "", visibility: inv.visibility || "business", monthly_income: inv.monthly_income?.toString() || "", monthly_expenses: inv.monthly_expenses?.toString() || "", loan_balance: inv.loan_balance?.toString() || "", monthly_debt_service: inv.monthly_debt_service?.toString() || "", cap_rate: inv.cap_rate?.toString() || "6.5", ownership_pct: inv.ownership_pct?.toString() || "100", lender: inv.lender || "" }); setEditingId(inv.id); setShowForm(true); };
 
-  const totalValue = investments.reduce((s, i) => s + Number(i.current_price || 0), 0);
+  const totalValue = investments.reduce((s, i) => s + Number(i.current_value || i.current_price || 0), 0);
   const totalDebt = investments.reduce((s, i) => s + Number(i.loan_balance || 0), 0);
   const totalEquity = totalValue - totalDebt;
   const totalNOI = investments.reduce((s, i) => s + (Number(i.monthly_income || 0) - Number(i.monthly_expenses || 0)), 0);
   const totalDebtService = investments.reduce((s, i) => s + Number(i.monthly_debt_service || 0), 0);
+  const totalImprovements = investments.reduce((s, i) => s + Number(i.improvements_value || 0), 0);
+  const totalPurchase = investments.reduce((s, i) => s + Number(i.purchase_price || 0), 0);
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
   const lbl = (text) => ({ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 });
@@ -1107,6 +1111,8 @@ function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
             <div><label style={lbl()}>Units / Doors</label><input type="number" value={form.shares} onChange={(e) => setForm({ ...form, shares: e.target.value })} placeholder="1" style={inputStyle} className="sz-input" /></div>
             <div><label style={lbl()}>Ownership %</label><input type="number" value={form.ownership_pct} onChange={(e) => setForm({ ...form, ownership_pct: e.target.value })} placeholder="100" style={inputStyle} className="sz-input" /></div>
             <div><label style={lbl()}>Purchase Price</label><input type="number" value={form.purchase_price} onChange={(e) => setForm({ ...form, purchase_price: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Improvements Made ($)</label><input type="number" value={form.improvements_value} onChange={(e) => setForm({ ...form, improvements_value: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
+            <div><label style={lbl()}>Current Value (ARV)</label><input type="number" value={form.current_value} onChange={(e) => setForm({ ...form, current_value: e.target.value })} placeholder="0" style={inputStyle} className="sz-input" /></div>
             <div><label style={lbl()}>Date Acquired</label><input type="date" value={form.date_purchased} onChange={(e) => setForm({ ...form, date_purchased: e.target.value })} style={inputStyle} className="sz-input" /></div>
           </div>
           <SectionHeader text="Income & Expenses (Monthly)" />
@@ -1150,7 +1156,9 @@ function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
             const dscr = ds > 0 ? (noi / ds).toFixed(2) : "—";
             const capRate = Number(inv.cap_rate || 0);
             const loanBal = Number(inv.loan_balance || 0);
-            const value = Number(inv.current_price || 0);
+            const value = Number(inv.current_value || inv.current_price || 0);
+            const improvements = Number(inv.improvements_value || 0);
+            const purchasePrice = Number(inv.purchase_price || 0);
             const equity = value - loanBal;
             const ownershipPct = Number(inv.ownership_pct || 100);
             return (
@@ -1173,11 +1181,15 @@ function RealEstateTab({ isMobile, investments, onAdd, onUpdate, onDelete }) {
                     <button onClick={() => { if (window.confirm("Delete?")) onDelete(inv.id); }} style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", cursor: "pointer", display: "flex", alignItems: "center" }}>{Icons.trash}</button>
                   </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 10, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
-                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Valuation</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#16a34a" }}>{fmtCurrency(value)}</div></div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 10, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 4 }}>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Purchase Price</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#475569" }}>{fmtCurrency(purchasePrice)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Improvements</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#f59e0b" }}>{fmtCurrency(improvements)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>All-In Cost</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#475569" }}>{fmtCurrency(purchasePrice + improvements)}</div></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 10, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Current Value</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#16a34a" }}>{fmtCurrency(value)}</div></div>
                   <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Loan Balance</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#dc2626" }}>{fmtCurrency(loanBal)}</div></div>
-                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Equity</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#3b82f6" }}>{fmtCurrency(equity)}</div></div>
-                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Purchased</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(inv.purchase_price)}</div></div>
+                  <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Net Equity</div><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: equity >= 0 ? "#3b82f6" : "#dc2626" }}>{fmtCurrency(equity)}</div></div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(5, 1fr)", gap: 10, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, marginBottom: 10 }}>
                   <div><div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>Mo. Income</div><div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#16a34a" }}>{fmtCurrency(mIncome)}</div></div>
@@ -5199,14 +5211,19 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
   const ytdExpenses = ytdTxns.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
   const totalBills = (monthlyBills || []).filter((b) => b.active !== false).reduce((s, b) => s + Number(b.amount || 0), 0);
   const totalAssets = (assets || []).reduce((s, a) => s + Number(a.estimated_value || 0), 0);
-  const portfolioValue = (investments || []).reduce((s, i) => s + Number(i.current_value || i.amount_invested || 0), 0);
+  const portfolioValue = (investments || []).reduce((s, i) => {
+    if (i.asset_type === "Real Estate") return s + Number(i.current_value || i.current_price || 0);
+    return s + Number(i.current_value || i.current_price || i.amount_invested || 0);
+  }, 0);
   const activeAccounts = (accounts || []).filter((a) => a.active !== false);
   const uncategorized = transactions.filter((t) => !t.category || t.category === "Uncategorized").length;
   const activePolicies = (policies || []).filter((p) => p.status === "Active" || p.status === "active").length;
 
   // Net Worth calculation
   const cashOnHand = activeAccounts.reduce((s, a) => s + Number(a.balance || 0), 0);
-  const totalDebt = activeAccounts.filter((a) => Number(a.balance || 0) < 0 || a.account_type === "credit" || a.account_type === "loan").reduce((s, a) => s + Math.abs(Number(a.balance || 0)), 0);
+  const accountDebt = activeAccounts.filter((a) => Number(a.balance || 0) < 0 || a.account_type === "credit" || a.account_type === "loan").reduce((s, a) => s + Math.abs(Number(a.balance || 0)), 0);
+  const reLoanDebt = (investments || []).filter((i) => i.asset_type === "Real Estate").reduce((s, i) => s + Number(i.loan_balance || 0), 0);
+  const totalDebt = accountDebt + reLoanDebt;
   const totalEquity = totalAssets + portfolioValue + Math.max(cashOnHand, 0);
   const netWorth = totalEquity - totalDebt;
 
@@ -5267,7 +5284,7 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
               <div style={{ fontSize: isMobile ? 28 : 36, fontWeight: 800, fontFamily: "'Playfair Display', serif", color: netWorth >= 0 ? "#fff" : "#fca5a5" }}>{fmtCurrency(netWorth)}</div>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 8 }}>
             <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Cash</div>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(Math.max(cashOnHand, 0))}</div>
@@ -5277,12 +5294,16 @@ function FinDashboardTab({ isMobile, transactions, accounts, assets, investments
               <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(totalAssets)}</div>
             </div>
             <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Portfolio</div>
+              <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>RE Value</div>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(portfolioValue)}</div>
             </div>
             <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: 9, color: "rgba(252,165,165,0.8)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Debt</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: "#fca5a5", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(totalDebt)}</div>
+              <div style={{ fontSize: 9, color: "rgba(252,165,165,0.8)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>RE Loans</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fca5a5", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(reLoanDebt)}</div>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: 9, color: "rgba(252,165,165,0.8)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Other Debt</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fca5a5", marginTop: 2, fontFamily: "'Playfair Display', serif" }}>{fmtCurrency(accountDebt)}</div>
             </div>
           </div>
           {snapshots && snapshots.length > 0 && (
