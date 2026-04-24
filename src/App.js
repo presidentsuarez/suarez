@@ -425,7 +425,7 @@ function AuthScreen() {
    PROFILE VIEW
    ═══════════════════════════════════════════════════════════ */
 
-function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, appUsers, robots, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember, onAddRobot, onUpdateRobot, onDeleteRobot }) {
+function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, appUsers, robots, orgs, orgMembers, orgInvites, onAddTeamMember, onUpdateTeamMember, onDeleteTeamMember, onAddRobot, onUpdateRobot, onDeleteRobot, onUpdateOrgMember, onRemoveOrgMember, onInviteToOrg, onDeleteInvite, onAddOrgMember }) {
   const [profileTab, setProfileTab] = useState("basic");
   const [usersSubTab, setUsersSubTab] = useState("active");
   const [showAddUser, setShowAddUser] = useState(false);
@@ -529,19 +529,67 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
             </div>
             {usersSubTab === "active" && (
               <>
+                {/* Org info */}
+                {orgs && orgs.length > 0 && (
+                  <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", borderRadius: 12, padding: "14px 18px", marginBottom: 12, color: "#fff" }}>
+                    <div style={{ fontSize: 9, color: "rgba(212,192,140,0.7)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>Organization</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", marginTop: 4 }}>{orgs[0]?.name}</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{(orgMembers || []).length} members · {(orgInvites || []).filter((i) => i.status === "pending").length} pending invites</div>
+                  </div>
+                )}
+
+                {/* Invite form */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, color: "#64748b" }}>{(appUsers || []).length} signed-up user{(appUsers || []).length !== 1 ? "s" : ""}</span>
+                  <span style={{ fontSize: 13, color: "#64748b" }}>{(appUsers || []).length} user{(appUsers || []).length !== 1 ? "s" : ""}</span>
+                  <GreenButton small onClick={() => setShowAddUser(!showAddUser)}>{Icons.plus} Invite</GreenButton>
                 </div>
-                <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 11, color: "#92400e" }}>
-                  💡 These are real users who have signed up. Set a tier for each to control their permissions.
-                </div>
+                {showAddUser && (
+                  <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+                    <SectionHeader text="Invite to Organization" />
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={newUserForm.name} onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+                      <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email *</label><input value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+                      <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role</label><select value={newUserForm.tier} onChange={(e) => setNewUserForm({ ...newUserForm, tier: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}</select></div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button onClick={() => { setShowAddUser(false); setNewUserForm({ name: "", email: "", tier: "member" }); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+                      <GreenButton small onClick={async () => {
+                        if (!newUserForm.name.trim() || !newUserForm.email.trim()) return;
+                        const orgId = orgs?.[0]?.id;
+                        if (orgId) await onInviteToOrg({ org_id: orgId, email: newUserForm.email, name: newUserForm.name, role: newUserForm.tier });
+                        setNewUserForm({ name: "", email: "", tier: "member" });
+                        setShowAddUser(false);
+                      }} disabled={!newUserForm.name.trim() || !newUserForm.email.trim()}>Send Invite</GreenButton>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending invites */}
+                {(orgInvites || []).filter((i) => i.status === "pending").length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Pending Invites</div>
+                    {(orgInvites || []).filter((i) => i.status === "pending").map((inv) => (
+                      <div key={inv.id} style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>✉️</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{inv.name || inv.email}</div>
+                          <div style={{ fontSize: 11, color: "#92400e" }}>{inv.email} · {inv.role}</div>
+                        </div>
+                        <button onClick={() => onDeleteInvite(inv.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#94a3b8", fontSize: 14 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Active users with org role */}
                 {(appUsers || []).map((u) => {
                   const isCurrentUser = u.id === user.id;
-                  const member = (teamMembers || []).find((m) => m.auth_user_id === u.id || m.email === u.email);
-                  const userTier = isCurrentUser ? "owner" : (member?.tier || "member");
-                  const tier = tiers.find((t) => t.k === userTier) || tiers[2];
+                  const orgMember = (orgMembers || []).find((m) => m.user_id === u.id);
+                  const userRole = isCurrentUser ? "owner" : (orgMember?.role || "member");
+                  const tier = tiers.find((t) => t.k === userRole) || tiers[2];
                   const displayName = u.full_name || fmtUserName(u.email);
                   const inits = displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+                  const canManage = user.id === orgs?.[0]?.owner_id;
                   return (
                     <div key={u.id} style={{ background: "#fff", borderRadius: 12, border: `1px solid ${isCurrentUser ? "#1C3820" : "#e2e8f0"}`, padding: "14px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
                       <div style={{ width: 44, height: 44, borderRadius: "50%", background: isCurrentUser ? "linear-gradient(135deg, #1C3820, #15803d)" : getColor(displayName), color: isCurrentUser ? "#D4C08C" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{inits}</div>
@@ -552,13 +600,19 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
                       </div>
                       {isCurrentUser ? (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 6, background: "#1C3820", color: "#D4C08C", letterSpacing: "0.05em" }}>OWNER</span>
-                      ) : (
-                        <select value={userTier} onChange={async (e) => {
-                          if (member) await onUpdateTeamMember(member.id, { tier: e.target.value });
-                          else await onAddTeamMember({ name: displayName, email: u.email, tier: e.target.value, auth_user_id: u.id });
+                      ) : canManage ? (
+                        <select value={userRole} onChange={async (e) => {
+                          const orgId = orgs?.[0]?.id;
+                          if (orgMember) {
+                            await onUpdateOrgMember(orgMember.id, { role: e.target.value });
+                          } else if (orgId) {
+                            await onAddOrgMember({ org_id: orgId, user_id: u.id, role: e.target.value });
+                          }
                         }} style={{ padding: "5px 10px", borderRadius: 6, border: `1.5px solid ${tier.c}`, background: `${tier.c}10`, color: tier.c, fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "'DM Sans', sans-serif" }}>
                           {tiers.filter((t) => t.k !== "owner").map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
                         </select>
+                      ) : (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 6, background: `${tier.c}10`, color: tier.c, letterSpacing: "0.05em", textTransform: "uppercase" }}>{tier.l}</span>
                       )}
                     </div>
                   );
@@ -566,7 +620,7 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
                 {(appUsers || []).length === 0 && (
                   <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px 24px", textAlign: "center" }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
-                    <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No users yet. Make sure you've run the app_users view SQL.</p>
+                    <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No users yet.</p>
                   </div>
                 )}
               </>
@@ -7100,6 +7154,9 @@ export default function SuarezApp() {
   const [appUsers, setAppUsers] = useState([]);
   const [robots, setRobots] = useState([]);
   const [staffMembers, setStaffMembers] = useState([]);
+  const [orgs, setOrgs] = useState([]);
+  const [orgMembers, setOrgMembers] = useState([]);
+  const [orgInvites, setOrgInvites] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -7160,7 +7217,7 @@ export default function SuarezApp() {
       }
     } catch (e) { setDataLoading(true); }
 
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, orgsRes, orgMembersRes, orgInvitesRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }).limit(50),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -7204,6 +7261,9 @@ export default function SuarezApp() {
       supabase.from("app_users").select("*").order("created_at", { ascending: true }),
       supabase.from("robots").select("*").order("created_at", { ascending: true }),
       supabase.from("staff_members").select("*").order("name", { ascending: true }),
+      supabase.from("organizations").select("*"),
+      supabase.from("org_members").select("*"),
+      supabase.from("org_invites").select("*").order("created_at", { ascending: false }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -7252,6 +7312,9 @@ export default function SuarezApp() {
     if (appUsersRes.data) setAppUsers(appUsersRes.data);
     if (robotsRes.data) setRobots(robotsRes.data);
     if (staffRes.data) setStaffMembers(staffRes.data);
+    if (orgsRes.data) setOrgs(orgsRes.data);
+    if (orgMembersRes.data) setOrgMembers(orgMembersRes.data);
+    if (orgInvitesRes.data) setOrgInvites(orgInvitesRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -7429,6 +7492,13 @@ export default function SuarezApp() {
   const handleUpdateStaff = async (id, form) => { const { data, error } = await supabase.from("staff_members").update({ ...form, updated_at: new Date().toISOString() }).eq("id", id).select().single(); if (!error && data) setStaffMembers((p) => p.map((x) => x.id === id ? data : x)); };
   const handleDeleteStaff = async (id) => { const { error } = await supabase.from("staff_members").delete().eq("id", id); if (!error) setStaffMembers((p) => p.filter((x) => x.id !== id)); };
 
+  // Org member CRUD
+  const handleUpdateOrgMember = async (id, form) => { const { data, error } = await supabase.from("org_members").update(form).eq("id", id).select().single(); if (!error && data) setOrgMembers((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleRemoveOrgMember = async (id) => { const { error } = await supabase.from("org_members").delete().eq("id", id); if (!error) setOrgMembers((p) => p.filter((x) => x.id !== id)); };
+  const handleInviteToOrg = async (form) => { const { data, error } = await supabase.from("org_invites").insert({ ...form, invited_by: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setOrgInvites((p) => [data, ...p]); };
+  const handleDeleteInvite = async (id) => { const { error } = await supabase.from("org_invites").delete().eq("id", id); if (!error) setOrgInvites((p) => p.filter((x) => x.id !== id)); };
+  const handleAddOrgMember = async (form) => { const { data, error } = await supabase.from("org_members").insert(form).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setOrgMembers((p) => [...p, data]); };
+
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
   const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
@@ -7510,7 +7580,7 @@ export default function SuarezApp() {
 
   const renderPage = () => {
     if (dataLoading) return (<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}><Spinner /></div>);
-    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} appUsers={appUsers} robots={robots} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} onAddRobot={handleAddRobot} onUpdateRobot={handleUpdateRobot} onDeleteRobot={handleDeleteRobot} />;
+    if (showProfile) return <ProfileView session={session} isMobile={isMobile} onSignOut={handleSignOut} uploadLogs={uploadLogs} teamMembers={teamMembers} appUsers={appUsers} robots={robots} orgs={orgs} orgMembers={orgMembers} orgInvites={orgInvites} onAddTeamMember={handleAddTeamMember} onUpdateTeamMember={handleUpdateTeamMember} onDeleteTeamMember={handleDeleteTeamMember} onAddRobot={handleAddRobot} onUpdateRobot={handleUpdateRobot} onDeleteRobot={handleDeleteRobot} onUpdateOrgMember={handleUpdateOrgMember} onRemoveOrgMember={handleRemoveOrgMember} onInviteToOrg={handleInviteToOrg} onDeleteInvite={handleDeleteInvite} onAddOrgMember={handleAddOrgMember} />;
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
