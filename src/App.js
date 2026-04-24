@@ -6250,6 +6250,39 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
 }
 
 /* ═══════════════════════════════════════════════════════════
+   SPECIAL PROJECTS — Editor, Videographer, Marketing
+   ═══════════════════════════════════════════════════════════ */
+
+function SpecialProjectsView({ isMobile }) {
+  const [tab, setTab] = useState("editor");
+  const tabs = [
+    { key: "editor", label: "✂️ Editor" },
+    { key: "videographer", label: "🎥 Videographer" },
+    { key: "marketing", label: "📣 Marketing" },
+  ];
+
+  const Placeholder = ({ icon, title, desc }) => (
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+      <div style={{ fontSize: 36, marginBottom: 12 }}>{icon}</div>
+      <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>{title}</h3>
+      <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, maxWidth: 400, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>{desc}</p>
+    </div>
+  );
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Special Projects" subtitle="Creative production & campaigns" isMobile={isMobile} icon="🎬" />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
+        {tab === "editor" && <Placeholder icon="✂️" title="Editor" desc="Manage editing projects, timelines, assets, and deliverables. Track revisions and approvals for video and photo content." />}
+        {tab === "videographer" && <Placeholder icon="🎥" title="Videographer" desc="Schedule shoots, manage shot lists, track footage and raw files. Coordinate with editors on post-production workflow." />}
+        {tab === "marketing" && <Placeholder icon="📣" title="Marketing" desc="Plan campaigns, track ad spend, manage content calendars, and measure performance across channels." />}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
    TEAM — Staff & Team Management
    ═══════════════════════════════════════════════════════════ */
 
@@ -7464,6 +7497,7 @@ export default function SuarezApp() {
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
     { id: "team", label: "Team", icon: <span style={{ fontSize: 18 }}>👥</span> },
+    { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
 
   const mobileNavItems = [
@@ -7485,6 +7519,7 @@ export default function SuarezApp() {
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       case "team": return <TeamView isMobile={isMobile} staff={staffMembers} businesses={businesses} onAdd={handleAddStaff} onUpdate={handleUpdateStaff} onDelete={handleDeleteStaff} />;
+      case "projects": return <SpecialProjectsView isMobile={isMobile} />;
       default: return null;
     }
   };
