@@ -6307,7 +6307,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
    SPECIAL PROJECTS — Editor, Videographer, Marketing
    ═══════════════════════════════════════════════════════════ */
 
-function SpecialProjectsView({ isMobile }) {
+function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete }) {
   const [tab, setTab] = useState("editor");
   const tabs = [
     { key: "editor", label: "✂️ Editor" },
@@ -6315,24 +6315,131 @@ function SpecialProjectsView({ isMobile }) {
     { key: "marketing", label: "📣 Marketing" },
   ];
 
-  const Placeholder = ({ icon, title, desc }) => (
-    <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-      <div style={{ fontSize: 36, marginBottom: 12 }}>{icon}</div>
-      <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>{title}</h3>
-      <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, maxWidth: 400, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 }}>{desc}</p>
-    </div>
-  );
-
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
       <PageHeader title="Special Projects" subtitle="Creative production & campaigns" isMobile={isMobile} icon="🎬" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "editor" && <Placeholder icon="✂️" title="Editor" desc="Manage editing projects, timelines, assets, and deliverables. Track revisions and approvals for video and photo content." />}
-        {tab === "videographer" && <Placeholder icon="🎥" title="Videographer" desc="Schedule shoots, manage shot lists, track footage and raw files. Coordinate with editors on post-production workflow." />}
-        {tab === "marketing" && <Placeholder icon="📣" title="Marketing" desc="Plan campaigns, track ad spend, manage content calendars, and measure performance across channels." />}
+        <CandidatePipeline isMobile={isMobile} category={tab} candidates={(candidates || []).filter((c) => c.category === tab)} onAdd={onAdd} onUpdate={onUpdate} onDelete={onDelete} />
       </div>
     </div>
+  );
+}
+
+function CandidatePipeline({ isMobile, category, candidates, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: "", company: "", rate: "", status: "interviewing", email: "", phone: "", portfolio_url: "", notes: "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const statuses = [
+    { k: "lead", l: "Lead", c: "#94a3b8", icon: "🔍" },
+    { k: "interviewing", l: "Interviewing", c: "#3b82f6", icon: "💬" },
+    { k: "trial", l: "Trial", c: "#f59e0b", icon: "🧪" },
+    { k: "approved", l: "Approved", c: "#16a34a", icon: "✅" },
+    { k: "rejected", l: "Rejected", c: "#dc2626", icon: "❌" },
+    { k: "on-hold", l: "On Hold", c: "#7c3aed", icon: "⏸️" },
+  ];
+
+  const resetForm = () => { setForm({ name: "", company: "", rate: "", status: "interviewing", email: "", phone: "", portfolio_url: "", notes: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    if (editingId) await onUpdate(editingId, form);
+    else await onAdd({ ...form, category });
+    resetForm();
+  };
+  const startEdit = (c) => { setForm({ name: c.name || "", company: c.company || "", rate: c.rate || "", status: c.status || "interviewing", email: c.email || "", phone: c.phone || "", portfolio_url: c.portfolio_url || "", notes: c.notes || "" }); setEditingId(c.id); setShowForm(true); };
+
+  const categoryLabel = { editor: "Editor", videographer: "Videographer", marketing: "Marketing" }[category] || category;
+
+  // Group by status
+  const grouped = statuses.map((s) => ({ ...s, items: candidates.filter((c) => c.status === s.k) })).filter((g) => g.items.length > 0);
+  const ungrouped = candidates.filter((c) => !statuses.find((s) => s.k === c.status));
+  if (ungrouped.length > 0) grouped.push({ k: "other", l: "Other", c: "#94a3b8", icon: "❓", items: ungrouped });
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{candidates.length} {categoryLabel.toLowerCase()}{candidates.length !== 1 ? "s" : ""} in pipeline</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add {categoryLabel}</GreenButton>
+      </div>
+
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? `Edit ${categoryLabel}` : `New ${categoryLabel}`} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Company</label><input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="Company or freelance" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Rate</label><input value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} placeholder="e.g. $50/hr or $500/project" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{statuses.map((s) => <option key={s.k} value={s.k}>{s.icon} {s.l}</option>)}</select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Portfolio / Website</label><input value={form.portfolio_url} onChange={(e) => setForm({ ...form, portfolio_url: e.target.value })} placeholder="https://..." style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Interview notes, impressions, samples reviewed..." rows={3} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={!form.name.trim()}>{editingId ? "Update" : "Add"}</GreenButton>
+          </div>
+        </div>
+      )}
+
+      {candidates.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>{ { editor: "✂️", videographer: "🎥", marketing: "📣" }[category]}</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No {categoryLabel}s Yet</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Start building your {categoryLabel.toLowerCase()} pipeline — add people you're interviewing or considering.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First {categoryLabel}</GreenButton>
+        </div>
+      ) : (
+        <div>
+          {grouped.map((group) => (
+            <div key={group.k} style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 0" }}>
+                <span style={{ fontSize: 14 }}>{group.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: group.c, textTransform: "uppercase", letterSpacing: "0.05em" }}>{group.l}</span>
+                <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600 }}>{group.items.length}</span>
+              </div>
+              <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+                  <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Name</th>
+                    <th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Company</th>
+                    {!isMobile && <th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Rate</th>}
+                    {!isMobile && <th style={{ textAlign: "left", padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Contact</th>}
+                    <th style={{ width: 60 }}></th>
+                  </tr></thead>
+                  <tbody>{group.items.map((c) => (
+                    <tr key={c.id} style={{ borderBottom: "1px solid #f8fafc" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "10px 14px" }}>
+                        <div style={{ fontWeight: 600, color: "#0f172a" }}>{c.name}</div>
+                        {c.notes && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{c.notes}</div>}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#64748b" }}>{c.company || "—"}</td>
+                      {!isMobile && <td style={{ padding: "10px 14px", color: "#0f172a", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>{c.rate || "—"}</td>}
+                      {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11 }}>
+                        {c.email && <div>{c.email}</div>}
+                        {c.phone && <div style={{ fontFamily: "'DM Mono', monospace" }}>{c.phone}</div>}
+                        {c.portfolio_url && <a href={c.portfolio_url} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontSize: 10 }}>Portfolio ↗</a>}
+                      </td>}
+                      <td style={{ padding: "10px 14px" }}>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <select value={c.status} onChange={(e) => onUpdate(c.id, { status: e.target.value })} onClick={(e) => e.stopPropagation()} style={{ padding: "3px 6px", borderRadius: 5, border: "1px solid #e2e8f0", fontSize: 9, fontWeight: 700, cursor: "pointer", color: (statuses.find((s) => s.k === c.status) || {}).c || "#94a3b8", background: "#fff", fontFamily: "'DM Sans', sans-serif", width: 30, opacity: 0 }} title="Change status">
+                            {statuses.map((s) => <option key={s.k} value={s.k}>{s.l}</option>)}
+                          </select>
+                          <button onClick={() => startEdit(c)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                          <button onClick={() => { if (window.confirm("Remove?")) onDelete(c.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -7157,6 +7264,7 @@ export default function SuarezApp() {
   const [orgs, setOrgs] = useState([]);
   const [orgMembers, setOrgMembers] = useState([]);
   const [orgInvites, setOrgInvites] = useState([]);
+  const [projectCandidates, setProjectCandidates] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -7217,7 +7325,7 @@ export default function SuarezApp() {
       }
     } catch (e) { setDataLoading(true); }
 
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, orgsRes, orgMembersRes, orgInvitesRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, orgsRes, orgMembersRes, orgInvitesRes, candidatesRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }).limit(50),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -7264,6 +7372,7 @@ export default function SuarezApp() {
       supabase.from("organizations").select("*"),
       supabase.from("org_members").select("*"),
       supabase.from("org_invites").select("*").order("created_at", { ascending: false }),
+      supabase.from("project_candidates").select("*").order("created_at", { ascending: false }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -7315,6 +7424,7 @@ export default function SuarezApp() {
     if (orgsRes.data) setOrgs(orgsRes.data);
     if (orgMembersRes.data) setOrgMembers(orgMembersRes.data);
     if (orgInvitesRes.data) setOrgInvites(orgInvitesRes.data);
+    if (candidatesRes.data) setProjectCandidates(candidatesRes.data);
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -7499,6 +7609,11 @@ export default function SuarezApp() {
   const handleDeleteInvite = async (id) => { const { error } = await supabase.from("org_invites").delete().eq("id", id); if (!error) setOrgInvites((p) => p.filter((x) => x.id !== id)); };
   const handleAddOrgMember = async (form) => { const { data, error } = await supabase.from("org_members").insert(form).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setOrgMembers((p) => [...p, data]); };
 
+  // Project Candidates CRUD
+  const handleAddCandidate = async (form) => { const { data, error } = await supabase.from("project_candidates").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert("Error: " + error.message); } else if (data) setProjectCandidates((p) => [data, ...p]); };
+  const handleUpdateCandidate = async (id, form) => { const { data, error } = await supabase.from("project_candidates").update(form).eq("id", id).select().single(); if (!error && data) setProjectCandidates((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteCandidate = async (id) => { const { error } = await supabase.from("project_candidates").delete().eq("id", id); if (!error) setProjectCandidates((p) => p.filter((x) => x.id !== id)); };
+
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
   const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
@@ -7589,7 +7704,7 @@ export default function SuarezApp() {
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       case "team": return <TeamView isMobile={isMobile} staff={staffMembers} businesses={businesses} onAdd={handleAddStaff} onUpdate={handleUpdateStaff} onDelete={handleDeleteStaff} />;
-      case "projects": return <SpecialProjectsView isMobile={isMobile} />;
+      case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} />;
       default: return null;
     }
   };
