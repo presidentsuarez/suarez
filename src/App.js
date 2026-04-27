@@ -6355,7 +6355,7 @@ function TeamView({ isMobile, staff, businesses, onAdd, onUpdate, onDelete }) {
   const handleSubmit = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    const payload = { ...form, hourly_rate: form.hourly_rate ? Number(form.hourly_rate) : 0, organizations: JSON.stringify(form.organizations) };
+    const payload = { ...form, hourly_rate: form.hourly_rate ? Number(form.hourly_rate) : 0, hire_date: form.hire_date || null, organizations: JSON.stringify(form.organizations) };
     await onAdd(payload);
     resetForm(); setSaving(false);
   };
