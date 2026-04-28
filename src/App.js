@@ -7578,8 +7578,11 @@ export default function SuarezApp() {
     if (candidatesRes.data) setProjectCandidates(candidatesRes.data);
 
     // Check Gmail connection
-    const { data: gmailToken } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).single();
-    if (gmailToken?.email) { setGmailConnected(true); setGmailEmail(gmailToken.email); }
+    try {
+      const { data: gmailToken, error: gmailErr } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).maybeSingle();
+      console.log("Gmail check:", gmailToken, gmailErr);
+      if (gmailToken?.email) { setGmailConnected(true); setGmailEmail(gmailToken.email); }
+    } catch (e) { console.error("Gmail check failed:", e); }
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
