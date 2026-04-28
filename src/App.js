@@ -5956,33 +5956,32 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const alfredId = activeRobots.find((r) => r.name === "Alfred")?.id;
   const atlasId = activeRobots.find((r) => r.name === "Atlas")?.id;
 
+  const callRobot = async (robotId, msg) => {
+    const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/robot-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ robot_id: robotId, message: msg }),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json();
+  };
+
   const fetchSuggestions = async (threadMsgs) => {
-    if (!alfredId || !atlasId || threadMsgs.length === 0) {
-      console.log("AI skip:", { alfredId, atlasId, msgCount: threadMsgs.length });
-      return;
-    }
+    if (!alfredId || !atlasId || threadMsgs.length === 0) return;
     const contextStr = threadMsgs.slice(-10).map((m) => `${m.direction === "outgoing" ? "Me" : "Them"}: ${m.body}`).join("\n");
     const prompt = `Here is a recent text conversation:\n\n${contextStr}\n\nDraft a short, natural reply. Just the message text, nothing else.`;
 
     setAlfredLoading(true); setAtlasLoading(true);
     setAlfredResponse(""); setAtlasResponse("");
 
-    supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, messages: [{ role: "user", content: prompt }] } })
-      .then(({ data, error }) => {
-        console.log("Alfred:", data, error);
-        if (error) { setAlfredResponse("Error: " + (error.message || JSON.stringify(error))); return; }
-        setAlfredResponse(data?.reply || data?.response || data?.content || "No response");
-      })
-      .catch((e) => { console.error("Alfred catch:", e); setAlfredResponse("Error: " + String(e)); })
+    callRobot(alfredId, prompt)
+      .then((data) => setAlfredResponse(data?.response || "No response"))
+      .catch((e) => setAlfredResponse("Error: " + String(e)))
       .finally(() => setAlfredLoading(false));
 
-    supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, messages: [{ role: "user", content: prompt }] } })
-      .then(({ data, error }) => {
-        console.log("Atlas:", data, error);
-        if (error) { setAtlasResponse("Error: " + (error.message || JSON.stringify(error))); return; }
-        setAtlasResponse(data?.reply || data?.response || data?.content || "No response");
-      })
-      .catch((e) => { console.error("Atlas catch:", e); setAtlasResponse("Error: " + String(e)); })
+    callRobot(atlasId, prompt)
+      .then((data) => setAtlasResponse(data?.response || "No response"))
+      .catch((e) => setAtlasResponse("Error: " + String(e)))
       .finally(() => setAtlasLoading(false));
   };
 
@@ -5993,9 +5992,8 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     try {
       const contextStr = `From: ${emailData.from}\nSubject: ${emailData.subject}\nDate: ${emailData.date}\n\n${emailData.body}`;
       const fullPrompt = `Here is an email:\n\n${contextStr}\n\n${prompt || "Draft a reply to this email. Be concise and professional. Just the reply body, no subject line."}`;
-      const { data } = await supabase.functions.invoke("robot-chat", { body: { robot_id: robotId, messages: [{ role: "user", content: fullPrompt }] } });
-      console.log("Email assistant:", data);
-      setEmailAssistantResponse(data?.reply || data?.response || data?.content || "No response");
+      const data = await callRobot(robotId, fullPrompt);
+      setEmailAssistantResponse(data?.response || "No response");
     } catch (err) { setEmailAssistantResponse("Error: " + String(err)); }
     finally { setEmailAssistantLoading(false); }
   };
