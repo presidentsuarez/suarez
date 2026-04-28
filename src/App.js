@@ -5897,7 +5897,7 @@ function OutreachDashboard({ isMobile }) {
 }
 
 /* — Gmail + QUO Inbox Tab — */
-function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh }) {
+function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact }) {
   const [inboxMode, setInboxMode] = useState("email");
   const [emails, setEmails] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -5913,6 +5913,18 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [selectedThread, setSelectedThread] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeForm, setComposeForm] = useState({ to: "", from: "PNlN4ZOAt1", body: "" });
+  const [showAddContact, setShowAddContact] = useState(null);
+  const [addContactForm, setAddContactForm] = useState({ name: "", phone: "", email: "", company: "" });
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Contact lookup by phone
+  const findContact = (phone) => {
+    if (!phone || !contacts) return null;
+    const clean = phone.replace(/\D/g, "");
+    return contacts.find((c) => c.phone && c.phone.replace(/\D/g, "").endsWith(clean.slice(-10)));
+  };
 
   // Phone line lookup
   const PHONE_LINES = {
@@ -5971,8 +5983,8 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     setLoading(true);
     try {
       const [{ data: msgData }, { data: callData }] = await Promise.all([
-        supabase.from("quo_messages").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("quo_calls").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("quo_messages").select("*").eq("deleted", false).order("created_at", { ascending: false }).limit(100),
+        supabase.from("quo_calls").select("*").eq("deleted", false).order("created_at", { ascending: false }).limit(50),
       ]);
       setMessages(msgData || []);
       setCalls(callData || []);
@@ -5983,6 +5995,20 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       setQuoLoaded(true);
     } catch (err) { console.error("QUO fetch error:", err); }
     finally { setLoading(false); }
+  };
+
+  const archiveConversation = async (phoneNumberId, contact) => {
+    const ids = messages.filter((m) => m.phone_number_id === phoneNumberId && getContactNumber(m) === contact).map((m) => m.id);
+    for (const id of ids) await supabase.from("quo_messages").update({ archived: true }).eq("id", id);
+    setMessages((p) => p.map((m) => ids.includes(m.id) ? { ...m, archived: true } : m));
+  };
+
+  const deleteConversation = async (phoneNumberId, contact) => {
+    if (!window.confirm("Delete this entire conversation? This cannot be undone.")) return;
+    const ids = messages.filter((m) => m.phone_number_id === phoneNumberId && getContactNumber(m) === contact).map((m) => m.id);
+    for (const id of ids) await supabase.from("quo_messages").update({ deleted: true }).eq("id", id);
+    setMessages((p) => p.filter((m) => !ids.includes(m.id)));
+    setSelectedThread(null);
   };
 
   const openEmail = async (msg) => {
@@ -6111,21 +6137,60 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       {/* TEXTS VIEW */}
       {inboxMode === "texts" && (
         <>
+          {/* New Message Compose */}
+          {showCompose && (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+              <SectionHeader text="New Message" />
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>To (phone number) *</label><input value={composeForm.to} onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })} placeholder="+1 555 000 0000" style={{ width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", boxSizing: "border-box" }} className="sz-input" /></div>
+                <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Send From</label><select value={composeForm.from} onChange={(e) => setComposeForm({ ...composeForm, from: e.target.value })} style={{ width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", cursor: "pointer", boxSizing: "border-box" }}>{Object.entries(PHONE_LINES).map(([id, l]) => <option key={id} value={id}>{l.emoji} {l.name} ({l.number.replace("+1", "")})</option>)}</select></div>
+              </div>
+              <div style={{ marginBottom: 12 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Message *</label><textarea value={composeForm.body} onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })} placeholder="Type your message..." rows={3} style={{ width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", resize: "vertical", boxSizing: "border-box" }} className="sz-input" /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={() => setShowCompose(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+                <GreenButton small onClick={async () => { if (composeForm.to && composeForm.body) { await sendQUOMessage(composeForm.from, composeForm.to, composeForm.body); setShowCompose(false); setComposeForm({ to: "", from: "PNlN4ZOAt1", body: "" }); } }} disabled={sending || !composeForm.to || !composeForm.body}>{sending ? "..." : "Send"}</GreenButton>
+              </div>
+            </div>
+          )}
+
+          {/* Add Contact Modal */}
+          {showAddContact && (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #f59e0b", padding: "16px 20px", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><span style={{ fontSize: 16 }}>📇</span><span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Add {fmtPhoneDisplay(showAddContact)} to Contacts</span></div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <input value={addContactForm.name} onChange={(e) => setAddContactForm({ ...addContactForm, name: e.target.value })} placeholder="Name *" style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" />
+                <input value={addContactForm.company} onChange={(e) => setAddContactForm({ ...addContactForm, company: e.target.value })} placeholder="Company" style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" />
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={() => { setShowAddContact(null); setAddContactForm({ name: "", phone: "", email: "", company: "" }); }} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", fontSize: 11, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Skip</button>
+                <GreenButton small onClick={async () => { if (addContactForm.name) { await onAddContact({ name: addContactForm.name, phone: showAddContact, company: addContactForm.company, email: addContactForm.email }); setShowAddContact(null); setAddContactForm({ name: "", phone: "", email: "", company: "" }); } }} disabled={!addContactForm.name}>Save Contact</GreenButton>
+              </div>
+            </div>
+          )}
+
           {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : selectedThread ? (() => {
-            // Thread view — show all messages with this contact on this line
-            const threadMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            const activeMessages = showArchived ? messages : messages.filter((m) => !m.archived);
+            const threadMsgs = activeMessages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             const lineName = getLineName(selectedThread.phoneNumberId);
             const lineEmoji = getLineEmoji(selectedThread.phoneNumberId);
+            const contact = findContact(selectedThread.contact);
+            const displayName = contact ? contact.name : fmtPhoneDisplay(selectedThread.contact);
             return (
               <>
-                <button onClick={() => { setSelectedThread(null); setReplyText(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
-                <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-                  {/* Thread header */}
-                  <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", background: "#f8fafc" }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{fmtPhoneDisplay(selectedThread.contact)}</div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{lineEmoji} via {lineName} · {threadMsgs.length} message{threadMsgs.length !== 1 ? "s" : ""}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <button onClick={() => { setSelectedThread(null); setReplyText(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {!contact && <button onClick={() => setShowAddContact(selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Add Contact</button>}
+                    <button onClick={() => archiveConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📥 Archive</button>
+                    <button onClick={() => deleteConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑 Delete</button>
                   </div>
-                  {/* Messages */}
+                </div>
+                <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", background: "#f8fafc" }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{displayName}</div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{lineEmoji} via {lineName} · {fmtPhoneDisplay(selectedThread.contact)} · {threadMsgs.length} msg{threadMsgs.length !== 1 ? "s" : ""}</div>
+                    {contact?.company && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{contact.company}</div>}
+                  </div>
                   <div style={{ padding: "16px", maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
                     {threadMsgs.map((m) => {
                       const isMe = m.direction === "outgoing";
@@ -6133,12 +6198,11 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                       return (
                         <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
                           <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: isMe ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMe ? "#1C3820" : "#f1f5f9", color: isMe ? "#fff" : "#0f172a", fontSize: 13, lineHeight: 1.5 }}>{m.body || "(No content)"}</div>
-                          <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2, padding: "0 4px" }}>{time} · {isMe ? "Sent" : "Received"}</div>
+                          <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2, padding: "0 4px" }}>{time}</div>
                         </div>
                       );
                     })}
                   </div>
-                  {/* Reply box */}
                   <div style={{ padding: "12px 16px", borderTop: "1px solid #f1f5f9", display: "flex", gap: 8, background: "#f8fafc" }}>
                     <input value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && replyText.trim()) sendQUOMessage(selectedThread.phoneNumberId, selectedThread.contact, replyText); }} placeholder="Type a message..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none", background: "#fff" }} className="sz-input" />
                     <GreenButton small onClick={() => { if (replyText.trim()) sendQUOMessage(selectedThread.phoneNumberId, selectedThread.contact, replyText); }} disabled={sending || !replyText.trim()}>{sending ? "..." : "Send"}</GreenButton>
@@ -6147,25 +6211,31 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
               </>
             );
           })() : messages.length === 0 ? (
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No text messages yet. Texts will appear here as they come in via your QUO numbers.</p></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><span></span><GreenButton small onClick={() => setShowCompose(true)}>✏️ New Message</GreenButton></div>
+          ) && (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No text messages yet. Send a message or wait for texts to come in.</p></div>
           ) : (() => {
-            // Conversation list — group by contact + phone line, show latest message
+            const activeMessages = showArchived ? messages : messages.filter((m) => !m.archived);
             const convos = {};
-            messages.forEach((m) => {
+            activeMessages.forEach((m) => {
               const contact = getContactNumber(m);
               const key = `${m.phone_number_id}::${contact}`;
               if (!convos[key] || new Date(m.created_at) > new Date(convos[key].latest.created_at)) {
                 convos[key] = { contact, phoneNumberId: m.phone_number_id, latest: m, count: (convos[key]?.count || 0) + 1 };
-              } else {
-                convos[key].count++;
-              }
+              } else { convos[key].count++; }
             });
             const sorted = Object.values(convos).sort((a, b) => new Date(b.latest.created_at) - new Date(a.latest.created_at));
             return (
               <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} conversation{sorted.length !== 1 ? "s" : ""}</span>
-                <button onClick={fetchQuo} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} conversation{sorted.length !== 1 ? "s" : ""}</span>
+                  <button onClick={() => setShowArchived(!showArchived)} style={{ fontSize: 9, color: showArchived ? "#f59e0b" : "#94a3b8", background: "none", border: "none", cursor: "pointer", padding: "2px 6px" }}>{showArchived ? "Hide archived" : "Show archived"}</button>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={fetchQuo} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻</button>
+                  <GreenButton small onClick={() => setShowCompose(!showCompose)}>✏️ New Message</GreenButton>
+                </div>
               </div>
               <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
                 {sorted.map((c, i) => {
@@ -6173,19 +6243,21 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                   const lineEmoji = getLineEmoji(c.phoneNumberId);
                   const isIncoming = c.latest.direction === "incoming";
                   const time = c.latest.created_at ? new Date(c.latest.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+                  const contactObj = findContact(c.contact);
+                  const displayName = contactObj ? contactObj.name : fmtPhoneDisplay(c.contact);
+                  const isArchived = c.latest.archived;
                   return (
-                    <div key={`${c.phoneNumberId}-${c.contact}`} onClick={() => setSelectedThread({ contact: c.contact, phoneNumberId: c.phoneNumberId })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: i < sorted.length - 1 ? "1px solid #f1f5f9" : "none", cursor: "pointer" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: getAC(c.contact || "?"), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{getInitials(fmtPhoneDisplay(c.contact))}</div>
+                    <div key={`${c.phoneNumberId}-${c.contact}`} onClick={() => setSelectedThread({ contact: c.contact, phoneNumberId: c.phoneNumberId })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: i < sorted.length - 1 ? "1px solid #f1f5f9" : "none", cursor: "pointer", opacity: isArchived ? 0.5 : 1 }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: contactObj ? "#1C3820" : getAC(c.contact || "?"), color: contactObj ? "#D4C08C" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{contactObj ? contactObj.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) : getInitials(fmtPhoneDisplay(c.contact))}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{fmtPhoneDisplay(c.contact)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{displayName}</span>
                           <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{time}</span>
                         </div>
-                        <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>{lineEmoji} via {lineName}</div>
+                        <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>{lineEmoji} via {lineName}{!contactObj && <span style={{ color: "#f59e0b", marginLeft: 6 }}>· Not in contacts</span>}{isArchived && <span style={{ color: "#94a3b8", marginLeft: 6 }}>· Archived</span>}</div>
                         <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>{isIncoming ? "" : "You: "}{c.latest.body || "(No content)"}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: isIncoming ? "#f0fdf4" : "#eff6ff", color: isIncoming ? "#16a34a" : "#3b82f6" }}>{isIncoming ? "IN" : "OUT"}</span>
                         {c.count > 1 && <span style={{ fontSize: 9, color: "#94a3b8" }}>{c.count} msgs</span>}
                       </div>
                     </div>
@@ -6441,6 +6513,75 @@ function InboxTab({ isMobile, companies, onAddCompany }) {
   );
 }
 
+/* — Unified Contacts Tab — */
+function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: "", phone: "", email: "", company: "", notes: "" });
+  const [search, setSearch] = useState("");
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ name: "", phone: "", email: "", company: "", notes: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    if (editingId) await onUpdate(editingId, form);
+    else await onAdd(form);
+    resetForm();
+  };
+  const startEdit = (c) => { setForm({ name: c.name || "", phone: c.phone || "", email: c.email || "", company: c.company || "", notes: c.notes || "" }); setEditingId(c.id); setShowForm(true); };
+
+  const filtered = (contacts || []).filter((c) => {
+    if (!search.trim()) return true;
+    const s = search.toLowerCase();
+    return (c.name || "").toLowerCase().includes(s) || (c.phone || "").includes(s) || (c.email || "").toLowerCase().includes(s) || (c.company || "").toLowerCase().includes(s);
+  });
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", flex: "1 1 200px", minWidth: 140 }} className="sz-input" />
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Contact</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+          <SectionHeader text={editingId ? "Edit Contact" : "New Contact"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 555 000 0000" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Company</label><input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button><GreenButton small onClick={handleSubmit} disabled={!form.name.trim()}>{editingId ? "Update" : "Add"}</GreenButton></div>
+        </div>
+      )}
+      {filtered.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📇</div><h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>{search ? "No matches" : "No Contacts Yet"}</h3><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>{search ? "Try a different search term." : "Add contacts to sync across your inbox, texts, and calls."}</p></div>
+      ) : (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+            <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Name</th>
+              <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Phone</th>
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Email</th>}
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Company</th>}
+              <th style={{ width: 60 }}></th>
+            </tr></thead>
+            <tbody>{filtered.map((c) => (
+              <tr key={c.id} style={{ borderBottom: "1px solid #f8fafc" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: "#1C3820", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{c.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</div><div style={{ fontWeight: 600, color: "#0f172a" }}>{c.name}</div></div></td>
+                <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{c.phone || "—"}</td>
+                {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11 }}>{c.email || "—"}</td>}
+                {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b" }}>{c.company || "—"}</td>}
+                <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}><button onClick={() => startEdit(c)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button><button onClick={() => { if (window.confirm("Delete contact?")) onDelete(c.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 function EmailsTab({ isMobile }) {
   const [logs, setLogs] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -6579,13 +6720,13 @@ function SocialTab({ isMobile }) {
   );
 }
 
-function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany, session, gmailConnected, gmailEmail, onGmailConnect, onGmailRefresh }) {
+function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany, contacts, onAddContact, onUpdateContact, onDeleteContact, session, gmailConnected, gmailEmail, onGmailConnect, onGmailRefresh }) {
   const tab = activeTab || "dashboard";
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
 
   const sections = [
     { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
-    { key: "contacts", icon: "📇", label: "Contacts", desc: `${companies.length} contacts` },
+    { key: "contacts", icon: "📇", label: "Contacts", desc: `${(contacts || []).length} contacts` },
     { key: "inbox", icon: "📨", label: "Inbox", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
     { key: "emails", icon: "📧", label: "Emails", desc: "Email campaigns" },
     { key: "social", icon: "📱", label: "Social", desc: "Posts & creator" },
@@ -6634,8 +6775,8 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} icon="📡" />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
-          {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
-          {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} />}
+          {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
+          {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} contacts={contacts} onAddContact={onAddContact} />}
           {tab === "emails" && <EmailsTab isMobile={isMobile} />}
           {tab === "social" && <SocialTab isMobile={isMobile} />}
         </div>
@@ -7608,6 +7749,7 @@ export default function SuarezApp() {
   const [projectCandidates, setProjectCandidates] = useState([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState("");
+  const [contacts, setContacts] = useState([]);
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -7668,7 +7810,7 @@ export default function SuarezApp() {
       }
     } catch (e) { setDataLoading(true); }
 
-    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, orgsRes, orgMembersRes, orgInvitesRes, candidatesRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
+    const [acctRes, uploadRes, assetRes, txnRes, invRes, snapRes, bizRes, coRes, polRes, homeRes, utilRes, lifeRes, taskRes, eventRes, kidsRes, gradesRes, milesRes, scoreRes, prayerRes, famRes, checkinRes, suppRes, mealRes, bwRes, mbRes, dlRes, blRes, linksRes, goalsRes, habitsRes, habitLogsRes, learningRes, uploadLogsRes, bizReportsRes, bizGoalsRes, bizMilestonesRes, bizTeamRes, funnelPresetsRes, funnelInflowsRes, teamMembersRes, appUsersRes, robotsRes, staffRes, orgsRes, orgMembersRes, orgInvitesRes, candidatesRes, contactsRes, cuSpacesRes, cuFoldersRes, cuListsRes, cuTasksRes] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: true }),
       supabase.from("statement_uploads").select("*").order("uploaded_at", { ascending: false }).limit(50),
       supabase.from("assets").select("*").order("created_at", { ascending: true }),
@@ -7716,6 +7858,7 @@ export default function SuarezApp() {
       supabase.from("org_members").select("*"),
       supabase.from("org_invites").select("*").order("created_at", { ascending: false }),
       supabase.from("project_candidates").select("*").order("created_at", { ascending: false }),
+      supabase.from("contacts").select("*").order("name", { ascending: true }),
       supabase.from("cu_spaces").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_folders").select("*").order("created_at", { ascending: true }),
       supabase.from("cu_lists").select("*").order("created_at", { ascending: true }),
@@ -7768,6 +7911,7 @@ export default function SuarezApp() {
     if (orgMembersRes.data) setOrgMembers(orgMembersRes.data);
     if (orgInvitesRes.data) setOrgInvites(orgInvitesRes.data);
     if (candidatesRes.data) setProjectCandidates(candidatesRes.data);
+    if (contactsRes.data) setContacts(contactsRes.data);
 
     // Check Gmail connection
     try {
@@ -7964,6 +8108,11 @@ export default function SuarezApp() {
   const handleUpdateCandidate = async (id, form) => { const { data, error } = await supabase.from("project_candidates").update(form).eq("id", id).select().single(); if (!error && data) setProjectCandidates((p) => p.map((x) => x.id === id ? data : x)); };
   const handleDeleteCandidate = async (id) => { const { error } = await supabase.from("project_candidates").delete().eq("id", id); if (!error) setProjectCandidates((p) => p.filter((x) => x.id !== id)); };
 
+  // Contacts CRUD
+  const handleAddContact = async (form) => { const { data, error } = await supabase.from("contacts").insert({ ...form, user_id: session.user.id }).select().single(); if (error) { console.error(error); alert(error.message?.includes("duplicate") ? "Contact with this phone number already exists" : "Error: " + error.message); return null; } if (data) setContacts((p) => [...p, data]); return data; };
+  const handleUpdateContact = async (id, form) => { const { data, error } = await supabase.from("contacts").update({ ...form, updated_at: new Date().toISOString() }).eq("id", id).select().single(); if (!error && data) setContacts((p) => p.map((x) => x.id === id ? data : x)); };
+  const handleDeleteContact = async (id) => { const { error } = await supabase.from("contacts").delete().eq("id", id); if (!error) setContacts((p) => p.filter((x) => x.id !== id)); };
+
   // ClickUp CRUD
   const handleAddSpace = async (form) => { const { data, error } = await supabase.from("cu_spaces").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setCuSpaces((p) => [...p, data]); };
   const handleUpdateSpace = async (id, form) => { const { data, error } = await supabase.from("cu_spaces").update(form).eq("id", id).select().single(); if (!error && data) setCuSpaces((p) => p.map((s) => s.id === id ? data : s)); };
@@ -8051,7 +8200,7 @@ export default function SuarezApp() {
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
-      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
+      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} contacts={contacts} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
         supabase.functions.invoke("gmail-auth", { body: { user_id: session.user.id } }).then(({ data }) => { if (data?.url) window.open(data.url, "_blank", "width=600,height=700"); });
       }} onGmailRefresh={async () => {
         const { data: gt } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).single();
