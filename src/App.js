@@ -5918,43 +5918,61 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [showAddContact, setShowAddContact] = useState(null);
   const [addContactForm, setAddContactForm] = useState({ name: "", phone: "", email: "", company: "" });
   const [showArchived, setShowArchived] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantRobot, setAssistantRobot] = useState(null);
-  const [assistantLoading, setAssistantLoading] = useState(false);
-  const [assistantResponse, setAssistantResponse] = useState("");
-  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [alfredResponse, setAlfredResponse] = useState("");
+  const [atlasResponse, setAtlasResponse] = useState("");
+  const [alfredLoading, setAlfredLoading] = useState(false);
+  const [atlasLoading, setAtlasLoading] = useState(false);
+  const [emailAssistantOpen, setEmailAssistantOpen] = useState(false);
+  const [emailAssistantResponse, setEmailAssistantResponse] = useState("");
+  const [emailAssistantLoading, setEmailAssistantLoading] = useState(false);
+  const [emailAssistantRobot, setEmailAssistantRobot] = useState(null);
+  const [emailAssistantPrompt, setEmailAssistantPrompt] = useState("");
   const [robots, setRobotsLocal] = useState([]);
 
-  // Load robots
   React.useEffect(() => { supabase.from("robots").select("*").eq("status", "active").then(({ data }) => { if (data) setRobotsLocal(data); }); }, []);
 
-  const askAssistant = async (contextMessages, prompt, robotId) => {
-    setAssistantLoading(true);
-    setAssistantResponse("");
-    try {
-      const robot = robots.find((r) => r.id === robotId);
-      const contextStr = contextMessages.map((m) => `${m.direction === "outgoing" ? "Me" : "Them"}: ${m.body}`).join("\n");
-      const fullPrompt = `Here is a text conversation:\n\n${contextStr}\n\n${prompt || "Draft a reply to this conversation. Be concise and professional."}`;
-      const { data } = await supabase.functions.invoke("robot-chat", {
-        body: { robot_id: robotId, message: fullPrompt },
-      });
-      setAssistantResponse(data?.response || data?.content || "No response");
-    } catch (err) { setAssistantResponse("Error: " + String(err)); }
-    finally { setAssistantLoading(false); }
+  const alfredId = robots.find((r) => r.name === "Alfred")?.id;
+  const atlasId = robots.find((r) => r.name === "Atlas")?.id;
+
+  const fetchSuggestions = async (threadMsgs) => {
+    if (!alfredId || !atlasId || threadMsgs.length === 0) return;
+    const contextStr = threadMsgs.slice(-10).map((m) => `${m.direction === "outgoing" ? "Me" : "Them"}: ${m.body}`).join("\n");
+    const prompt = `Here is a recent text conversation:\n\n${contextStr}\n\nDraft a short, natural reply. Just the message text, nothing else.`;
+
+    setAlfredLoading(true); setAtlasLoading(true);
+    setAlfredResponse(""); setAtlasResponse("");
+
+    supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, message: prompt } })
+      .then(({ data }) => setAlfredResponse(data?.response || data?.content || ""))
+      .catch(() => setAlfredResponse("Error"))
+      .finally(() => setAlfredLoading(false));
+
+    supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, message: prompt } })
+      .then(({ data }) => setAtlasResponse(data?.response || data?.content || ""))
+      .catch(() => setAtlasResponse("Error"))
+      .finally(() => setAtlasLoading(false));
   };
 
+  // Auto-fetch suggestions when thread opens
+  const prevThread = React.useRef(null);
+  React.useEffect(() => {
+    if (selectedThread && selectedThread !== prevThread.current && robots.length > 0) {
+      prevThread.current = selectedThread;
+      const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      if (tMsgs.length > 0) fetchSuggestions(tMsgs);
+    }
+  }, [selectedThread, robots]);
+
   const askEmailAssistant = async (emailData, prompt, robotId) => {
-    setAssistantLoading(true);
-    setAssistantResponse("");
+    setEmailAssistantLoading(true);
+    setEmailAssistantResponse("");
     try {
       const contextStr = `From: ${emailData.from}\nSubject: ${emailData.subject}\nDate: ${emailData.date}\n\n${emailData.body}`;
       const fullPrompt = `Here is an email:\n\n${contextStr}\n\n${prompt || "Draft a reply to this email. Be concise and professional. Just the reply body, no subject line."}`;
-      const { data } = await supabase.functions.invoke("robot-chat", {
-        body: { robot_id: robotId, message: fullPrompt },
-      });
-      setAssistantResponse(data?.response || data?.content || "No response");
-    } catch (err) { setAssistantResponse("Error: " + String(err)); }
-    finally { setAssistantLoading(false); }
+      const { data } = await supabase.functions.invoke("robot-chat", { body: { robot_id: robotId, message: fullPrompt } });
+      setEmailAssistantResponse(data?.response || data?.content || "No response");
+    } catch (err) { setEmailAssistantResponse("Error: " + String(err)); }
+    finally { setEmailAssistantLoading(false); }
   };
 
   // Contact lookup by phone
@@ -6094,29 +6112,29 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     return (
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <button onClick={() => { setSelectedEmail(null); setEmailBody(""); setAssistantOpen(false); setAssistantResponse(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back to Inbox</button>
-          <button onClick={() => { setAssistantOpen(!assistantOpen); setAssistantResponse(""); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: assistantOpen ? "#8b5cf6" : "#faf5ff", color: assistantOpen ? "#fff" : "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Assistant</button>
+          <button onClick={() => { setSelectedEmail(null); setEmailBody(""); setEmailAssistantOpen(false); setEmailAssistantResponse(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back to Inbox</button>
+          <button onClick={() => { setEmailAssistantOpen(!emailAssistantOpen); setEmailAssistantResponse(""); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: emailAssistantOpen ? "#8b5cf6" : "#faf5ff", color: emailAssistantOpen ? "#fff" : "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Assistant</button>
         </div>
         {/* AI Assistant Panel for Email */}
-        {assistantOpen && (
+        {emailAssistantOpen && (
           <div style={{ background: "linear-gradient(135deg, #faf5ff, #f5f3ff)", borderRadius: 14, border: "1px solid #e9d5ff", padding: "16px 20px", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <span style={{ fontSize: 14 }}>🤖</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>AI Assistant</span>
               <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
                 {robots.map((r) => (
-                  <button key={r.id} onClick={() => setAssistantRobot(r.id)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${assistantRobot === r.id ? "#7c3aed" : "#e2e8f0"}`, background: assistantRobot === r.id ? "#7c3aed" : "#fff", color: assistantRobot === r.id ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{r.name}</button>
+                  <button key={r.id} onClick={() => setEmailAssistantRobot(r.id)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${emailAssistantRobot === r.id ? "#7c3aed" : "#e2e8f0"}`, background: emailAssistantRobot === r.id ? "#7c3aed" : "#fff", color: emailAssistantRobot === r.id ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{r.name}</button>
                 ))}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              <input value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="e.g. Draft a professional reply, Summarize this, What should I do..." style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" onKeyDown={(e) => { if (e.key === "Enter" && assistantRobot) askEmailAssistant({ from: selectedEmail.from, subject: selectedEmail.subject, date: selectedEmail.date, body: emailBody.replace(/<[^>]*>/g, " ").slice(0, 3000) }, assistantPrompt, assistantRobot); }} />
-              <GreenButton small onClick={() => { if (!assistantRobot) { alert("Select a robot first"); return; } askEmailAssistant({ from: selectedEmail.from, subject: selectedEmail.subject, date: selectedEmail.date, body: emailBody.replace(/<[^>]*>/g, " ").slice(0, 3000) }, assistantPrompt, assistantRobot); }} disabled={assistantLoading || !assistantRobot}>{assistantLoading ? "Thinking..." : "Ask"}</GreenButton>
+              <input value={emailAssistantPrompt} onChange={(e) => setEmailAssistantPrompt(e.target.value)} placeholder="e.g. Draft a reply, Summarize this, What should I do..." style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" onKeyDown={(e) => { if (e.key === "Enter" && emailAssistantRobot) askEmailAssistant({ from: selectedEmail.from, subject: selectedEmail.subject, date: selectedEmail.date, body: emailBody.replace(/<[^>]*>/g, " ").slice(0, 3000) }, emailAssistantPrompt, emailAssistantRobot); }} />
+              <GreenButton small onClick={() => { if (!emailAssistantRobot) { alert("Select a robot first"); return; } askEmailAssistant({ from: selectedEmail.from, subject: selectedEmail.subject, date: selectedEmail.date, body: emailBody.replace(/<[^>]*>/g, " ").slice(0, 3000) }, emailAssistantPrompt, emailAssistantRobot); }} disabled={emailAssistantLoading || !emailAssistantRobot}>{emailAssistantLoading ? "Thinking..." : "Ask"}</GreenButton>
             </div>
-            {assistantResponse && (
+            {emailAssistantResponse && (
               <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e9d5ff", padding: "12px 16px" }}>
-                <p style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6, margin: "0 0 10px", whiteSpace: "pre-wrap" }}>{assistantResponse}</p>
-                <button onClick={() => { navigator.clipboard.writeText(assistantResponse); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📋 Copy to Clipboard</button>
+                <p style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6, margin: "0 0 10px", whiteSpace: "pre-wrap" }}>{emailAssistantResponse}</p>
+                <button onClick={() => { navigator.clipboard.writeText(emailAssistantResponse); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📋 Copy to Clipboard</button>
               </div>
             )}
           </div>
@@ -6246,35 +6264,26 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                   <button onClick={() => { setSelectedThread(null); setReplyText(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
                   <div style={{ display: "flex", gap: 4 }}>
                     {!contact && <button onClick={() => setShowAddContact(selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Add Contact</button>}
-                    <button onClick={() => { setAssistantOpen(!assistantOpen); setAssistantResponse(""); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: assistantOpen ? "#8b5cf6" : "#faf5ff", color: assistantOpen ? "#fff" : "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Assistant</button>
+                    <button onClick={() => { const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); fetchSuggestions(tmsgs); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: "#faf5ff", color: "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Refresh AI</button>
                     <button onClick={() => archiveConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📥 Archive</button>
                     <button onClick={() => deleteConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑 Delete</button>
                   </div>
                 </div>
-                {/* AI Assistant Panel */}
-                {assistantOpen && (
-                  <div style={{ background: "linear-gradient(135deg, #faf5ff, #f5f3ff)", borderRadius: 14, border: "1px solid #e9d5ff", padding: "16px 20px", marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                      <span style={{ fontSize: 14 }}>🤖</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>AI Assistant</span>
-                      <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
-                        {robots.map((r) => (
-                          <button key={r.id} onClick={() => setAssistantRobot(r.id)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${assistantRobot === r.id ? "#7c3aed" : "#e2e8f0"}`, background: assistantRobot === r.id ? "#7c3aed" : "#fff", color: assistantRobot === r.id ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{r.name}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                      <input value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="Ask the assistant anything, or leave blank for a draft reply..." style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" onKeyDown={(e) => { if (e.key === "Enter" && assistantRobot) { const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); askAssistant(tmsgs, assistantPrompt, assistantRobot); } }} />
-                      <GreenButton small onClick={() => { if (!assistantRobot) { alert("Select a robot first"); return; } const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); askAssistant(tmsgs, assistantPrompt, assistantRobot); }} disabled={assistantLoading || !assistantRobot}>{assistantLoading ? "Thinking..." : "Ask"}</GreenButton>
-                    </div>
-                    {assistantResponse && (
-                      <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e9d5ff", padding: "12px 16px" }}>
-                        <p style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6, margin: "0 0 10px", whiteSpace: "pre-wrap" }}>{assistantResponse}</p>
-                        <button onClick={() => { setReplyText(assistantResponse); setAssistantOpen(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📋 Use as Reply</button>
-                      </div>
-                    )}
+                {/* Auto AI Suggestions */}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                  <div style={{ background: "linear-gradient(135deg, #f0fdf4, #f8fafc)", borderRadius: 12, border: "1px solid #bbf7d0", padding: "12px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><div style={{ width: 24, height: 24, borderRadius: 6, background: "#1C3820", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>A</div><span style={{ fontSize: 11, fontWeight: 700, color: "#1C3820" }}>Alfred</span><span style={{ fontSize: 9, color: "#94a3b8" }}>Personal Butler</span></div>
+                    {alfredLoading ? <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>Drafting...</p> : alfredResponse ? (
+                      <><p style={{ fontSize: 12, color: "#0f172a", lineHeight: 1.5, margin: "0 0 8px", whiteSpace: "pre-wrap" }}>{alfredResponse}</p><button onClick={() => { setReplyText(alfredResponse); }} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #1C3820", background: "#1C3820", color: "#D4C08C", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>Use Alfred's Reply</button></>
+                    ) : <p style={{ fontSize: 11, color: "#94a3b8", margin: 0 }}>Waiting for messages...</p>}
                   </div>
-                )}
+                  <div style={{ background: "linear-gradient(135deg, #eff6ff, #f8fafc)", borderRadius: 12, border: "1px solid #bfdbfe", padding: "12px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><div style={{ width: 24, height: 24, borderRadius: 6, background: "#3b82f6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>A</div><span style={{ fontSize: 11, fontWeight: 700, color: "#3b82f6" }}>Atlas</span><span style={{ fontSize: 9, color: "#94a3b8" }}>Strategic Operator</span></div>
+                    {atlasLoading ? <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>Drafting...</p> : atlasResponse ? (
+                      <><p style={{ fontSize: 12, color: "#0f172a", lineHeight: 1.5, margin: "0 0 8px", whiteSpace: "pre-wrap" }}>{atlasResponse}</p><button onClick={() => { setReplyText(atlasResponse); }} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #3b82f6", background: "#3b82f6", color: "#fff", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>Use Atlas's Reply</button></>
+                    ) : <p style={{ fontSize: 11, color: "#94a3b8", margin: 0 }}>Waiting for messages...</p>}
+                  </div>
+                </div>
                 <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
                   <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", background: "#f8fafc" }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{displayName}</div>
@@ -6609,6 +6618,10 @@ function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", company: "", notes: "" });
   const [search, setSearch] = useState("");
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [contactTab, setContactTab] = useState("history");
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
   const resetForm = () => { setForm({ name: "", phone: "", email: "", company: "", notes: "" }); setEditingId(null); setShowForm(false); };
   const handleSubmit = async () => {
@@ -6619,11 +6632,104 @@ function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
   };
   const startEdit = (c) => { setForm({ name: c.name || "", phone: c.phone || "", email: c.email || "", company: c.company || "", notes: c.notes || "" }); setEditingId(c.id); setShowForm(true); };
 
+  const loadHistory = async (contact) => {
+    setHistoryLoading(true);
+    const items = [];
+    if (contact.phone) {
+      const clean = contact.phone.replace(/\D/g, "");
+      const patterns = [contact.phone, `+${clean}`, `+1${clean.slice(-10)}`];
+      const { data: msgs } = await supabase.from("quo_messages").select("*").or(patterns.map((p) => `from_number.eq.${p},to_number.eq.${p}`).join(",")).eq("deleted", false).order("created_at", { ascending: false }).limit(50);
+      (msgs || []).forEach((m) => items.push({ type: "text", direction: m.direction, body: m.body, date: m.created_at, phone_name: m.phone_name, phone_number_id: m.phone_number_id }));
+      const { data: cls } = await supabase.from("quo_calls").select("*").or(patterns.map((p) => `from_number.eq.${p},to_number.eq.${p}`).join(",")).eq("deleted", false).order("created_at", { ascending: false }).limit(50);
+      (cls || []).forEach((c) => items.push({ type: "call", direction: c.direction, status: c.status, duration: c.duration, date: c.created_at, phone_name: c.phone_name }));
+    }
+    items.sort((a, b) => new Date(b.date) - new Date(a.date));
+    setHistoryItems(items);
+    setHistoryLoading(false);
+  };
+
+  const openContact = (c) => { setSelectedContact(c); setContactTab("history"); loadHistory(c); };
+
   const filtered = (contacts || []).filter((c) => {
     if (!search.trim()) return true;
     const s = search.toLowerCase();
     return (c.name || "").toLowerCase().includes(s) || (c.phone || "").includes(s) || (c.email || "").toLowerCase().includes(s) || (c.company || "").toLowerCase().includes(s);
   });
+
+  const PHONE_LINES = { "PNcbag1oru": "🧯 REAP", "PNCF7YPY2P": "🤑 Admin", "PNEUrEiUK1": "😎 Capital", "PNIAgUbTmk": "🚌 Front Desk", "PNlN4ZOAt1": "🥷🏼 Javier" };
+
+  // Contact detail view
+  if (selectedContact) {
+    const c = contacts.find((x) => x.id === selectedContact.id) || selectedContact;
+    const pills = [c.company, c.phone, c.email].filter(Boolean);
+    return (
+      <>
+        <PageHeader isMobile={isMobile} title={c.name} subtitle={c.company || "Contact"} icon={c.name?.[0]?.toUpperCase()} onBack={() => setSelectedContact(null)} pills={pills} stats={[
+          { label: "TEXTS", value: historyItems.filter((h) => h.type === "text").length },
+          { label: "CALLS", value: historyItems.filter((h) => h.type === "call").length },
+        ]}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => { startEdit(c); setSelectedContact(null); }} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#D4C08C", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✏️ Edit</button>
+            <button onClick={() => { if (window.confirm("Delete " + c.name + "?")) { onDelete(c.id); setSelectedContact(null); } }} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "6px 12px", color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🗑</button>
+          </div>
+        </PageHeader>
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+          <TabBar tabs={[{ key: "history", label: "📜 History" }, { key: "info", label: "📋 Info" }, { key: "notes", label: "📝 Notes" }]} active={contactTab} onChange={setContactTab} isMobile={isMobile} />
+
+          {contactTab === "history" && (
+            <>
+              {historyLoading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : historyItems.length === 0 ? (
+                <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📜</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No interaction history yet. Texts and calls with {c.name} will appear here.</p></div>
+              ) : (
+                <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  {historyItems.map((h, i) => {
+                    const isIncoming = h.direction === "incoming";
+                    const time = h.date ? new Date(h.date).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+                    const lineName = PHONE_LINES[h.phone_number_id] || h.phone_name || "";
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < historyItems.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: h.type === "text" ? (isIncoming ? "#f0fdf4" : "#eff6ff") : (h.status === "missed" ? "#fef2f2" : "#f8fafc"), color: h.type === "text" ? (isIncoming ? "#16a34a" : "#3b82f6") : (h.status === "missed" ? "#dc2626" : "#64748b"), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{h.type === "text" ? "💬" : "📞"}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#0f172a" }}>{h.type === "text" ? (isIncoming ? "Received text" : "Sent text") : (isIncoming ? "Incoming call" : "Outgoing call")}{h.type === "call" && h.status === "missed" ? " (missed)" : ""}</span>
+                            <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{time}</span>
+                          </div>
+                          {h.type === "text" && h.body && <div style={{ fontSize: 12, color: "#475569", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.body}</div>}
+                          {h.type === "call" && h.duration > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{Math.floor(h.duration / 60)}m {h.duration % 60}s</div>}
+                          {lineName && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 1 }}>{lineName}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {contactTab === "info" && (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+                <SectionHeader text="Contact Details" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📱 Phone</span><span style={{ fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{c.phone || "—"}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📧 Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{c.email || "—"}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>🏢 Company</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{c.company || "—"}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>📅 Added</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{c.created_at ? fmtDate(c.created_at.split("T")[0]) : "—"}</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {contactTab === "notes" && (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+              <SectionHeader text="Notes" />
+              <textarea value={c.notes || ""} onChange={(e) => onUpdate(c.id, { notes: e.target.value })} placeholder="Add notes about this contact..." rows={6} style={{ width: "100%", padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none", resize: "vertical", boxSizing: "border-box" }} className="sz-input" />
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -6657,12 +6763,12 @@ function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
               <th style={{ width: 60 }}></th>
             </tr></thead>
             <tbody>{filtered.map((c) => (
-              <tr key={c.id} style={{ borderBottom: "1px solid #f8fafc" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+              <tr key={c.id} onClick={() => openContact(c)} style={{ borderBottom: "1px solid #f8fafc", cursor: "pointer" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: "#1C3820", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{c.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</div><div style={{ fontWeight: 600, color: "#0f172a" }}>{c.name}</div></div></td>
                 <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{c.phone || "—"}</td>
                 {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11 }}>{c.email || "—"}</td>}
                 {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b" }}>{c.company || "—"}</td>}
-                <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}><button onClick={() => startEdit(c)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button><button onClick={() => { if (window.confirm("Delete contact?")) onDelete(c.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
+                <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4 }}><button onClick={(e) => { e.stopPropagation(); startEdit(c); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button><button onClick={(e) => { e.stopPropagation(); if (window.confirm("Delete contact?")) onDelete(c.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button></div></td>
               </tr>
             ))}</tbody>
           </table>
