@@ -5942,6 +5942,7 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [showAddContact, setShowAddContact] = useState(null);
   const [addContactForm, setAddContactForm] = useState({ name: "", phone: "", email: "", company: "" });
   const [showArchived, setShowArchived] = useState(false);
+  const [lineFilter, setLineFilter] = useState("all");
   const [alfredResponse, setAlfredResponse] = useState("");
   const [atlasResponse, setAtlasResponse] = useState("");
   const [alfredLoading, setAlfredLoading] = useState(false);
@@ -6348,8 +6349,9 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
             <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No text messages yet. Send a message or wait for texts to come in.</p></div>
           ) : (() => {
             const activeMessages = showArchived ? messages : messages.filter((m) => !m.archived);
+            const filteredByLine = lineFilter === "all" ? activeMessages : activeMessages.filter((m) => m.phone_number_id === lineFilter);
             const convos = {};
-            activeMessages.forEach((m) => {
+            filteredByLine.forEach((m) => {
               const contact = getContactNumber(m);
               const key = `${m.phone_number_id}::${contact}`;
               if (!convos[key] || new Date(m.created_at) > new Date(convos[key].latest.created_at)) {
@@ -6359,6 +6361,13 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
             const sorted = Object.values(convos).sort((a, b) => new Date(b.latest.created_at) - new Date(a.latest.created_at));
             return (
               <>
+              {/* Phone line filter */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
+                <button onClick={() => setLineFilter("all")} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${lineFilter === "all" ? "#1C3820" : "#e2e8f0"}`, background: lineFilter === "all" ? "#1C3820" : "#fff", color: lineFilter === "all" ? "#D4C08C" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>All Lines</button>
+                {Object.entries(PHONE_LINES).map(([id, l]) => (
+                  <button key={id} onClick={() => setLineFilter(id)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${lineFilter === id ? "#1C3820" : "#e2e8f0"}`, background: lineFilter === id ? "#1C3820" : "#fff", color: lineFilter === id ? "#D4C08C" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{l.emoji} {l.name}</button>
+                ))}
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8 }}>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} conversation{sorted.length !== 1 ? "s" : ""}</span>
