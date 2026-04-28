@@ -5967,26 +5967,22 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     setAlfredLoading(true); setAtlasLoading(true);
     setAlfredResponse(""); setAtlasResponse("");
 
-    supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, message: prompt } })
+    supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, messages: [{ role: "user", content: prompt }] } })
       .then(({ data, error }) => {
-        console.log("Alfred:", { data, error });
+        console.log("Alfred:", data, error);
         if (error) { setAlfredResponse("Error: " + (error.message || JSON.stringify(error))); return; }
-        const d = data || {};
-        const text = d.response || d.reply || d.message || d.text || (typeof d.content === "string" ? d.content : "") || (Array.isArray(d.content) ? d.content.map((c) => c.text).join("") : "") || JSON.stringify(d);
-        setAlfredResponse(text || "Empty response");
+        setAlfredResponse(data?.reply || data?.response || data?.content || "No response");
       })
-      .catch((e) => { console.error("Alfred catch:", e); setAlfredResponse("Catch: " + String(e)); })
+      .catch((e) => { console.error("Alfred catch:", e); setAlfredResponse("Error: " + String(e)); })
       .finally(() => setAlfredLoading(false));
 
-    supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, message: prompt } })
+    supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, messages: [{ role: "user", content: prompt }] } })
       .then(({ data, error }) => {
-        console.log("Atlas:", { data, error });
+        console.log("Atlas:", data, error);
         if (error) { setAtlasResponse("Error: " + (error.message || JSON.stringify(error))); return; }
-        const d = data || {};
-        const text = d.response || d.reply || d.message || d.text || (typeof d.content === "string" ? d.content : "") || (Array.isArray(d.content) ? d.content.map((c) => c.text).join("") : "") || JSON.stringify(d);
-        setAtlasResponse(text || "Empty response");
+        setAtlasResponse(data?.reply || data?.response || data?.content || "No response");
       })
-      .catch((e) => { console.error("Atlas catch:", e); setAtlasResponse("Catch: " + String(e)); })
+      .catch((e) => { console.error("Atlas catch:", e); setAtlasResponse("Error: " + String(e)); })
       .finally(() => setAtlasLoading(false));
   };
 
@@ -6006,10 +6002,9 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     try {
       const contextStr = `From: ${emailData.from}\nSubject: ${emailData.subject}\nDate: ${emailData.date}\n\n${emailData.body}`;
       const fullPrompt = `Here is an email:\n\n${contextStr}\n\n${prompt || "Draft a reply to this email. Be concise and professional. Just the reply body, no subject line."}`;
-      const { data } = await supabase.functions.invoke("robot-chat", { body: { robot_id: robotId, message: fullPrompt } });
-      console.log("Email assistant raw:", JSON.stringify(data));
-      const text = data?.response || data?.content || data?.reply || data?.message || data?.text || (Array.isArray(data?.content) ? data.content.map((c) => c.text).join("") : "") || (typeof data === "string" ? data : "No response");
-      setEmailAssistantResponse(text);
+      const { data } = await supabase.functions.invoke("robot-chat", { body: { robot_id: robotId, messages: [{ role: "user", content: fullPrompt }] } });
+      console.log("Email assistant:", data);
+      setEmailAssistantResponse(data?.reply || data?.response || data?.content || "No response");
     } catch (err) { setEmailAssistantResponse("Error: " + String(err)); }
     finally { setEmailAssistantLoading(false); }
   };
