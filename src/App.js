@@ -5924,21 +5924,17 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   };
 
   const fetchQuo = async () => {
-    if (quoLoaded) return;
     setLoading(true);
     try {
-      // Get phone numbers first
-      const { data: pnData } = await supabase.functions.invoke("quo-proxy", { body: { action: "phone-numbers" } });
-      const nums = pnData?.data || [];
-      setPhoneNumbers(nums);
-      if (nums.length > 0) {
-        const phoneId = nums[0].id;
-        const [msgRes, callRes] = await Promise.all([
-          supabase.functions.invoke("quo-proxy", { body: { action: "messages", params: { phoneNumberId: phoneId, maxResults: 30 } } }),
-          supabase.functions.invoke("quo-proxy", { body: { action: "calls", params: { phoneNumberId: phoneId, maxResults: 30 } } }),
-        ]);
-        setMessages(msgRes.data?.data || []);
-        setCalls(callRes.data?.data || []);
+      const [{ data: msgData }, { data: callData }] = await Promise.all([
+        supabase.from("quo_messages").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("quo_calls").select("*").order("created_at", { ascending: false }).limit(50),
+      ]);
+      setMessages(msgData || []);
+      setCalls(callData || []);
+      if (phoneNumbers.length === 0) {
+        const { data: pnData } = await supabase.functions.invoke("quo-proxy", { body: { action: "phone-numbers" } });
+        setPhoneNumbers(pnData?.data || []);
       }
       setQuoLoaded(true);
     } catch (err) { console.error("QUO fetch error:", err); }
@@ -6076,17 +6072,19 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
           ) : (
             <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
               {messages.map((m, i) => {
-                const from = m.from || m.participants?.find((p) => p !== phoneNumbers[0]?.phoneNumber) || "Unknown";
                 const isIncoming = m.direction === "incoming";
+                const contact = isIncoming ? m.from_number : m.to_number;
+                const phoneName = m.phone_name || phoneNumbers.find((p) => p.id === m.phone_number_id)?.name || "";
                 return (
                   <div key={m.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < messages.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: isIncoming ? getAC(from) : "#1C3820", color: isIncoming ? "#fff" : "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{isIncoming ? "↙" : "↗"}</div>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: isIncoming ? getAC(contact || "?") : "#1C3820", color: isIncoming ? "#fff" : "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{isIncoming ? "↙" : "↗"}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(from)}</span>
-                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{m.createdAt ? fmtDate(m.createdAt.split("T")[0]) : ""}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(contact)}</span>
+                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{m.created_at ? fmtDate(m.created_at.split("T")[0]) : ""}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{m.body || m.content || "(No content)"}</div>
+                      {phoneName && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 1 }}>via {phoneName}</div>}
+                      <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{m.body || "(No content)"}</div>
                     </div>
                     <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: isIncoming ? "#f0fdf4" : "#eff6ff", color: isIncoming ? "#16a34a" : "#3b82f6", flexShrink: 0 }}>{isIncoming ? "IN" : "OUT"}</span>
                   </div>
@@ -6105,22 +6103,24 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
           ) : (
             <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
               {calls.map((c, i) => {
-                const from = c.from || c.participants?.find((p) => p !== phoneNumbers[0]?.phoneNumber) || "Unknown";
                 const isIncoming = c.direction === "incoming";
-                const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : "—";
-                const statusColors = { completed: "#16a34a", missed: "#dc2626", voicemail: "#f59e0b", cancelled: "#94a3b8" };
+                const contact = isIncoming ? c.from_number : c.to_number;
+                const phoneName = c.phone_name || phoneNumbers.find((p) => p.id === c.phone_number_id)?.name || "";
+                const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : "";
+                const statusColors = { completed: "#16a34a", missed: "#dc2626", voicemail: "#f59e0b", cancelled: "#94a3b8", ringing: "#3b82f6" };
                 const st = c.status || "completed";
                 return (
                   <div key={c.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < calls.length - 1 ? "1px solid #f1f5f9" : "none" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "50%", background: st === "missed" ? "#fef2f2" : isIncoming ? "#f0fdf4" : "#eff6ff", color: st === "missed" ? "#dc2626" : isIncoming ? "#16a34a" : "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{st === "missed" ? "✕" : isIncoming ? "↙" : "↗"}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(from)}</span>
-                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{c.createdAt ? fmtDate(c.createdAt.split("T")[0]) : ""}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(contact)}</span>
+                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{c.created_at ? fmtDate(c.created_at.split("T")[0]) : ""}</span>
                       </div>
+                      {phoneName && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 1 }}>via {phoneName}</div>}
                       <div style={{ display: "flex", gap: 8, marginTop: 3, alignItems: "center" }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[st] || "#94a3b8"}15`, color: statusColors[st] || "#94a3b8", textTransform: "uppercase" }}>{st}</span>
-                        <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{duration}</span>
+                        {duration && <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{duration}</span>}
                       </div>
                     </div>
                   </div>
