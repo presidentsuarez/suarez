@@ -5918,6 +5918,44 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [showAddContact, setShowAddContact] = useState(null);
   const [addContactForm, setAddContactForm] = useState({ name: "", phone: "", email: "", company: "" });
   const [showArchived, setShowArchived] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantRobot, setAssistantRobot] = useState(null);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantResponse, setAssistantResponse] = useState("");
+  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [robots, setRobotsLocal] = useState([]);
+
+  // Load robots
+  React.useEffect(() => { supabase.from("robots").select("*").eq("status", "active").then(({ data }) => { if (data) setRobotsLocal(data); }); }, []);
+
+  const askAssistant = async (contextMessages, prompt, robotId) => {
+    setAssistantLoading(true);
+    setAssistantResponse("");
+    try {
+      const robot = robots.find((r) => r.id === robotId);
+      const contextStr = contextMessages.map((m) => `${m.direction === "outgoing" ? "Me" : "Them"}: ${m.body}`).join("\n");
+      const fullPrompt = `Here is a text conversation:\n\n${contextStr}\n\n${prompt || "Draft a reply to this conversation. Be concise and professional."}`;
+      const { data } = await supabase.functions.invoke("robot-chat", {
+        body: { robot_id: robotId, message: fullPrompt },
+      });
+      setAssistantResponse(data?.response || data?.content || "No response");
+    } catch (err) { setAssistantResponse("Error: " + String(err)); }
+    finally { setAssistantLoading(false); }
+  };
+
+  const askEmailAssistant = async (emailData, prompt, robotId) => {
+    setAssistantLoading(true);
+    setAssistantResponse("");
+    try {
+      const contextStr = `From: ${emailData.from}\nSubject: ${emailData.subject}\nDate: ${emailData.date}\n\n${emailData.body}`;
+      const fullPrompt = `Here is an email:\n\n${contextStr}\n\n${prompt || "Draft a reply to this email. Be concise and professional. Just the reply body, no subject line."}`;
+      const { data } = await supabase.functions.invoke("robot-chat", {
+        body: { robot_id: robotId, message: fullPrompt },
+      });
+      setAssistantResponse(data?.response || data?.content || "No response");
+    } catch (err) { setAssistantResponse("Error: " + String(err)); }
+    finally { setAssistantLoading(false); }
+  };
 
   // Contact lookup by phone
   const findContact = (phone) => {
@@ -6055,7 +6093,34 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   if (selectedEmail) {
     return (
       <>
-        <button onClick={() => { setSelectedEmail(null); setEmailBody(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>← Back to Inbox</button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <button onClick={() => { setSelectedEmail(null); setEmailBody(""); setAssistantOpen(false); setAssistantResponse(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back to Inbox</button>
+          <button onClick={() => { setAssistantOpen(!assistantOpen); setAssistantResponse(""); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: assistantOpen ? "#8b5cf6" : "#faf5ff", color: assistantOpen ? "#fff" : "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Assistant</button>
+        </div>
+        {/* AI Assistant Panel for Email */}
+        {assistantOpen && (
+          <div style={{ background: "linear-gradient(135deg, #faf5ff, #f5f3ff)", borderRadius: 14, border: "1px solid #e9d5ff", padding: "16px 20px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 14 }}>🤖</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>AI Assistant</span>
+              <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                {robots.map((r) => (
+                  <button key={r.id} onClick={() => setAssistantRobot(r.id)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${assistantRobot === r.id ? "#7c3aed" : "#e2e8f0"}`, background: assistantRobot === r.id ? "#7c3aed" : "#fff", color: assistantRobot === r.id ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{r.name}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <input value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="e.g. Draft a professional reply, Summarize this, What should I do..." style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" onKeyDown={(e) => { if (e.key === "Enter" && assistantRobot) askEmailAssistant({ from: selectedEmail.from, subject: selectedEmail.subject, date: selectedEmail.date, body: emailBody.replace(/<[^>]*>/g, " ").slice(0, 3000) }, assistantPrompt, assistantRobot); }} />
+              <GreenButton small onClick={() => { if (!assistantRobot) { alert("Select a robot first"); return; } askEmailAssistant({ from: selectedEmail.from, subject: selectedEmail.subject, date: selectedEmail.date, body: emailBody.replace(/<[^>]*>/g, " ").slice(0, 3000) }, assistantPrompt, assistantRobot); }} disabled={assistantLoading || !assistantRobot}>{assistantLoading ? "Thinking..." : "Ask"}</GreenButton>
+            </div>
+            {assistantResponse && (
+              <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e9d5ff", padding: "12px 16px" }}>
+                <p style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6, margin: "0 0 10px", whiteSpace: "pre-wrap" }}>{assistantResponse}</p>
+                <button onClick={() => { navigator.clipboard.writeText(assistantResponse); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📋 Copy to Clipboard</button>
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
           <div style={{ padding: "18px 22px", borderBottom: "1px solid #f1f5f9" }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>{selectedEmail.subject || "(No Subject)"}</h2>
@@ -6181,10 +6246,35 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                   <button onClick={() => { setSelectedThread(null); setReplyText(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
                   <div style={{ display: "flex", gap: 4 }}>
                     {!contact && <button onClick={() => setShowAddContact(selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Add Contact</button>}
+                    <button onClick={() => { setAssistantOpen(!assistantOpen); setAssistantResponse(""); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: assistantOpen ? "#8b5cf6" : "#faf5ff", color: assistantOpen ? "#fff" : "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Assistant</button>
                     <button onClick={() => archiveConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📥 Archive</button>
                     <button onClick={() => deleteConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑 Delete</button>
                   </div>
                 </div>
+                {/* AI Assistant Panel */}
+                {assistantOpen && (
+                  <div style={{ background: "linear-gradient(135deg, #faf5ff, #f5f3ff)", borderRadius: 14, border: "1px solid #e9d5ff", padding: "16px 20px", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <span style={{ fontSize: 14 }}>🤖</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>AI Assistant</span>
+                      <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                        {robots.map((r) => (
+                          <button key={r.id} onClick={() => setAssistantRobot(r.id)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${assistantRobot === r.id ? "#7c3aed" : "#e2e8f0"}`, background: assistantRobot === r.id ? "#7c3aed" : "#fff", color: assistantRobot === r.id ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{r.name}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                      <input value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="Ask the assistant anything, or leave blank for a draft reply..." style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none" }} className="sz-input" onKeyDown={(e) => { if (e.key === "Enter" && assistantRobot) { const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); askAssistant(tmsgs, assistantPrompt, assistantRobot); } }} />
+                      <GreenButton small onClick={() => { if (!assistantRobot) { alert("Select a robot first"); return; } const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); askAssistant(tmsgs, assistantPrompt, assistantRobot); }} disabled={assistantLoading || !assistantRobot}>{assistantLoading ? "Thinking..." : "Ask"}</GreenButton>
+                    </div>
+                    {assistantResponse && (
+                      <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e9d5ff", padding: "12px 16px" }}>
+                        <p style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6, margin: "0 0 10px", whiteSpace: "pre-wrap" }}>{assistantResponse}</p>
+                        <button onClick={() => { setReplyText(assistantResponse); setAssistantOpen(false); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📋 Use as Reply</button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
                   <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", background: "#f8fafc" }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{displayName}</div>
