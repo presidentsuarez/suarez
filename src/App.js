@@ -765,7 +765,7 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
         </div>
       )}
 
-      {robots.map((r) => {
+      {activeRobots.map((r) => {
         const isExpanded = expanded === r.id;
         const statusColors = { active: "#16a34a", paused: "#f59e0b", offline: "#94a3b8" };
         return (
@@ -5897,7 +5897,7 @@ function OutreachDashboard({ isMobile }) {
 }
 
 /* — Gmail + QUO Inbox Tab — */
-function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact }) {
+function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact, robots }) {
   const [inboxMode, setInboxMode] = useState("email");
   const [emails, setEmails] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -5927,15 +5927,16 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [emailAssistantLoading, setEmailAssistantLoading] = useState(false);
   const [emailAssistantRobot, setEmailAssistantRobot] = useState(null);
   const [emailAssistantPrompt, setEmailAssistantPrompt] = useState("");
-  const [robots, setRobotsLocal] = useState([]);
 
-  React.useEffect(() => { supabase.from("robots").select("*").eq("status", "active").then(({ data }) => { if (data) setRobotsLocal(data); }); }, []);
-
-  const alfredId = robots.find((r) => r.name === "Alfred")?.id;
-  const atlasId = robots.find((r) => r.name === "Atlas")?.id;
+  const activeRobots = robots || [];
+  const alfredId = activeRobots.find((r) => r.name === "Alfred")?.id;
+  const atlasId = activeRobots.find((r) => r.name === "Atlas")?.id;
 
   const fetchSuggestions = async (threadMsgs) => {
-    if (!alfredId || !atlasId || threadMsgs.length === 0) return;
+    if (!alfredId || !atlasId || threadMsgs.length === 0) {
+      console.log("AI skip:", { alfredId, atlasId, msgCount: threadMsgs.length });
+      return;
+    }
     const contextStr = threadMsgs.slice(-10).map((m) => `${m.direction === "outgoing" ? "Me" : "Them"}: ${m.body}`).join("\n");
     const prompt = `Here is a recent text conversation:\n\n${contextStr}\n\nDraft a short, natural reply. Just the message text, nothing else.`;
 
@@ -5943,21 +5944,23 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     setAlfredResponse(""); setAtlasResponse("");
 
     supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, message: prompt } })
-      .then(({ data }) => setAlfredResponse(data?.response || data?.content || ""))
-      .catch(() => setAlfredResponse("Error"))
+      .then(({ data, error }) => { console.log("Alfred result:", data, error); setAlfredResponse(data?.response || data?.content || "Error getting response"); })
+      .catch((e) => { console.error("Alfred error:", e); setAlfredResponse("Error: " + String(e)); })
       .finally(() => setAlfredLoading(false));
 
     supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, message: prompt } })
-      .then(({ data }) => setAtlasResponse(data?.response || data?.content || ""))
-      .catch(() => setAtlasResponse("Error"))
+      .then(({ data, error }) => { console.log("Atlas result:", data, error); setAtlasResponse(data?.response || data?.content || "Error getting response"); })
+      .catch((e) => { console.error("Atlas error:", e); setAtlasResponse("Error: " + String(e)); })
       .finally(() => setAtlasLoading(false));
   };
 
   // Auto-fetch suggestions when thread opens or robots load
   const threadKey = selectedThread ? `${selectedThread.phoneNumberId}::${selectedThread.contact}` : null;
   React.useEffect(() => {
+    console.log("AI trigger check:", { threadKey, alfredId, atlasId, robotCount: activeRobots.length });
     if (!threadKey || !alfredId || !atlasId) return;
     const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    console.log("AI triggering with", tMsgs.length, "messages");
     if (tMsgs.length > 0) fetchSuggestions(tMsgs);
   }, [threadKey, alfredId, atlasId]);
 
@@ -6120,7 +6123,7 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
               <span style={{ fontSize: 14 }}>🤖</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>AI Assistant</span>
               <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
-                {robots.map((r) => (
+                {activeRobots.map((r) => (
                   <button key={r.id} onClick={() => setEmailAssistantRobot(r.id)} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${emailAssistantRobot === r.id ? "#7c3aed" : "#e2e8f0"}`, background: emailAssistantRobot === r.id ? "#7c3aed" : "#fff", color: emailAssistantRobot === r.id ? "#fff" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{r.name}</button>
                 ))}
               </div>
@@ -6914,7 +6917,7 @@ function SocialTab({ isMobile }) {
   );
 }
 
-function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany, contacts, onAddContact, onUpdateContact, onDeleteContact, session, gmailConnected, gmailEmail, onGmailConnect, onGmailRefresh }) {
+function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany, contacts, onAddContact, onUpdateContact, onDeleteContact, session, robots, gmailConnected, gmailEmail, onGmailConnect, onGmailRefresh }) {
   const tab = activeTab || "dashboard";
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
 
@@ -6970,7 +6973,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
           {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
-          {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} contacts={contacts} onAddContact={onAddContact} />}
+          {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} contacts={contacts} onAddContact={onAddContact} robots={robots} />}
           {tab === "emails" && <EmailsTab isMobile={isMobile} />}
           {tab === "social" && <SocialTab isMobile={isMobile} />}
         </div>
@@ -8394,7 +8397,7 @@ export default function SuarezApp() {
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
-      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} contacts={contacts} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
+      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} contacts={contacts} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} session={session} robots={robots} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
         supabase.functions.invoke("gmail-auth", { body: { user_id: session.user.id } }).then(({ data }) => { if (data?.url) window.open(data.url, "_blank", "width=600,height=700"); });
       }} onGmailRefresh={async () => {
         const { data: gt } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).single();
