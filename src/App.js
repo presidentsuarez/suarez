@@ -5987,14 +5987,6 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   };
 
   // Auto-fetch suggestions when thread opens or robots load
-  const threadKey = selectedThread ? `${selectedThread.phoneNumberId}::${selectedThread.contact}` : null;
-  const threadMsgCount = selectedThread ? messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).length : 0;
-  React.useEffect(() => {
-    if (!threadKey || !alfredId || !atlasId || threadMsgCount === 0) return;
-    const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    fetchSuggestions(tMsgs);
-  }, [threadKey, alfredId, atlasId, threadMsgCount]);
-
   const askEmailAssistant = async (emailData, prompt, robotId) => {
     setEmailAssistantLoading(true);
     setEmailAssistantResponse("");
@@ -6128,6 +6120,15 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
 
   React.useEffect(() => { if (gmailConnected && !checked) fetchEmails("in:inbox"); }, [gmailConnected]);
   React.useEffect(() => { if (inboxMode === "texts" || inboxMode === "calls") fetchQuo(); }, [inboxMode]);
+
+  // Auto-trigger AI suggestions when thread has messages
+  const threadKey = selectedThread ? `${selectedThread.phoneNumberId}::${selectedThread.contact}` : null;
+  const threadMsgCount = selectedThread ? messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).length : 0;
+  React.useEffect(() => {
+    if (!threadKey || !alfredId || !atlasId || threadMsgCount === 0) return;
+    const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    fetchSuggestions(tMsgs);
+  }, [threadKey, alfredId, atlasId, threadMsgCount]);
 
   const modes = [
     { k: "email", l: "📧 Email", count: emails.length },
