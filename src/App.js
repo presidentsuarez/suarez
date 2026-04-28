@@ -5896,6 +5896,155 @@ function OutreachDashboard({ isMobile }) {
   );
 }
 
+/* — Gmail Inbox Tab — */
+function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh }) {
+  const [emails, setEmails] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState(null);
+  const [emailBody, setEmailBody] = useState("");
+  const [loadingBody, setLoadingBody] = useState(false);
+  const [filter, setFilter] = useState("inbox");
+  const [checked, setChecked] = useState(false);
+
+  const fetchEmails = async (query) => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("gmail-proxy", {
+        body: { user_id: session.user.id, action: "list", params: { maxResults: 30, query: query || "in:inbox" } },
+      });
+      if (error) throw error;
+      setEmails(data?.messages || []);
+    } catch (err) {
+      console.error("Gmail fetch error:", err);
+      setEmails([]);
+    } finally { setLoading(false); setChecked(true); }
+  };
+
+  const openEmail = async (msg) => {
+    setSelectedEmail(msg);
+    setLoadingBody(true);
+    try {
+      const { data } = await supabase.functions.invoke("gmail-proxy", {
+        body: { user_id: session.user.id, action: "get", params: { messageId: msg.id } },
+      });
+      // Extract body
+      const parts = data?.payload?.parts || [];
+      let body = "";
+      const findBody = (p) => {
+        if (p.mimeType === "text/html" && p.body?.data) body = atob(p.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+        else if (p.mimeType === "text/plain" && p.body?.data && !body) body = atob(p.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+        if (p.parts) p.parts.forEach(findBody);
+      };
+      if (data?.payload?.body?.data) body = atob(data.payload.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+      else { findBody(data?.payload || {}); parts.forEach(findBody); }
+      setEmailBody(body || data?.snippet || "No content");
+      // Mark as read
+      if (msg.isUnread) {
+        await supabase.functions.invoke("gmail-proxy", {
+          body: { user_id: session.user.id, action: "modify", params: { messageId: msg.id, removeLabels: ["UNREAD"] } },
+        });
+        setEmails((p) => p.map((e) => e.id === msg.id ? { ...e, isUnread: false } : e));
+      }
+    } catch (err) { setEmailBody("Error loading email"); }
+    finally { setLoadingBody(false); }
+  };
+
+  React.useEffect(() => { if (gmailConnected && !checked) fetchEmails("in:inbox"); }, [gmailConnected]);
+
+  if (!gmailConnected) {
+    return (
+      <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>📨</div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Connect Your Gmail</h3>
+        <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px", maxWidth: 360, marginLeft: "auto", marginRight: "auto" }}>Link your Gmail account to see your inbox right here. Your credentials stay secure via Google OAuth.</p>
+        <GreenButton small onClick={onConnect}>🔗 Connect Gmail</GreenButton>
+        <div style={{ marginTop: 12 }}><button onClick={onRefresh} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, cursor: "pointer" }}>Already connected? Refresh</button></div>
+      </div>
+    );
+  }
+
+  const filters = [
+    { k: "inbox", l: "Inbox", q: "in:inbox" },
+    { k: "unread", l: "Unread", q: "in:inbox is:unread" },
+    { k: "sent", l: "Sent", q: "in:sent" },
+    { k: "starred", l: "Starred", q: "is:starred" },
+  ];
+
+  // Email detail view
+  if (selectedEmail) {
+    return (
+      <>
+        <button onClick={() => { setSelectedEmail(null); setEmailBody(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>← Back to Inbox</button>
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+          <div style={{ padding: "18px 22px", borderBottom: "1px solid #f1f5f9" }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>{selectedEmail.subject || "(No Subject)"}</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4, fontSize: 12, color: "#64748b" }}>
+              <span><strong style={{ color: "#0f172a" }}>{selectedEmail.from}</strong></span>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{selectedEmail.date}</span>
+            </div>
+            {selectedEmail.to && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>To: {selectedEmail.to}</div>}
+          </div>
+          <div style={{ padding: "22px" }}>
+            {loadingBody ? <p style={{ color: "#94a3b8", fontSize: 13 }}>Loading...</p> : (
+              emailBody.includes("<") ?
+                <div style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: emailBody }} /> :
+                <p style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.6, whiteSpace: "pre-wrap", margin: 0 }}>{emailBody}</p>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {filters.map((f) => (
+            <button key={f.k} onClick={() => { setFilter(f.k); fetchEmails(f.q); }} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${filter === f.k ? "#1C3820" : "#e2e8f0"}`, background: filter === f.k ? "#1C3820" : "#fff", color: filter === f.k ? "#D4C08C" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 10, color: "#16a34a" }}>✓ {gmailEmail}</span>
+          <button onClick={() => fetchEmails(filters.find((f) => f.k === filter)?.q)} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /><p style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>Loading emails...</p></div>
+      ) : emails.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📭</div>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No emails found</p>
+        </div>
+      ) : (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+          {emails.map((e, i) => {
+            const fromName = e.from?.split("<")[0]?.trim() || e.from;
+            const initials = fromName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+            const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#0891b2", "#ec4899"];
+            const ac = avatarColors[Math.abs([...(fromName || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+            return (
+              <div key={e.id} onClick={() => openEmail(e)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < emails.length - 1 ? "1px solid #f1f5f9" : "none", cursor: "pointer", background: e.isUnread ? "#f0fdf4" : "transparent", fontWeight: e.isUnread ? 700 : 400 }} onMouseEnter={(ev) => ev.currentTarget.style.background = "#f8fafc"} onMouseLeave={(ev) => ev.currentTarget.style.background = e.isUnread ? "#f0fdf4" : "transparent"}>
+                {e.isUnread && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />}
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: ac, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{initials}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                    <span style={{ fontSize: 13, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fromName}</span>
+                    <span style={{ fontSize: 9, color: "#94a3b8", flexShrink: 0, fontFamily: "'DM Mono', monospace", fontWeight: 400 }}>{e.date?.split(",")[0]}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: e.isUnread ? 700 : 600 }}>{e.subject || "(No Subject)"}</div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1, fontWeight: 400 }}>{e.snippet}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function InboxTab({ isMobile, companies, onAddCompany }) {
   const [view, setView] = useState("chats");
   const [messages, setMessages] = useState([]);
@@ -6238,14 +6387,14 @@ function SocialTab({ isMobile }) {
   );
 }
 
-function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany }) {
+function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany, session, gmailConnected, gmailEmail, onGmailConnect, onGmailRefresh }) {
   const tab = activeTab || "dashboard";
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
 
   const sections = [
     { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
     { key: "contacts", icon: "📇", label: "Contacts", desc: `${companies.length} contacts` },
-    { key: "inbox", icon: "📨", label: "Inbox", desc: "Chats & calls" },
+    { key: "inbox", icon: "📨", label: "Inbox", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
     { key: "emails", icon: "📧", label: "Emails", desc: "Email campaigns" },
     { key: "social", icon: "📱", label: "Social", desc: "Posts & creator" },
   ];
@@ -6294,7 +6443,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
           {tab === "contacts" && <ContactsContentTab isMobile={isMobile} companies={companies} onAdd={onAddCompany} onUpdate={onUpdateCompany} onDelete={onDeleteCompany} />}
-          {tab === "inbox" && <InboxTab isMobile={isMobile} companies={companies} onAddCompany={onAddCompany} />}
+          {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} />}
           {tab === "emails" && <EmailsTab isMobile={isMobile} />}
           {tab === "social" && <SocialTab isMobile={isMobile} />}
         </div>
@@ -7265,6 +7414,8 @@ export default function SuarezApp() {
   const [orgMembers, setOrgMembers] = useState([]);
   const [orgInvites, setOrgInvites] = useState([]);
   const [projectCandidates, setProjectCandidates] = useState([]);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailEmail, setGmailEmail] = useState("");
   const [cuSpaces, setCuSpaces] = useState([]);
   const [cuFolders, setCuFolders] = useState([]);
   const [cuLists, setCuLists] = useState([]);
@@ -7425,6 +7576,10 @@ export default function SuarezApp() {
     if (orgMembersRes.data) setOrgMembers(orgMembersRes.data);
     if (orgInvitesRes.data) setOrgInvites(orgInvitesRes.data);
     if (candidatesRes.data) setProjectCandidates(candidatesRes.data);
+
+    // Check Gmail connection
+    const { data: gmailToken } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).single();
+    if (gmailToken?.email) { setGmailConnected(true); setGmailEmail(gmailToken.email); }
     if (cuSpacesRes.data) setCuSpaces(cuSpacesRes.data);
     if (cuFoldersRes.data) setCuFolders(cuFoldersRes.data);
     if (cuListsRes.data) setCuLists(cuListsRes.data);
@@ -7701,7 +7856,12 @@ export default function SuarezApp() {
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
-      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} />;
+      case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
+        supabase.functions.invoke("gmail-auth", { body: { user_id: session.user.id } }).then(({ data }) => { if (data?.url) window.open(data.url, "_blank", "width=600,height=700"); });
+      }} onGmailRefresh={async () => {
+        const { data: gt } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).single();
+        if (gt?.email) { setGmailConnected(true); setGmailEmail(gt.email); }
+      }} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       case "team": return <TeamView isMobile={isMobile} staff={staffMembers} businesses={businesses} onAdd={handleAddStaff} onUpdate={handleUpdateStaff} onDelete={handleDeleteStaff} />;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} />;
