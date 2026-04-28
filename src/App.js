@@ -5944,12 +5944,20 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     setAlfredResponse(""); setAtlasResponse("");
 
     supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, message: prompt } })
-      .then(({ data, error }) => { console.log("Alfred result:", data, error); setAlfredResponse(data?.response || data?.content || "Error getting response"); })
+      .then(({ data, error }) => {
+        console.log("Alfred raw:", JSON.stringify(data), error);
+        const text = data?.response || data?.content || data?.reply || data?.message || data?.text || (Array.isArray(data?.content) ? data.content.map((c) => c.text).join("") : "") || (typeof data === "string" ? data : JSON.stringify(data));
+        setAlfredResponse(text || "No response");
+      })
       .catch((e) => { console.error("Alfred error:", e); setAlfredResponse("Error: " + String(e)); })
       .finally(() => setAlfredLoading(false));
 
     supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, message: prompt } })
-      .then(({ data, error }) => { console.log("Atlas result:", data, error); setAtlasResponse(data?.response || data?.content || "Error getting response"); })
+      .then(({ data, error }) => {
+        console.log("Atlas raw:", JSON.stringify(data), error);
+        const text = data?.response || data?.content || data?.reply || data?.message || data?.text || (Array.isArray(data?.content) ? data.content.map((c) => c.text).join("") : "") || (typeof data === "string" ? data : JSON.stringify(data));
+        setAtlasResponse(text || "No response");
+      })
       .catch((e) => { console.error("Atlas error:", e); setAtlasResponse("Error: " + String(e)); })
       .finally(() => setAtlasLoading(false));
   };
@@ -5971,7 +5979,9 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       const contextStr = `From: ${emailData.from}\nSubject: ${emailData.subject}\nDate: ${emailData.date}\n\n${emailData.body}`;
       const fullPrompt = `Here is an email:\n\n${contextStr}\n\n${prompt || "Draft a reply to this email. Be concise and professional. Just the reply body, no subject line."}`;
       const { data } = await supabase.functions.invoke("robot-chat", { body: { robot_id: robotId, message: fullPrompt } });
-      setEmailAssistantResponse(data?.response || data?.content || "No response");
+      console.log("Email assistant raw:", JSON.stringify(data));
+      const text = data?.response || data?.content || data?.reply || data?.message || data?.text || (Array.isArray(data?.content) ? data.content.map((c) => c.text).join("") : "") || (typeof data === "string" ? data : "No response");
+      setEmailAssistantResponse(text);
     } catch (err) { setEmailAssistantResponse("Error: " + String(err)); }
     finally { setEmailAssistantLoading(false); }
   };
