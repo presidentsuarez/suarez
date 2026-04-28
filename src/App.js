@@ -5910,6 +5910,50 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [filter, setFilter] = useState("inbox");
   const [checked, setChecked] = useState(false);
   const [quoLoaded, setQuoLoaded] = useState(false);
+  const [selectedThread, setSelectedThread] = useState(null);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  // Phone line lookup
+  const PHONE_LINES = {
+    "PNcbag1oru": { name: "REAP Order Flow", number: "+18136944125", emoji: "🧯" },
+    "PNCF7YPY2P": { name: "Administrator", number: "+18132145768", emoji: "🤑" },
+    "PNEUrEiUK1": { name: "Capital", number: "+18137063898", emoji: "😎" },
+    "PNIAgUbTmk": { name: "Front Desk", number: "+18135318074", emoji: "🚌" },
+    "PNlN4ZOAt1": { name: "Javier Suarez", number: "+18135445781", emoji: "🥷🏼" },
+  };
+  const ourNumbers = Object.values(PHONE_LINES).map((l) => l.number);
+  const getLineName = (phoneNumberId) => PHONE_LINES[phoneNumberId]?.name || "Unknown Line";
+  const getLineEmoji = (phoneNumberId) => PHONE_LINES[phoneNumberId]?.emoji || "📱";
+  const getContactNumber = (m) => {
+    const from = m.from_number || "";
+    const to = m.to_number || "";
+    if (m.direction === "incoming") return from;
+    if (to && to.length > 2 && !ourNumbers.includes(to)) return to;
+    if (from && !ourNumbers.includes(from)) return from;
+    return to || from || "Unknown";
+  };
+  const fmtPhoneDisplay = (num) => {
+    if (!num || num.length < 4) return num || "Unknown";
+    const clean = num.replace(/\D/g, "");
+    if (clean.length === 11 && clean.startsWith("1")) return `(${clean.slice(1,4)}) ${clean.slice(4,7)}-${clean.slice(7)}`;
+    if (clean.length === 10) return `(${clean.slice(0,3)}) ${clean.slice(3,6)}-${clean.slice(6)}`;
+    return num;
+  };
+
+  const sendQUOMessage = async (phoneNumberId, to, content) => {
+    setSending(true);
+    try {
+      const line = PHONE_LINES[phoneNumberId];
+      await supabase.functions.invoke("quo-proxy", {
+        body: { action: "send-message", params: { from: line?.number || phoneNumberId, to, content } },
+      });
+      setReplyText("");
+      // Refresh messages after a short delay to catch the webhook
+      setTimeout(() => fetchQuo(), 2000);
+    } catch (err) { console.error("Send error:", err); alert("Error sending message"); }
+    finally { setSending(false); }
+  };
 
   const fetchEmails = async (query) => {
     setLoading(true);
@@ -6067,31 +6111,90 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       {/* TEXTS VIEW */}
       {inboxMode === "texts" && (
         <>
-          {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : messages.length === 0 ? (
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No text messages found</p></div>
-          ) : (
-            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-              {messages.map((m, i) => {
-                const isIncoming = m.direction === "incoming";
-                const contact = isIncoming ? m.from_number : m.to_number;
-                const phoneName = m.phone_name || phoneNumbers.find((p) => p.id === m.phone_number_id)?.name || "";
-                return (
-                  <div key={m.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < messages.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: isIncoming ? getAC(contact || "?") : "#1C3820", color: isIncoming ? "#fff" : "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{isIncoming ? "↙" : "↗"}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(contact)}</span>
-                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{m.created_at ? fmtDate(m.created_at.split("T")[0]) : ""}</span>
-                      </div>
-                      {phoneName && <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 1 }}>via {phoneName}</div>}
-                      <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{m.body || "(No content)"}</div>
-                    </div>
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: isIncoming ? "#f0fdf4" : "#eff6ff", color: isIncoming ? "#16a34a" : "#3b82f6", flexShrink: 0 }}>{isIncoming ? "IN" : "OUT"}</span>
+          {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : selectedThread ? (() => {
+            // Thread view — show all messages with this contact on this line
+            const threadMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            const lineName = getLineName(selectedThread.phoneNumberId);
+            const lineEmoji = getLineEmoji(selectedThread.phoneNumberId);
+            return (
+              <>
+                <button onClick={() => { setSelectedThread(null); setReplyText(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
+                <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  {/* Thread header */}
+                  <div style={{ padding: "14px 18px", borderBottom: "1px solid #f1f5f9", background: "#f8fafc" }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{fmtPhoneDisplay(selectedThread.contact)}</div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{lineEmoji} via {lineName} · {threadMsgs.length} message{threadMsgs.length !== 1 ? "s" : ""}</div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  {/* Messages */}
+                  <div style={{ padding: "16px", maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {threadMsgs.map((m) => {
+                      const isMe = m.direction === "outgoing";
+                      const time = m.created_at ? new Date(m.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+                      return (
+                        <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
+                          <div style={{ maxWidth: "75%", padding: "10px 14px", borderRadius: isMe ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMe ? "#1C3820" : "#f1f5f9", color: isMe ? "#fff" : "#0f172a", fontSize: 13, lineHeight: 1.5 }}>{m.body || "(No content)"}</div>
+                          <div style={{ fontSize: 9, color: "#94a3b8", marginTop: 2, padding: "0 4px" }}>{time} · {isMe ? "Sent" : "Received"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Reply box */}
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid #f1f5f9", display: "flex", gap: 8, background: "#f8fafc" }}>
+                    <input value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && replyText.trim()) sendQUOMessage(selectedThread.phoneNumberId, selectedThread.contact, replyText); }} placeholder="Type a message..." style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none", background: "#fff" }} className="sz-input" />
+                    <GreenButton small onClick={() => { if (replyText.trim()) sendQUOMessage(selectedThread.phoneNumberId, selectedThread.contact, replyText); }} disabled={sending || !replyText.trim()}>{sending ? "..." : "Send"}</GreenButton>
+                  </div>
+                </div>
+              </>
+            );
+          })() : messages.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No text messages yet. Texts will appear here as they come in via your QUO numbers.</p></div>
+          ) : (() => {
+            // Conversation list — group by contact + phone line, show latest message
+            const convos = {};
+            messages.forEach((m) => {
+              const contact = getContactNumber(m);
+              const key = `${m.phone_number_id}::${contact}`;
+              if (!convos[key] || new Date(m.created_at) > new Date(convos[key].latest.created_at)) {
+                convos[key] = { contact, phoneNumberId: m.phone_number_id, latest: m, count: (convos[key]?.count || 0) + 1 };
+              } else {
+                convos[key].count++;
+              }
+            });
+            const sorted = Object.values(convos).sort((a, b) => new Date(b.latest.created_at) - new Date(a.latest.created_at));
+            return (
+              <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <span style={{ fontSize: 12, color: "#64748b" }}>{sorted.length} conversation{sorted.length !== 1 ? "s" : ""}</span>
+                <button onClick={fetchQuo} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
+              </div>
+              <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                {sorted.map((c, i) => {
+                  const lineName = getLineName(c.phoneNumberId);
+                  const lineEmoji = getLineEmoji(c.phoneNumberId);
+                  const isIncoming = c.latest.direction === "incoming";
+                  const time = c.latest.created_at ? new Date(c.latest.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+                  return (
+                    <div key={`${c.phoneNumberId}-${c.contact}`} onClick={() => setSelectedThread({ contact: c.contact, phoneNumberId: c.phoneNumberId })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: i < sorted.length - 1 ? "1px solid #f1f5f9" : "none", cursor: "pointer" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: getAC(c.contact || "?"), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{getInitials(fmtPhoneDisplay(c.contact))}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{fmtPhoneDisplay(c.contact)}</span>
+                          <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{time}</span>
+                        </div>
+                        <div style={{ fontSize: 10, color: "#64748b", marginTop: 1 }}>{lineEmoji} via {lineName}</div>
+                        <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>{isIncoming ? "" : "You: "}{c.latest.body || "(No content)"}</div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: isIncoming ? "#f0fdf4" : "#eff6ff", color: isIncoming ? "#16a34a" : "#3b82f6" }}>{isIncoming ? "IN" : "OUT"}</span>
+                        {c.count > 1 && <span style={{ fontSize: 9, color: "#94a3b8" }}>{c.count} msgs</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              </>
+            );
+          })()}
         </>
       )}
 
