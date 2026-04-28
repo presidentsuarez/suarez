@@ -5945,20 +5945,24 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
 
     supabase.functions.invoke("robot-chat", { body: { robot_id: alfredId, message: prompt } })
       .then(({ data, error }) => {
-        console.log("Alfred raw:", JSON.stringify(data), error);
-        const text = data?.response || data?.content || data?.reply || data?.message || data?.text || (Array.isArray(data?.content) ? data.content.map((c) => c.text).join("") : "") || (typeof data === "string" ? data : JSON.stringify(data));
-        setAlfredResponse(text || "No response");
+        console.log("Alfred:", { data, error });
+        if (error) { setAlfredResponse("Error: " + (error.message || JSON.stringify(error))); return; }
+        const d = data || {};
+        const text = d.response || d.reply || d.message || d.text || (typeof d.content === "string" ? d.content : "") || (Array.isArray(d.content) ? d.content.map((c) => c.text).join("") : "") || JSON.stringify(d);
+        setAlfredResponse(text || "Empty response");
       })
-      .catch((e) => { console.error("Alfred error:", e); setAlfredResponse("Error: " + String(e)); })
+      .catch((e) => { console.error("Alfred catch:", e); setAlfredResponse("Catch: " + String(e)); })
       .finally(() => setAlfredLoading(false));
 
     supabase.functions.invoke("robot-chat", { body: { robot_id: atlasId, message: prompt } })
       .then(({ data, error }) => {
-        console.log("Atlas raw:", JSON.stringify(data), error);
-        const text = data?.response || data?.content || data?.reply || data?.message || data?.text || (Array.isArray(data?.content) ? data.content.map((c) => c.text).join("") : "") || (typeof data === "string" ? data : JSON.stringify(data));
-        setAtlasResponse(text || "No response");
+        console.log("Atlas:", { data, error });
+        if (error) { setAtlasResponse("Error: " + (error.message || JSON.stringify(error))); return; }
+        const d = data || {};
+        const text = d.response || d.reply || d.message || d.text || (typeof d.content === "string" ? d.content : "") || (Array.isArray(d.content) ? d.content.map((c) => c.text).join("") : "") || JSON.stringify(d);
+        setAtlasResponse(text || "Empty response");
       })
-      .catch((e) => { console.error("Atlas error:", e); setAtlasResponse("Error: " + String(e)); })
+      .catch((e) => { console.error("Atlas catch:", e); setAtlasResponse("Catch: " + String(e)); })
       .finally(() => setAtlasLoading(false));
   };
 
