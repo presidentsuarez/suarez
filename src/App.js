@@ -5896,15 +5896,20 @@ function OutreachDashboard({ isMobile }) {
   );
 }
 
-/* — Gmail Inbox Tab — */
+/* — Gmail + QUO Inbox Tab — */
 function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh }) {
+  const [inboxMode, setInboxMode] = useState("email");
   const [emails, setEmails] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [calls, setCalls] = useState([]);
+  const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [emailBody, setEmailBody] = useState("");
   const [loadingBody, setLoadingBody] = useState(false);
   const [filter, setFilter] = useState("inbox");
   const [checked, setChecked] = useState(false);
+  const [quoLoaded, setQuoLoaded] = useState(false);
 
   const fetchEmails = async (query) => {
     setLoading(true);
@@ -5914,10 +5919,30 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       });
       if (error) throw error;
       setEmails(data?.messages || []);
-    } catch (err) {
-      console.error("Gmail fetch error:", err);
-      setEmails([]);
-    } finally { setLoading(false); setChecked(true); }
+    } catch (err) { console.error("Gmail fetch error:", err); setEmails([]); }
+    finally { setLoading(false); setChecked(true); }
+  };
+
+  const fetchQuo = async () => {
+    if (quoLoaded) return;
+    setLoading(true);
+    try {
+      // Get phone numbers first
+      const { data: pnData } = await supabase.functions.invoke("quo-proxy", { body: { action: "phone-numbers" } });
+      const nums = pnData?.data || [];
+      setPhoneNumbers(nums);
+      if (nums.length > 0) {
+        const phoneId = nums[0].id;
+        const [msgRes, callRes] = await Promise.all([
+          supabase.functions.invoke("quo-proxy", { body: { action: "messages", params: { phoneNumberId: phoneId, maxResults: 30 } } }),
+          supabase.functions.invoke("quo-proxy", { body: { action: "calls", params: { phoneNumberId: phoneId, maxResults: 30 } } }),
+        ]);
+        setMessages(msgRes.data?.data || []);
+        setCalls(callRes.data?.data || []);
+      }
+      setQuoLoaded(true);
+    } catch (err) { console.error("QUO fetch error:", err); }
+    finally { setLoading(false); }
   };
 
   const openEmail = async (msg) => {
@@ -5927,8 +5952,6 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       const { data } = await supabase.functions.invoke("gmail-proxy", {
         body: { user_id: session.user.id, action: "get", params: { messageId: msg.id } },
       });
-      // Extract body
-      const parts = data?.payload?.parts || [];
       let body = "";
       const findBody = (p) => {
         if (p.mimeType === "text/html" && p.body?.data) body = atob(p.body.data.replace(/-/g, "+").replace(/_/g, "/"));
@@ -5936,9 +5959,8 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
         if (p.parts) p.parts.forEach(findBody);
       };
       if (data?.payload?.body?.data) body = atob(data.payload.body.data.replace(/-/g, "+").replace(/_/g, "/"));
-      else { findBody(data?.payload || {}); parts.forEach(findBody); }
+      else findBody(data?.payload || {});
       setEmailBody(body || data?.snippet || "No content");
-      // Mark as read
       if (msg.isUnread) {
         await supabase.functions.invoke("gmail-proxy", {
           body: { user_id: session.user.id, action: "modify", params: { messageId: msg.id, removeLabels: ["UNREAD"] } },
@@ -5950,25 +5972,18 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   };
 
   React.useEffect(() => { if (gmailConnected && !checked) fetchEmails("in:inbox"); }, [gmailConnected]);
+  React.useEffect(() => { if (inboxMode === "texts" || inboxMode === "calls") fetchQuo(); }, [inboxMode]);
 
-  if (!gmailConnected) {
-    return (
-      <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>📨</div>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Connect Your Gmail</h3>
-        <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px", maxWidth: 360, marginLeft: "auto", marginRight: "auto" }}>Link your Gmail account to see your inbox right here. Your credentials stay secure via Google OAuth.</p>
-        <GreenButton small onClick={onConnect}>🔗 Connect Gmail</GreenButton>
-        <div style={{ marginTop: 12 }}><button onClick={onRefresh} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, cursor: "pointer" }}>Already connected? Refresh</button></div>
-      </div>
-    );
-  }
-
-  const filters = [
-    { k: "inbox", l: "Inbox", q: "in:inbox" },
-    { k: "unread", l: "Unread", q: "in:inbox is:unread" },
-    { k: "sent", l: "Sent", q: "in:sent" },
-    { k: "starred", l: "Starred", q: "is:starred" },
+  const modes = [
+    { k: "email", l: "📧 Email", count: emails.length },
+    { k: "texts", l: "💬 Texts", count: messages.length },
+    { k: "calls", l: "📞 Calls", count: calls.length },
   ];
+
+  const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#0891b2", "#ec4899"];
+  const getAC = (name) => avatarColors[Math.abs([...(name || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+  const getInitials = (name) => { const p = (name || "?").split(" "); return p.length > 1 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : (name || "?").slice(0, 2).toUpperCase(); };
+  const fmtPhone = (n) => n || "Unknown";
 
   // Email detail view
   if (selectedEmail) {
@@ -5982,7 +5997,6 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
               <span><strong style={{ color: "#0f172a" }}>{selectedEmail.from}</strong></span>
               <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{selectedEmail.date}</span>
             </div>
-            {selectedEmail.to && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>To: {selectedEmail.to}</div>}
           </div>
           <div style={{ padding: "22px" }}>
             {loadingBody ? <p style={{ color: "#94a3b8", fontSize: 13 }}>Loading...</p> : (
@@ -5998,48 +6012,123 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 4 }}>
-          {filters.map((f) => (
-            <button key={f.k} onClick={() => { setFilter(f.k); fetchEmails(f.q); }} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${filter === f.k ? "#1C3820" : "#e2e8f0"}`, background: filter === f.k ? "#1C3820" : "#fff", color: filter === f.k ? "#D4C08C" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>
-          ))}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 10, color: "#16a34a" }}>✓ {gmailEmail}</span>
-          <button onClick={() => fetchEmails(filters.find((f) => f.k === filter)?.q)} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
-        </div>
+      {/* Mode toggle */}
+      <div style={{ display: "flex", gap: 4, background: "#fff", borderRadius: 10, padding: 4, border: "1px solid #e2e8f0", marginBottom: 12, width: "fit-content" }}>
+        {modes.map((m) => (
+          <button key={m.k} onClick={() => setInboxMode(m.k)} style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: inboxMode === m.k ? "#1C3820" : "transparent", color: inboxMode === m.k ? "#D4C08C" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{m.l}</button>
+        ))}
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /><p style={{ color: "#94a3b8", fontSize: 12, marginTop: 8 }}>Loading emails...</p></div>
-      ) : emails.length === 0 ? (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>📭</div>
-          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No emails found</p>
-        </div>
-      ) : (
-        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
-          {emails.map((e, i) => {
-            const fromName = e.from?.split("<")[0]?.trim() || e.from;
-            const initials = fromName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) || "?";
-            const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#0891b2", "#ec4899"];
-            const ac = avatarColors[Math.abs([...(fromName || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
-            return (
-              <div key={e.id} onClick={() => openEmail(e)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < emails.length - 1 ? "1px solid #f1f5f9" : "none", cursor: "pointer", background: e.isUnread ? "#f0fdf4" : "transparent", fontWeight: e.isUnread ? 700 : 400 }} onMouseEnter={(ev) => ev.currentTarget.style.background = "#f8fafc"} onMouseLeave={(ev) => ev.currentTarget.style.background = e.isUnread ? "#f0fdf4" : "transparent"}>
-                {e.isUnread && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />}
-                <div style={{ width: 36, height: 36, borderRadius: "50%", background: ac, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{initials}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                    <span style={{ fontSize: 13, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fromName}</span>
-                    <span style={{ fontSize: 9, color: "#94a3b8", flexShrink: 0, fontFamily: "'DM Mono', monospace", fontWeight: 400 }}>{e.date?.split(",")[0]}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: e.isUnread ? 700 : 600 }}>{e.subject || "(No Subject)"}</div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1, fontWeight: 400 }}>{e.snippet}</div>
+      {/* EMAIL VIEW */}
+      {inboxMode === "email" && (
+        <>
+          {!gmailConnected ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>📨</div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Connect Your Gmail</h3>
+              <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Link your Gmail to see your inbox here.</p>
+              <GreenButton small onClick={onConnect}>🔗 Connect Gmail</GreenButton>
+              <div style={{ marginTop: 12 }}><button onClick={onRefresh} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, cursor: "pointer" }}>Already connected? Refresh</button></div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[{ k: "inbox", l: "Inbox", q: "in:inbox" }, { k: "unread", l: "Unread", q: "in:inbox is:unread" }, { k: "sent", l: "Sent", q: "in:sent" }, { k: "starred", l: "Starred", q: "is:starred" }].map((f) => (
+                    <button key={f.k} onClick={() => { setFilter(f.k); fetchEmails(f.q); }} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${filter === f.k ? "#1C3820" : "#e2e8f0"}`, background: filter === f.k ? "#1C3820" : "#fff", color: filter === f.k ? "#D4C08C" : "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{f.l}</button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 10, color: "#16a34a" }}>✓ {gmailEmail}</span>
+                  <button onClick={() => fetchEmails([{ k: "inbox", q: "in:inbox" }, { k: "unread", q: "in:inbox is:unread" }, { k: "sent", q: "in:sent" }, { k: "starred", q: "is:starred" }].find((f) => f.k === filter)?.q)} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻</button>
                 </div>
               </div>
-            );
-          })}
-        </div>
+              {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : emails.length === 0 ? (
+                <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📭</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No emails found</p></div>
+              ) : (
+                <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  {emails.map((e, i) => {
+                    const fromName = e.from?.split("<")[0]?.trim() || e.from;
+                    return (
+                      <div key={e.id} onClick={() => openEmail(e)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < emails.length - 1 ? "1px solid #f1f5f9" : "none", cursor: "pointer", background: e.isUnread ? "#f0fdf4" : "transparent" }} onMouseEnter={(ev) => ev.currentTarget.style.background = "#f8fafc"} onMouseLeave={(ev) => ev.currentTarget.style.background = e.isUnread ? "#f0fdf4" : "transparent"}>
+                        {e.isUnread && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />}
+                        <div style={{ width: 36, height: 36, borderRadius: "50%", background: getAC(fromName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{getInitials(fromName)}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span style={{ fontSize: 13, color: "#0f172a", fontWeight: e.isUnread ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fromName}</span><span style={{ fontSize: 9, color: "#94a3b8", flexShrink: 0, fontFamily: "'DM Mono', monospace" }}>{e.date?.split(",")[0]}</span></div>
+                          <div style={{ fontSize: 12, color: "#0f172a", fontWeight: e.isUnread ? 700 : 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.subject || "(No Subject)"}</div>
+                          <div style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{e.snippet}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* TEXTS VIEW */}
+      {inboxMode === "texts" && (
+        <>
+          {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : messages.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>💬</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No text messages found</p></div>
+          ) : (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+              {messages.map((m, i) => {
+                const from = m.from || m.participants?.find((p) => p !== phoneNumbers[0]?.phoneNumber) || "Unknown";
+                const isIncoming = m.direction === "incoming";
+                return (
+                  <div key={m.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < messages.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: isIncoming ? getAC(from) : "#1C3820", color: isIncoming ? "#fff" : "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{isIncoming ? "↙" : "↗"}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(from)}</span>
+                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{m.createdAt ? fmtDate(m.createdAt.split("T")[0]) : ""}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{m.body || m.content || "(No content)"}</div>
+                    </div>
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: isIncoming ? "#f0fdf4" : "#eff6ff", color: isIncoming ? "#16a34a" : "#3b82f6", flexShrink: 0 }}>{isIncoming ? "IN" : "OUT"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* CALLS VIEW */}
+      {inboxMode === "calls" && (
+        <>
+          {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : calls.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}><div style={{ fontSize: 36, marginBottom: 12 }}>📞</div><p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No calls found</p></div>
+          ) : (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+              {calls.map((c, i) => {
+                const from = c.from || c.participants?.find((p) => p !== phoneNumbers[0]?.phoneNumber) || "Unknown";
+                const isIncoming = c.direction === "incoming";
+                const duration = c.duration ? `${Math.floor(c.duration / 60)}m ${c.duration % 60}s` : "—";
+                const statusColors = { completed: "#16a34a", missed: "#dc2626", voicemail: "#f59e0b", cancelled: "#94a3b8" };
+                const st = c.status || "completed";
+                return (
+                  <div key={c.id || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: i < calls.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: st === "missed" ? "#fef2f2" : isIncoming ? "#f0fdf4" : "#eff6ff", color: st === "missed" ? "#dc2626" : isIncoming ? "#16a34a" : "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{st === "missed" ? "✕" : isIncoming ? "↙" : "↗"}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{fmtPhone(from)}</span>
+                        <span style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{c.createdAt ? fmtDate(c.createdAt.split("T")[0]) : ""}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 3, alignItems: "center" }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${statusColors[st] || "#94a3b8"}15`, color: statusColors[st] || "#94a3b8", textTransform: "uppercase" }}>{st}</span>
+                        <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{duration}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </>
   );
