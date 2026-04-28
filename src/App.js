@@ -5900,19 +5900,6 @@ function OutreachDashboard({ isMobile }) {
 function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact, robots }) {
   const [inboxMode, setInboxModeRaw] = useState("email");
   const setInboxMode = (mode) => { setInboxModeRaw(mode); window.location.hash = `#/growth/inbox/${mode}`; };
-
-  // Restore state from URL on mount
-  React.useEffect(() => {
-    const hash = window.location.hash.replace("#/", "").split("/");
-    if (hash[0] === "growth" && hash[1] === "inbox") {
-      if (hash[2] === "texts" || hash[2] === "email" || hash[2] === "calls") setInboxModeRaw(hash[2]);
-      if (hash[2] === "texts" && hash[3]) {
-        const parts = decodeURIComponent(hash[3]).split("::");
-        if (parts.length === 2) setSelectedThread({ phoneNumberId: parts[0], contact: parts[1] });
-      }
-      if (hash[2] === "email" && hash[3]) setSelectedEmail({ id: hash[3], from: "", subject: "", date: "", snippet: "" });
-    }
-  }, []);
   const [emails, setEmails] = useState([]);
   const [messages, setMessages] = useState([]);
   const [calls, setCalls] = useState([]);
@@ -5924,6 +5911,19 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     if (e) window.location.hash = `#/growth/inbox/email/${e.id}`;
     else window.location.hash = "#/growth/inbox/email";
   };
+
+  // Restore state from URL on mount
+  React.useEffect(() => {
+    const hash = window.location.hash.replace("#/", "").split("/");
+    if (hash[0] === "growth" && hash[1] === "inbox") {
+      if (hash[2] === "texts" || hash[2] === "email" || hash[2] === "calls") setInboxModeRaw(hash[2]);
+      if (hash[2] === "texts" && hash[3]) {
+        const parts = decodeURIComponent(hash[3]).split("::");
+        if (parts.length === 2) setSelectedThreadRaw({ phoneNumberId: parts[0], contact: parts[1] });
+      }
+      if (hash[2] === "email" && hash[3]) setSelectedEmailRaw({ id: hash[3], from: "", subject: "", date: "", snippet: "" });
+    }
+  }, []);
   const [emailBody, setEmailBody] = useState("");
   const [loadingBody, setLoadingBody] = useState(false);
   const [filter, setFilter] = useState("inbox");
