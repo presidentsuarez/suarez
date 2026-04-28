@@ -5988,13 +5988,12 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
 
   // Auto-fetch suggestions when thread opens or robots load
   const threadKey = selectedThread ? `${selectedThread.phoneNumberId}::${selectedThread.contact}` : null;
+  const threadMsgCount = selectedThread ? messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).length : 0;
   React.useEffect(() => {
-    console.log("AI trigger check:", { threadKey, alfredId, atlasId, robotCount: activeRobots.length });
-    if (!threadKey || !alfredId || !atlasId) return;
+    if (!threadKey || !alfredId || !atlasId || threadMsgCount === 0) return;
     const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    console.log("AI triggering with", tMsgs.length, "messages");
-    if (tMsgs.length > 0) fetchSuggestions(tMsgs);
-  }, [threadKey, alfredId, atlasId]);
+    fetchSuggestions(tMsgs);
+  }, [threadKey, alfredId, atlasId, threadMsgCount]);
 
   const askEmailAssistant = async (emailData, prompt, robotId) => {
     setEmailAssistantLoading(true);
@@ -6299,7 +6298,7 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                   <div style={{ display: "flex", gap: 4 }}>
                     {!contact && <button onClick={() => setShowAddContact(selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Add Contact</button>}
                     <button onClick={() => fetchQuo()} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>↻ Messages</button>
-                    <button onClick={() => { const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); fetchSuggestions(tmsgs); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: "#faf5ff", color: "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Refresh AI</button>
+                    <button onClick={async () => { await fetchQuo(); const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); if (tmsgs.length > 0) fetchSuggestions(tmsgs); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: "#faf5ff", color: "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Refresh AI</button>
                     <button onClick={() => archiveConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📥 Archive</button>
                     <button onClick={() => deleteConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑 Delete</button>
                   </div>
