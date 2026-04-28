@@ -5898,19 +5898,43 @@ function OutreachDashboard({ isMobile }) {
 
 /* — Gmail + QUO Inbox Tab — */
 function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact, robots }) {
-  const [inboxMode, setInboxMode] = useState("email");
+  const [inboxMode, setInboxModeRaw] = useState("email");
+  const setInboxMode = (mode) => { setInboxModeRaw(mode); window.location.hash = `#/growth/inbox/${mode}`; };
+
+  // Restore state from URL on mount
+  React.useEffect(() => {
+    const hash = window.location.hash.replace("#/", "").split("/");
+    if (hash[0] === "growth" && hash[1] === "inbox") {
+      if (hash[2] === "texts" || hash[2] === "email" || hash[2] === "calls") setInboxModeRaw(hash[2]);
+      if (hash[2] === "texts" && hash[3]) {
+        const parts = decodeURIComponent(hash[3]).split("::");
+        if (parts.length === 2) setSelectedThread({ phoneNumberId: parts[0], contact: parts[1] });
+      }
+      if (hash[2] === "email" && hash[3]) setSelectedEmail({ id: hash[3], from: "", subject: "", date: "", snippet: "" });
+    }
+  }, []);
   const [emails, setEmails] = useState([]);
   const [messages, setMessages] = useState([]);
   const [calls, setCalls] = useState([]);
   const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedEmail, setSelectedEmail] = useState(null);
+  const [selectedEmail, setSelectedEmailRaw] = useState(null);
+  const setSelectedEmail = (e) => {
+    setSelectedEmailRaw(e);
+    if (e) window.location.hash = `#/growth/inbox/email/${e.id}`;
+    else window.location.hash = "#/growth/inbox/email";
+  };
   const [emailBody, setEmailBody] = useState("");
   const [loadingBody, setLoadingBody] = useState(false);
   const [filter, setFilter] = useState("inbox");
   const [checked, setChecked] = useState(false);
   const [quoLoaded, setQuoLoaded] = useState(false);
-  const [selectedThread, setSelectedThread] = useState(null);
+  const [selectedThread, setSelectedThreadRaw] = useState(null);
+  const setSelectedThread = (t) => {
+    setSelectedThreadRaw(t);
+    if (t) window.location.hash = `#/growth/inbox/texts/${encodeURIComponent(t.phoneNumberId + "::" + t.contact)}`;
+    else window.location.hash = "#/growth/inbox/texts";
+  };
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
@@ -6279,6 +6303,7 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                   <button onClick={() => { setSelectedThread(null); setReplyText(""); }} style={{ background: "rgba(28,56,32,0.1)", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>← Back</button>
                   <div style={{ display: "flex", gap: 4 }}>
                     {!contact && <button onClick={() => setShowAddContact(selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>+ Add Contact</button>}
+                    <button onClick={() => fetchQuo()} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>↻ Messages</button>
                     <button onClick={() => { const tmsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); fetchSuggestions(tmsgs); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #8b5cf6", background: "#faf5ff", color: "#7c3aed", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🤖 Refresh AI</button>
                     <button onClick={() => archiveConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📥 Archive</button>
                     <button onClick={() => deleteConversation(selectedThread.phoneNumberId, selectedThread.contact)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🗑 Delete</button>
@@ -7900,7 +7925,7 @@ function TaskDetailModal({ task, allTasks, onClose, onUpdate, onDelete, onAddTas
 export default function SuarezApp() {
   const parseHash = () => {
     const hash = window.location.hash.replace("#/", "").split("/");
-    return { page: hash[0] || "overview", tab: hash[1] || null };
+    return { page: hash[0] || "overview", tab: hash[1] || null, subtab: hash[2] || null, detail: hash[3] || null };
   };
 
   const initialHash = parseHash();
