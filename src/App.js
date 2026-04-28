@@ -5942,7 +5942,7 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
   const [showAddContact, setShowAddContact] = useState(null);
   const [addContactForm, setAddContactForm] = useState({ name: "", phone: "", email: "", company: "" });
   const [showArchived, setShowArchived] = useState(false);
-  const [lineFilter, setLineFilter] = useState("all");
+  const [lineFilter, setLineFilter] = useState("PNlN4ZOAt1");
   const [alfredResponse, setAlfredResponse] = useState("");
   const [atlasResponse, setAtlasResponse] = useState("");
   const [alfredLoading, setAlfredLoading] = useState(false);
