@@ -5953,15 +5953,13 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
       .finally(() => setAtlasLoading(false));
   };
 
-  // Auto-fetch suggestions when thread opens
-  const prevThread = React.useRef(null);
+  // Auto-fetch suggestions when thread opens or robots load
+  const threadKey = selectedThread ? `${selectedThread.phoneNumberId}::${selectedThread.contact}` : null;
   React.useEffect(() => {
-    if (selectedThread && selectedThread !== prevThread.current && robots.length > 0) {
-      prevThread.current = selectedThread;
-      const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      if (tMsgs.length > 0) fetchSuggestions(tMsgs);
-    }
-  }, [selectedThread, robots]);
+    if (!threadKey || !alfredId || !atlasId) return;
+    const tMsgs = messages.filter((m) => m.phone_number_id === selectedThread.phoneNumberId && getContactNumber(m) === selectedThread.contact && !m.deleted).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (tMsgs.length > 0) fetchSuggestions(tMsgs);
+  }, [threadKey, alfredId, atlasId]);
 
   const askEmailAssistant = async (emailData, prompt, robotId) => {
     setEmailAssistantLoading(true);
