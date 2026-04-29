@@ -65,6 +65,7 @@ const GlobalStyles = () => (
       input, select, textarea { font-size: 16px !important; }
       .sz-page { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important; }
     }
+    * { -webkit-overflow-scrolling: touch; }
     input::placeholder { color: #8A9B91; }
     .sz-input:focus { border-color: #16a34a !important; box-shadow: 0 0 0 3px rgba(22,163,74,0.12) !important; outline: none; }
     ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -6696,7 +6697,7 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
                     <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{lineEmoji} via {lineName} · {fmtPhoneDisplay(selectedThread.contact)} · {threadMsgs.length} msg{threadMsgs.length !== 1 ? "s" : ""}</div>
                     {contact?.company && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{contact.company}</div>}
                   </div>
-                  <div style={{ padding: "16px", maxHeight: 400, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ padding: "16px", maxHeight: "calc(100vh - 450px)", minHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, WebkitOverflowScrolling: "touch" }}>
                     {threadMsgs.map((m) => {
                       const isMe = m.direction === "outgoing";
                       const time = m.created_at ? new Date(m.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
@@ -7379,9 +7380,9 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
           <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><Sidebar /></div>
         </>
       )}
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
         <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} icon="📡" />
-        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
           {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
           {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} contacts={contacts} onAddContact={onAddContact} robots={robots} />}
@@ -8069,7 +8070,7 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
         </>
       )}
       {/* Main content */}
-      <div style={{ flex: 1, overflow: "auto" }}>{renderContent()}</div>
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>{renderContent()}</div>
 
       {/* Create modal */}
       {createMenu && (
