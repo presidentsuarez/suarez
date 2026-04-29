@@ -5209,7 +5209,7 @@ function APIUsageView({ isMobile, session }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
               {[
                 { emoji: "🤖", label: "Alfred & Atlas AI Suggestions", service: "Anthropic", trigger: "Opening a text thread auto-calls both robots", cost: "~$0.01-0.03 per suggestion pair" },
-                { emoji: "📨", label: "Gmail Inbox Load", service: "Google", trigger: "Opening Inbox → Email tab fetches 15 message headers (cached, only on first visit)", cost: "Free (quota)" },
+                { emoji: "📨", label: "Gmail Inbox Load", service: "Google", trigger: "Cached locally for 10 min. Only makes API calls on first visit or manual refresh (16 calls)", cost: "Free (quota)" },
                 { emoji: "📧", label: "Gmail Email Read", service: "Google", trigger: "Clicking an email fetches full body + marks as read (2 API calls)", cost: "Free (quota)" },
                 { emoji: "💬", label: "QUO Webhook Ingest", service: "OpenPhone", trigger: "Every incoming/outgoing text or call pushes data via webhook", cost: "Included in plan" },
                 { emoji: "💬", label: "QUO Send Message", service: "OpenPhone", trigger: "Sending a reply from the app calls the messages API", cost: "Included in plan" },
@@ -5260,10 +5260,10 @@ function APIUsageView({ isMobile, session }) {
                   <p style={{ margin: "0 0 10px" }}>When you connected Gmail, the app started making API calls every time you visit the Inbox. Here's what happens:</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {[
-                      { action: "Open Inbox", calls: "1 list call + 15 metadata fetches = 16 calls", freq: "First visit only (cached after)" },
+                      { action: "Open Inbox", calls: "0 calls (loads from cache)", freq: "Uses cached data if less than 10 min old" },
                       { action: "Read an email", calls: "1 get call + 1 modify call (mark read) = 2 calls", freq: "Every email you click" },
-                      { action: "Switch filter", calls: "16 calls (new query)", freq: "Switching Inbox/Unread/Sent/Starred" },
-                      { action: "Refresh", calls: "16 calls", freq: "Only on manual refresh click" },
+                      { action: "Switch filter", calls: "16 calls (1 list + 15 metadata)", freq: "Only if no cache for that filter" },
+                      { action: "Manual Refresh", calls: "16 calls", freq: "Only when you click ↻" },
                     ].map((row, i) => (
                       <div key={i} style={{ padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
                         <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 12 }}>{row.action}</div>
@@ -6301,7 +6301,9 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
         body: { user_id: session.user.id, action: "list", params: { maxResults: 15, query: query || "in:inbox" } },
       });
       if (error) throw error;
-      setEmails(data?.messages || []);
+      const msgs = data?.messages || [];
+      setEmails(msgs);
+      try { localStorage.setItem(`sz_emails_${query || "in:inbox"}`, JSON.stringify({ msgs, ts: Date.now() })); } catch (e) {}
     } catch (err) { console.error("Gmail fetch error:", err); setEmails([]); }
     finally { setLoading(false); setChecked(true); }
   };
@@ -6364,7 +6366,19 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     finally { setLoadingBody(false); }
   };
 
-  React.useEffect(() => { if (gmailConnected && !checked && emails.length === 0) fetchEmails("in:inbox"); }, [gmailConnected]);
+  React.useEffect(() => {
+    if (!gmailConnected || checked) return;
+    try {
+      const cached = localStorage.getItem("sz_emails_in:inbox");
+      if (cached) {
+        const { msgs, ts } = JSON.parse(cached);
+        if (msgs && msgs.length > 0 && Date.now() - ts < 10 * 60 * 1000) {
+          setEmails(msgs); setChecked(true); return;
+        }
+      }
+    } catch (e) {}
+    fetchEmails("in:inbox");
+  }, [gmailConnected]);
   React.useEffect(() => { if (inboxMode === "texts" || inboxMode === "calls") fetchQuo(); }, [inboxMode]);
 
   // Auto-trigger AI suggestions when thread has messages
