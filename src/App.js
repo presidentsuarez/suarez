@@ -4388,7 +4388,7 @@ const MemberPicker = ({ members, selected, onChange, onAddMember, isMobile, curr
 };
 
 
-function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, checkins, supplements, meals, bloodWork, scorecards, doseLogs, bodyLogs, onAddMember, onAddCheckin, onDeleteCheckin, onAddSupplement, onUpdateSupplement, onDeleteSupplement, onAddMeal, onDeleteMeal, onAddBloodWork, onDeleteBloodWork, onAddScorecard, onDeleteScorecard, onAddDoseLog, onDeleteDoseLog, onAddBodyLog, onDeleteBodyLog, nested }) {
+function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, checkins, supplements, meals, bloodWork, scorecards, doseLogs, bodyLogs, trainers, onAddMember, onAddCheckin, onDeleteCheckin, onAddSupplement, onUpdateSupplement, onDeleteSupplement, onAddMeal, onDeleteMeal, onAddBloodWork, onDeleteBloodWork, onAddScorecard, onDeleteScorecard, onAddDoseLog, onDeleteDoseLog, onAddBodyLog, onDeleteBodyLog, onAddTrainer, onUpdateTrainer, onDeleteTrainer, nested }) {
   const tab = activeTab || "scorecard";
   const setTab = onTabChange;
   const currentEmail = session?.user?.email || "";
@@ -4418,9 +4418,10 @@ function HealthView({ isMobile, activeTab, onTabChange, session, familyMembers, 
         </div>
       ) : (
         <>
-          <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "checkin", label: "📋 Check-in" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+          <TabBar tabs={[{ key: "scorecard", label: "⭐ Scorecard" }, { key: "dosing", label: "💉 Dosing" }, { key: "body", label: "🏋️ Body" }, { key: "trainers", label: "🏅 Trainers" }, { key: "checkin", label: "📋 Check-in" }, { key: "supplements", label: "💊 Supplements" }, { key: "meals", label: "🍽️ Meals" }, { key: "bloodwork", label: "🩸 Blood Work" }]} active={tab} onChange={setTab} isMobile={isMobile} />
           {tab === "dosing" && <DosingTab isMobile={isMobile} memberId={selectedMember} supplements={supplements.filter((s) => s.member_id === selectedMember && s.active)} doseLogs={doseLogs.filter((d) => d.member_id === selectedMember)} onAddLog={onAddDoseLog} onDeleteLog={onDeleteDoseLog} />}
           {tab === "body" && <BodyPerformanceTab isMobile={isMobile} memberId={selectedMember} bodyLogs={bodyLogs.filter((b) => b.member_id === selectedMember)} onAdd={onAddBodyLog} onDelete={onDeleteBodyLog} />}
+          {tab === "trainers" && <TrainersTab isMobile={isMobile} trainers={trainers || []} onAdd={onAddTrainer} onUpdate={onUpdateTrainer} onDelete={onDeleteTrainer} />}
           {tab === "checkin" && <HealthCheckinTab isMobile={isMobile} memberId={selectedMember} checkins={checkins.filter((c) => c.member_id === selectedMember)} onAdd={onAddCheckin} onDelete={onDeleteCheckin} />}
           {tab === "supplements" && <SupplementsTab isMobile={isMobile} memberId={selectedMember} familyMembers={familyMembers} supplements={supplements.filter((s) => s.member_id === selectedMember)} onAdd={onAddSupplement} onUpdate={onUpdateSupplement} onDelete={onDeleteSupplement} />}
           {tab === "meals" && <MealPlanningTab isMobile={isMobile} memberId={selectedMember} meals={meals.filter((m) => m.member_id === selectedMember)} onAdd={onAddMeal} onDelete={onDeleteMeal} />}
@@ -4570,6 +4571,115 @@ function DosingTab({ isMobile, memberId, supplements, doseLogs, onAddLog, onDele
 }
 
 /* — Body & Performance Tab — */
+/* — Trainers Tab — */
+function TrainersTab({ isMobile, trainers, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: "", gender: "", monthly_rate: "", specialization: "", training_days: [], phone: "", email: "", notes: "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const resetForm = () => { setForm({ name: "", gender: "", monthly_rate: "", specialization: "", training_days: [], phone: "", email: "", notes: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    const payload = { ...form, monthly_rate: form.monthly_rate ? Number(form.monthly_rate) : 0, training_days: JSON.stringify(form.training_days) };
+    if (editingId) await onUpdate(editingId, payload);
+    else await onAdd(payload);
+    resetForm();
+  };
+  const startEdit = (t) => {
+    const td = Array.isArray(t.training_days) ? t.training_days : (typeof t.training_days === "string" ? JSON.parse(t.training_days || "[]") : []);
+    setForm({ name: t.name || "", gender: t.gender || "", monthly_rate: t.monthly_rate?.toString() || "", specialization: t.specialization || "", training_days: td, phone: t.phone || "", email: t.email || "", notes: t.notes || "" });
+    setEditingId(t.id); setShowForm(true);
+  };
+  const toggleDay = (d) => setForm({ ...form, training_days: form.training_days.includes(d) ? form.training_days.filter((x) => x !== d) : [...form.training_days, d] });
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{trainers.length} trainer{trainers.length !== 1 ? "s" : ""}</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Trainer</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16, animation: "fadeUp 0.25s ease" }}>
+          <SectionHeader text={editingId ? "Edit Trainer" : "New Trainer"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Trainer name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Gender</label><select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="">Select...</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Monthly Rate ($)</label><input type="number" value={form.monthly_rate} onChange={(e) => setForm({ ...form, monthly_rate: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Specialization</label><input value={form.specialization} onChange={(e) => setForm({ ...form, specialization: e.target.value })} placeholder="e.g. Strength, Boxing, Yoga" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Training Days</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                {days.map((d) => (
+                  <button key={d} onClick={() => toggleDay(d)} style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${form.training_days.includes(d) ? "#16a34a" : "#e2e8f0"}`, background: form.training_days.includes(d) ? "#16a34a" : "#fff", color: form.training_days.includes(d) ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{d}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={!form.name.trim()}>{editingId ? "Update" : "Add"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {trainers.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🏅</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Trainers Yet</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add your trainers to track costs, schedules, and specializations.</p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+          {trainers.map((t) => {
+            const td = Array.isArray(t.training_days) ? t.training_days : (typeof t.training_days === "string" ? JSON.parse(t.training_days || "[]") : []);
+            const genderColor = t.gender === "Male" ? "#3b82f6" : t.gender === "Female" ? "#ec4899" : "#94a3b8";
+            return (
+              <div key={t.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 20px", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: genderColor }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{t.name}</div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                      {t.gender && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${genderColor}15`, color: genderColor }}>{t.gender}</span>}
+                      {t.specialization && <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: "#f8fafc", color: "#64748b" }}>{t.specialization}</span>}
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: t.status === "active" ? "#f0fdf4" : "#f8fafc", color: t.status === "active" ? "#16a34a" : "#94a3b8" }}>{(t.status || "active").toUpperCase()}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => startEdit(t)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                    <button onClick={() => { if (window.confirm("Remove trainer?")) onDelete(t.id); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 16, fontSize: 13, marginBottom: 10 }}>
+                  <div><span style={{ color: "#94a3b8", fontSize: 10 }}>MONTHLY</span><div style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{t.monthly_rate ? fmtCurrency(t.monthly_rate) : "—"}</div></div>
+                  <div><span style={{ color: "#94a3b8", fontSize: 10 }}>DAYS/WK</span><div style={{ fontWeight: 700, color: "#0f172a" }}>{td.length || 0}</div></div>
+                </div>
+                {td.length > 0 && (
+                  <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+                    {days.map((d) => (
+                      <span key={d} style={{ width: 28, height: 24, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, background: td.includes(d) ? "#16a34a" : "#f1f5f9", color: td.includes(d) ? "#fff" : "#94a3b8" }}>{d}</span>
+                    ))}
+                  </div>
+                )}
+                {(t.phone || t.email) && (
+                  <div style={{ fontSize: 11, color: "#64748b", borderTop: "1px solid #f1f5f9", paddingTop: 8, marginTop: 4 }}>
+                    {t.phone && <div style={{ fontFamily: "'DM Mono', monospace" }}>{t.phone}</div>}
+                    {t.email && <div>{t.email}</div>}
+                  </div>
+                )}
+                {t.notes && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>{t.notes}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function BodyPerformanceTab({ isMobile, memberId, bodyLogs, onAdd, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const emptyForm = { date: new Date().toISOString().split("T")[0], weight: "", body_fat: "", vascularity: 5, energy: 5, sleep_quality: 5, mental_sharpness: 5, mood: 5, workout_type: "", workout_rating: 5, notes: "" };
@@ -8225,6 +8335,7 @@ export default function SuarezApp() {
   const [bloodWork, setBloodWork] = useState([]);
   const [doseLogs, setDoseLogs] = useState([]);
   const [bodyLogs, setBodyLogs] = useState([]);
+  const [trainers, setTrainers] = useState([]);
   const [monthlyBills, setMonthlyBills] = useState([]);
   const [savedLinks, setSavedLinks] = useState([]);
   const [goals, setGoals] = useState([]);
@@ -8412,6 +8523,10 @@ export default function SuarezApp() {
     if (candidatesRes.data) setProjectCandidates(candidatesRes.data);
     if (contactsRes.data) setContacts(contactsRes.data);
 
+    // Load trainers separately
+    const { data: trainerData } = await supabase.from("trainers").select("*").order("name", { ascending: true });
+    if (trainerData) setTrainers(trainerData);
+
     // Check Gmail connection
     try {
       const { data: gmailToken, error: gmailErr } = await supabase.from("gmail_tokens").select("email").eq("user_id", session.user.id).maybeSingle();
@@ -8549,6 +8664,11 @@ export default function SuarezApp() {
   // Body Logs CRUD
   const handleAddBodyLog = async (form) => { const { data, error } = await supabase.from("body_logs").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setBodyLogs((p) => [data, ...p]); };
   const handleDeleteBodyLog = async (id) => { const { error } = await supabase.from("body_logs").delete().eq("id", id); if (!error) setBodyLogs((p) => p.filter((b) => b.id !== id)); };
+
+  // Trainer CRUD
+  const handleAddTrainer = async (form) => { const { data, error } = await supabase.from("trainers").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setTrainers((p) => [...p, data]); };
+  const handleUpdateTrainer = async (id, form) => { const { data, error } = await supabase.from("trainers").update(form).eq("id", id).select().single(); if (!error && data) setTrainers((p) => p.map((t) => t.id === id ? data : t)); };
+  const handleDeleteTrainer = async (id) => { const { error } = await supabase.from("trainers").delete().eq("id", id); if (!error) setTrainers((p) => p.filter((t) => t.id !== id)); };
   const handleAddLink = async (form) => { const { data, error } = await supabase.from("saved_links").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setSavedLinks((p) => [data, ...p]); };
   const handleDeleteLink = async (id) => { const { error } = await supabase.from("saved_links").delete().eq("id", id); if (!error) setSavedLinks((p) => p.filter((l) => l.id !== id)); };
   const handleAddGoal = async (form) => { const { data, error } = await supabase.from("goals").insert({ ...form, user_id: session.user.id }).select().single(); if (!error && data) setGoals((p) => [data, ...p]); };
@@ -8699,7 +8819,7 @@ export default function SuarezApp() {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
       case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
-      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} />;
+      case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} trainers={trainers} onAddTrainer={handleAddTrainer} onUpdateTrainer={handleUpdateTrainer} onDeleteTrainer={handleDeleteTrainer} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} contacts={contacts} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} session={session} robots={robots} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
         supabase.functions.invoke("gmail-auth", { body: { user_id: session.user.id } }).then(({ data }) => { if (data?.url) window.open(data.url, "_blank", "width=600,height=700"); });
       }} onGmailRefresh={async () => {
