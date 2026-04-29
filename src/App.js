@@ -7579,6 +7579,118 @@ function CandidatePipeline({ isMobile, category, candidates, onAdd, onUpdate, on
    TEAM — Staff & Team Management
    ═══════════════════════════════════════════════════════════ */
 
+/* — Contacts Page with All / Team sub-tabs — */
+function ContactsPageView({ isMobile, contacts, staff, businesses, onAddContact, onUpdateContact, onDeleteContact, onAddStaff, onUpdateStaff, onDeleteStaff }) {
+  const [tab, setTab] = useState("all");
+  const totalCount = (contacts || []).length + (staff || []).length;
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Contacts" subtitle={`${totalCount} total`} isMobile={isMobile} icon="📇" />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={[{ key: "all", label: `📇 All (${(contacts || []).length})` }, { key: "team", label: `👥 Team (${(staff || []).length})` }]} active={tab} onChange={setTab} isMobile={isMobile} />
+        {tab === "all" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
+        {tab === "team" && <TeamTab isMobile={isMobile} staff={staff} businesses={businesses} onAdd={onAddStaff} onUpdate={onUpdateStaff} onDelete={onDeleteStaff} />}
+      </div>
+    </div>
+  );
+}
+
+/* — Team Tab (extracted from TeamView) — */
+function TeamTab({ isMobile, staff, businesses, onAdd, onUpdate, onDelete }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "", department: "", organizations: [], status: "active", hire_date: "", hourly_rate: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [orgInput, setOrgInput] = useState("");
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const resetForm = () => { setForm({ name: "", email: "", phone: "", role: "", department: "", organizations: [], status: "active", hire_date: "", hourly_rate: "", notes: "" }); setOrgInput(""); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onAdd({ ...form, hourly_rate: form.hourly_rate ? Number(form.hourly_rate) : 0, hire_date: form.hire_date || null, organizations: JSON.stringify(form.organizations) });
+    resetForm(); setSaving(false);
+  };
+  const addOrg = () => { if (orgInput.trim() && !form.organizations.includes(orgInput.trim())) { setForm({ ...form, organizations: [...form.organizations, orgInput.trim()] }); setOrgInput(""); } };
+  const avatarColors = ["#3b82f6", "#16a34a", "#f59e0b", "#dc2626", "#8b5cf6", "#0891b2"];
+
+  if (selectedId) {
+    const member = staff.find((s) => s.id === selectedId);
+    if (!member) { setSelectedId(null); return null; }
+    return <TeamMemberDetailView isMobile={isMobile} member={member} onBack={() => setSelectedId(null)} onUpdate={onUpdate} onDelete={onDelete} />;
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{staff.length} team member{staff.length !== 1 ? "s" : ""}</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Member</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+          <SectionHeader text="New Team Member" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Role / Title</label><input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g. Virtual Assistant" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1 555 000 0000" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Department</label><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="e.g. Operations" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Hourly Rate ($)</label><input type="number" value={form.hourly_rate} onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Organizations</label>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <input value={orgInput} onChange={(e) => setOrgInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addOrg())} placeholder="Type org name and press Enter" style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+                <button onClick={addOrg} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 12, fontWeight: 600, color: "#475569", cursor: "pointer" }}>Add</button>
+              </div>
+              {form.organizations.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{form.organizations.map((o, i) => <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: 4 }}>{o} <button onClick={() => setForm({ ...form, organizations: form.organizations.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12, padding: 0, lineHeight: 1 }}>×</button></span>)}</div>}
+            </div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={saving || !form.name.trim()}>{saving ? "..." : "Add Member"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {staff.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>👥</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Team Members</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 16px" }}>Add your team — VAs, contractors, employees.</p>
+          <GreenButton small onClick={() => setShowForm(true)}>{Icons.plus} Add First Member</GreenButton>
+        </div>
+      ) : (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+            <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Name</th>
+              <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Organization(s)</th>
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Phone</th>}
+              {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Email</th>}
+              <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Status</th>
+            </tr></thead>
+            <tbody>{staff.map((s) => {
+              const orgs = Array.isArray(s.organizations) ? s.organizations : (typeof s.organizations === "string" ? JSON.parse(s.organizations || "[]") : []);
+              const statusColors = { active: "#16a34a", onleave: "#f59e0b", inactive: "#94a3b8" };
+              const sc = statusColors[s.status] || "#94a3b8";
+              const ac = s.avatar_color || avatarColors[Math.abs([...(s.name || "?")].reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+              return (
+                <tr key={s.id} onClick={() => setSelectedId(s.id)} style={{ borderBottom: "1px solid #f8fafc", cursor: "pointer", opacity: s.status === "inactive" ? 0.5 : 1 }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                  <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 32, height: 32, borderRadius: 8, background: ac, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{s.name.charAt(0).toUpperCase()}</div><div><div style={{ fontWeight: 600, color: "#0f172a" }}>{s.name}</div>{s.role && <div style={{ fontSize: 10, color: "#94a3b8" }}>{s.role}</div>}</div></div></td>
+                  <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{orgs.length > 0 ? orgs.map((o, i) => <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>{o}</span>) : <span style={{ color: "#94a3b8", fontSize: 11 }}>—</span>}</div></td>
+                  {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{s.phone || "—"}</td>}
+                  {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11 }}>{s.email || "—"}</td>}
+                  <td style={{ padding: "10px 14px", textAlign: "center" }}><span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${sc}15`, color: sc, textTransform: "uppercase", letterSpacing: "0.05em" }}>● {s.status || "active"}</span></td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 function TeamView({ isMobile, staff, businesses, onAdd, onUpdate, onDelete }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -8841,7 +8953,6 @@ export default function SuarezApp() {
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
-    { id: "team", label: "Team", icon: <span style={{ fontSize: 18 }}>👥</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
 
@@ -8868,8 +8979,8 @@ export default function SuarezApp() {
         if (gt?.email) { setGmailConnected(true); setGmailEmail(gt.email); }
       }} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
-      case "team": return <TeamView isMobile={isMobile} staff={staffMembers} businesses={businesses} onAdd={handleAddStaff} onUpdate={handleUpdateStaff} onDelete={handleDeleteStaff} />;
-      case "contacts": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Contacts" subtitle={`${contacts.length} contact${contacts.length !== 1 ? "s" : ""}`} isMobile={isMobile} icon="📇" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><ContactsTab isMobile={isMobile} contacts={contacts} onAdd={handleAddContact} onUpdate={handleUpdateContact} onDelete={handleDeleteContact} /></div></div>;
+      case "team": 
+      case "contacts": return <ContactsPageView isMobile={isMobile} contacts={contacts} staff={staffMembers} businesses={businesses} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} onAddStaff={handleAddStaff} onUpdateStaff={handleUpdateStaff} onDeleteStaff={handleDeleteStaff} />;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} />;
       default: return null;
     }
