@@ -7405,6 +7405,7 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete }
     { key: "videographer", label: "🎥 Videographer" },
     { key: "marketing", label: "📣 Marketing" },
     { key: "fbads", label: "📘 FB Ads" },
+    { key: "saas", label: "💼 SaaS Sales" },
   ];
 
   return (
