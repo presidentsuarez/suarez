@@ -449,6 +449,7 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
     { key: "basic", label: "Basic Info" },
     { key: "tier", label: "Permissions / Tier" },
     { key: "users", label: "Users" },
+    { key: "api", label: "API Usage" },
     { key: "uploads", label: "Upload Log" },
     { key: "settings", label: "Settings" },
   ];
@@ -660,6 +661,7 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
           </div>
         )}
         {profileTab === "settings" && <SettingsView isMobile={isMobile} session={session} />}
+        {profileTab === "api" && <APIUsageView isMobile={isMobile} session={session} />}
       </div>
     </div>
   );
@@ -5082,6 +5084,251 @@ function ScorecardTab({ isMobile, memberId, scorecards, onAdd, onDelete }) {
 /* ═══════════════════════════════════════════════════════════
    SETTINGS (Tabbed: Status, Organization, Users)
    ═══════════════════════════════════════════════════════════ */
+
+/* — API Usage View — */
+function APIUsageView({ isMobile, session }) {
+  const [apiTab, setApiTab] = useState("dashboard");
+  const [usageLogs, setUsageLogs] = useState([]);
+  const [gmailStats, setGmailStats] = useState({ tokenExpiry: null, email: null, scopes: null });
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const [{ data: logs }, { data: gmail }] = await Promise.all([
+        supabase.from("api_usage_log").select("*").order("created_at", { ascending: false }).limit(200),
+        supabase.from("gmail_tokens").select("email, expires_at, scopes").eq("user_id", session.user.id).maybeSingle(),
+      ]);
+      setUsageLogs(logs || []);
+      if (gmail) setGmailStats({ tokenExpiry: gmail.expires_at, email: gmail.email, scopes: gmail.scopes });
+      setLoading(false);
+    };
+    load();
+  }, [session]);
+
+  const services = [
+    { key: "dashboard", label: "📊 Dashboard" },
+    { key: "anthropic", label: "🤖 Anthropic" },
+    { key: "google", label: "🔵 Google" },
+    { key: "openphone", label: "📱 OpenPhone" },
+    { key: "supabase", label: "⚡ Supabase" },
+  ];
+
+  const PRICING = {
+    anthropic: { name: "Anthropic (Claude)", icon: "🤖", color: "#8b5cf6", details: [
+      { label: "Model", value: "claude-sonnet-4-6" },
+      { label: "Input", value: "$3.00 / 1M tokens" },
+      { label: "Output", value: "$15.00 / 1M tokens" },
+      { label: "Used by", value: "Alfred, Atlas (robot-chat)" },
+    ]},
+    google: { name: "Google Cloud", icon: "🔵", color: "#4285f4", details: [
+      { label: "Gmail API", value: "Free (quota-based)" },
+      { label: "Calendar API", value: "Free (quota-based)" },
+      { label: "Drive API", value: "Free (quota-based)" },
+      { label: "People API", value: "Free (quota-based)" },
+      { label: "Daily quota", value: "~250 units/sec, 1B/day" },
+      { label: "Connected", value: gmailStats.email || "Not connected" },
+      { label: "Scopes", value: gmailStats.scopes ? gmailStats.scopes.split(" ").length + " scopes active" : "None" },
+    ]},
+    openphone: { name: "OpenPhone (QUO)", icon: "📱", color: "#16a34a", details: [
+      { label: "API", value: "Included in plan" },
+      { label: "Webhooks", value: "7 events subscribed" },
+      { label: "Phone lines", value: "5 active numbers" },
+      { label: "Data flow", value: "Webhook → Supabase (real-time)" },
+    ]},
+    supabase: { name: "Supabase", icon: "⚡", color: "#3ecf8e", details: [
+      { label: "Plan", value: "Free tier" },
+      { label: "Database", value: "500 MB limit" },
+      { label: "Edge Functions", value: "500K invocations/mo" },
+      { label: "Auth", value: "50K MAU" },
+      { label: "Storage", value: "1 GB" },
+      { label: "Functions deployed", value: "5 (robot-chat, gmail-auth, gmail-callback, gmail-proxy, quo-proxy, quo-webhook)" },
+    ]},
+  };
+
+  // Aggregate usage by service
+  const byService = {};
+  usageLogs.forEach((l) => { byService[l.service] = (byService[l.service] || 0) + 1; });
+
+  // Aggregate by day for the last 7 days
+  const last7 = {};
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate() - i);
+    last7[d.toISOString().slice(0, 10)] = { anthropic: 0, google: 0, openphone: 0 };
+  }
+  usageLogs.forEach((l) => {
+    const day = l.created_at?.slice(0, 10);
+    if (last7[day]) last7[day][l.service] = (last7[day][l.service] || 0) + 1;
+  });
+
+  if (loading) return <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>;
+
+  return (
+    <>
+      <TabBar tabs={services} active={apiTab} onChange={setApiTab} isMobile={isMobile} />
+
+      {apiTab === "dashboard" && (
+        <>
+          {/* Overview cards */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
+            {[
+              { label: "Anthropic Calls", value: byService["anthropic"] || 0, color: "#8b5cf6", desc: "AI robot requests" },
+              { label: "Google Calls", value: byService["google"] || 0, color: "#4285f4", desc: "Gmail/Calendar/Drive" },
+              { label: "OpenPhone", value: byService["openphone"] || 0, color: "#16a34a", desc: "Webhook events" },
+              { label: "Total API Calls", value: usageLogs.length, color: "#0f172a", desc: "All services" },
+            ].map((c) => (
+              <div key={c.label} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px" }}>
+                <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.label}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'Playfair Display', serif", marginTop: 4 }}>{c.value}</div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{c.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Connected Services */}
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+            <SectionHeader text="Connected Services" />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+              {Object.entries(PRICING).map(([key, svc]) => (
+                <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, border: "1px solid #f1f5f9" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: `${svc.color}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{svc.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{svc.name}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{byService[key] || 0} calls logged</div>
+                  </div>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a" }} title="Connected" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* What's using your APIs */}
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+            <SectionHeader text="What's Using Your APIs" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+              {[
+                { emoji: "🤖", label: "Alfred & Atlas AI Suggestions", service: "Anthropic", trigger: "Opening a text thread auto-calls both robots", cost: "~$0.01-0.03 per suggestion pair" },
+                { emoji: "📨", label: "Gmail Inbox Load", service: "Google", trigger: "Opening Inbox → Email tab fetches 30 message headers + metadata", cost: "Free (quota)" },
+                { emoji: "📧", label: "Gmail Email Read", service: "Google", trigger: "Clicking an email fetches full body + marks as read (2 API calls)", cost: "Free (quota)" },
+                { emoji: "💬", label: "QUO Webhook Ingest", service: "OpenPhone", trigger: "Every incoming/outgoing text or call pushes data via webhook", cost: "Included in plan" },
+                { emoji: "💬", label: "QUO Send Message", service: "OpenPhone", trigger: "Sending a reply from the app calls the messages API", cost: "Included in plan" },
+                { emoji: "🔄", label: "Page Load Data", service: "Supabase", trigger: "App startup loads ~45 tables in parallel", cost: "Free tier" },
+              ].map((item, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "#f8fafc", borderRadius: 8 }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>{item.emoji}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: "#0f172a" }}>{item.label} <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400 }}>({item.service})</span></div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{item.trigger}</div>
+                    <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 2, fontWeight: 600 }}>{item.cost}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Service detail tabs */}
+      {apiTab !== "dashboard" && PRICING[apiTab] && (() => {
+        const svc = PRICING[apiTab];
+        const serviceLogs = usageLogs.filter((l) => l.service === apiTab);
+        return (
+          <>
+            <div style={{ background: `linear-gradient(135deg, ${svc.color}15, #f8fafc)`, borderRadius: 14, border: `1px solid ${svc.color}30`, padding: "18px 22px", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <span style={{ fontSize: 28 }}>{svc.icon}</span>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{svc.name}</div>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{serviceLogs.length} API calls logged</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+                {svc.details.map((d, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#fff", borderRadius: 8, border: "1px solid #f1f5f9" }}>
+                    <span style={{ fontSize: 12, color: "#475569" }}>{d.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {apiTab === "google" && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                <SectionHeader text="Why Google Usage Spiked" />
+                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                  <p style={{ margin: "0 0 10px" }}>When you connected Gmail, the app started making API calls every time you visit the Inbox. Here's what happens:</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {[
+                      { action: "Open Inbox", calls: "1 list call + 30 metadata fetches = 31 calls", freq: "Every time you visit Inbox → Email" },
+                      { action: "Read an email", calls: "1 get call + 1 modify call (mark read) = 2 calls", freq: "Every email you click" },
+                      { action: "Switch filter", calls: "Same as Open Inbox (31 calls)", freq: "Switching Inbox/Unread/Sent/Starred" },
+                      { action: "Refresh", calls: "Same as Open Inbox (31 calls)", freq: "Each refresh click" },
+                    ].map((row, i) => (
+                      <div key={i} style={{ padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
+                        <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 12 }}>{row.action}</div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>{row.calls}</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8" }}>{row.freq}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ margin: "12px 0 0", fontSize: 12, color: "#94a3b8" }}>Gmail API is free but quota-limited. The current usage is well within limits. To reduce calls, we could cache email headers locally and only refresh on demand.</p>
+                </div>
+              </div>
+            )}
+
+            {apiTab === "anthropic" && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                <SectionHeader text="Cost Breakdown" />
+                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                  <p style={{ margin: "0 0 10px" }}>Each text thread you open fires 2 API calls (Alfred + Atlas). Typical cost per suggestion pair:</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
+                      <span style={{ fontSize: 12 }}>~500 input tokens (conversation context)</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>$0.0015</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
+                      <span style={{ fontSize: 12 }}>~100 output tokens (draft reply)</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>$0.0015</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#faf5ff", borderRadius: 8, border: "1px solid #e9d5ff" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>Per suggestion pair (Alfred + Atlas)</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#7c3aed" }}>~$0.006</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#faf5ff", borderRadius: 8, border: "1px solid #e9d5ff" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>100 thread opens / day</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#7c3aed" }}>~$0.60/day</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recent logs */}
+            {serviceLogs.length > 0 && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+                <SectionHeader text="Recent Activity" />
+                <div style={{ maxHeight: 300, overflowY: "auto" }}>
+                  {serviceLogs.slice(0, 20).map((l, i) => (
+                    <div key={l.id || i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: i < 19 ? "1px solid #f8fafc" : "none", fontSize: 12 }}>
+                      <span style={{ color: "#475569" }}>{l.action || "API call"}</span>
+                      <span style={{ color: "#94a3b8", fontFamily: "'DM Mono', monospace", fontSize: 10 }}>{l.created_at ? new Date(l.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serviceLogs.length === 0 && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+                <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No usage logs recorded yet for {svc.name}. Logs will populate as the app makes API calls.</p>
+              </div>
+            )}
+          </>
+        );
+      })()}
+    </>
+  );
+}
 
 function SettingsView({ isMobile, session, activeTab, onTabChange }) {
   const tab = activeTab || "status";
