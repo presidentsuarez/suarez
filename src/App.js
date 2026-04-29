@@ -6491,7 +6491,25 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     } catch (e) {}
     fetchEmails("in:inbox");
   }, [gmailConnected]);
+
+  // Auto-refresh emails every 5 min while email tab is active
+  React.useEffect(() => {
+    if (inboxMode !== "email" || !gmailConnected) return;
+    const interval = setInterval(() => {
+      const q = [{ k: "inbox", q: "in:inbox" }, { k: "unread", q: "in:inbox is:unread" }, { k: "sent", q: "in:sent" }, { k: "starred", q: "is:starred" }].find((f) => f.k === filter)?.q || "in:inbox";
+      fetchEmails(q);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [inboxMode, gmailConnected, filter]);
+
   React.useEffect(() => { if (inboxMode === "texts" || inboxMode === "calls") fetchQuo(); }, [inboxMode]);
+
+  // Auto-refresh texts every 2 min while texts tab is active
+  React.useEffect(() => {
+    if (inboxMode !== "texts") return;
+    const interval = setInterval(() => fetchQuo(), 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [inboxMode]);
 
   // Auto-trigger AI suggestions when thread has messages
   const threadKey = selectedThread ? `${selectedThread.phoneNumberId}::${selectedThread.contact}` : null;
