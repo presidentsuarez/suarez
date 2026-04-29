@@ -954,7 +954,7 @@ function OverviewView({ isMobile, session, accounts, uploads, assets, transactio
               { label: "Finance", desc: "Money & wealth tracking", nav: "finance", icon: "💰" },
               { label: "Business", desc: "Entities & contacts", nav: "business", icon: "💼" },
               { label: "Life", desc: "Home, family & health", nav: "life", icon: "🌳" },
-              { label: "Outreach", desc: "Communications & social", nav: "outreach", icon: "📡" },
+              { label: "Inbox", desc: "Communications & social", nav: "outreach", icon: "📨" },
             ].map((a, i) => (
               <div key={i} onClick={() => onNavigate(a.nav)} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", cursor: "pointer", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1C3820"; e.currentTarget.style.background = "#f0fdf4"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#f8fafc"; }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12, fontSize: 20 }}>{a.icon}</div>
@@ -6255,10 +6255,21 @@ function OutreachDashboard({ isMobile }) {
   );
 }
 
+/* — Separate Inbox Views — */
+function EmailInboxView({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, robots }) {
+  return <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onConnect} onRefresh={onRefresh} contacts={[]} onAddContact={() => {}} robots={robots} forceMode="email" />;
+}
+function TextsInboxView({ isMobile, session, contacts, onAddContact, robots }) {
+  return <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={false} gmailEmail="" onConnect={() => {}} onRefresh={() => {}} contacts={contacts} onAddContact={onAddContact} robots={robots} forceMode="texts" />;
+}
+function CallsInboxView({ isMobile }) {
+  return <GmailInboxTab isMobile={isMobile} session={null} gmailConnected={false} gmailEmail="" onConnect={() => {}} onRefresh={() => {}} contacts={[]} onAddContact={() => {}} robots={[]} forceMode="calls" />;
+}
+
 /* — Gmail + QUO Inbox Tab — */
-function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact, robots }) {
-  const [inboxMode, setInboxModeRaw] = useState("email");
-  const setInboxMode = (mode) => { setInboxModeRaw(mode); window.location.hash = `#/growth/inbox/${mode}`; };
+function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, contacts, onAddContact, robots, forceMode }) {
+  const [inboxMode, setInboxModeRaw] = useState(forceMode || "email");
+  const setInboxMode = (mode) => { if (forceMode) return; setInboxModeRaw(mode); window.location.hash = `#/growth/inbox/${mode}`; };
   const [emails, setEmails] = useState([]);
   const [messages, setMessages] = useState([]);
   const [calls, setCalls] = useState([]);
@@ -6271,8 +6282,9 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
     else window.location.hash = "#/growth/inbox/email";
   };
 
-  // Restore state from URL on mount
+  // Restore state from URL on mount (only when not using forceMode)
   React.useEffect(() => {
+    if (forceMode) return;
     const hash = window.location.hash.replace("#/", "").split("/");
     if (hash[0] === "growth" && hash[1] === "inbox") {
       if (hash[2] === "texts" || hash[2] === "email" || hash[2] === "calls") setInboxModeRaw(hash[2]);
@@ -6504,6 +6516,9 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
 
   React.useEffect(() => { if (inboxMode === "texts" || inboxMode === "calls") fetchQuo(); }, [inboxMode]);
 
+  // Also load on mount if forceMode
+  React.useEffect(() => { if (forceMode === "texts" || forceMode === "calls") fetchQuo(); }, []);
+
   // Auto-refresh texts every 2 min while texts tab is active
   React.useEffect(() => {
     if (inboxMode !== "texts") return;
@@ -6585,12 +6600,14 @@ function GmailInboxTab({ isMobile, session, gmailConnected, gmailEmail, onConnec
 
   return (
     <>
-      {/* Mode toggle */}
+      {/* Mode toggle — only show if no forceMode */}
+      {!forceMode && (
       <div style={{ display: "flex", gap: 4, background: "#fff", borderRadius: 10, padding: 4, border: "1px solid #e2e8f0", marginBottom: 12, width: "fit-content" }}>
         {modes.map((m) => (
           <button key={m.k} onClick={() => setInboxMode(m.k)} style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: inboxMode === m.k ? "#1C3820" : "transparent", color: inboxMode === m.k ? "#D4C08C" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{m.l}</button>
         ))}
       </div>
+      )}
 
       {/* EMAIL VIEW */}
       {inboxMode === "email" && (
@@ -7350,12 +7367,14 @@ function SocialTab({ isMobile }) {
 }
 
 function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompany, onUpdateCompany, onDeleteCompany, contacts, onAddContact, onUpdateContact, onDeleteContact, session, robots, gmailConnected, gmailEmail, onGmailConnect, onGmailRefresh }) {
-  const tab = activeTab || "dashboard";
+  const tab = activeTab || "email";
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
 
   const sections = [
     { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
-    { key: "inbox", icon: "📨", label: "Inbox", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
+    { key: "email", icon: "📧", label: "Email", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
+    { key: "texts", icon: "💬", label: "Text", desc: "SMS conversations" },
+    { key: "calls", icon: "📞", label: "Calls", desc: "Call history" },
     { key: "social", icon: "📱", label: "Social", desc: "Posts & creator" },
   ];
 
@@ -7367,7 +7386,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
   const Sidebar = () => (
     <div style={{ width: 260, background: "#0f1f12", borderRight: "1px solid rgba(255,255,255,0.06)", overflow: "auto", flexShrink: 0, display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>📡 Outreach</h2>
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>📨 Inbox</h2>
         <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Communications Hub</div>
       </div>
       <div style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
@@ -7399,11 +7418,13 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         </>
       )}
       <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
-        <PageHeader title="Outreach" subtitle="Communications, social & brand" isMobile={isMobile} icon="📡" />
+        <PageHeader title="Inbox" subtitle="Email, text & calls" isMobile={isMobile} icon="📨" />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
           {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
-          {tab === "inbox" && <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} contacts={contacts} onAddContact={onAddContact} robots={robots} />}
+          {tab === "email" && <EmailInboxView isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} robots={robots} />}
+          {tab === "texts" && <TextsInboxView isMobile={isMobile} session={session} contacts={contacts} onAddContact={onAddContact} robots={robots} />}
+          {tab === "calls" && <CallsInboxView isMobile={isMobile} />}
           {tab === "emails" && <EmailsTab isMobile={isMobile} />}
           {tab === "social" && <SocialTab isMobile={isMobile} />}
         </div>
@@ -8818,7 +8839,7 @@ export default function SuarezApp() {
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
-    { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
+    { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
     { id: "team", label: "Team", icon: <span style={{ fontSize: 18 }}>👥</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
@@ -8829,7 +8850,7 @@ export default function SuarezApp() {
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
-    { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
+    { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
   ];
 
   const renderPage = () => {
