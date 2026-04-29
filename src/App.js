@@ -8350,7 +8350,7 @@ export default function SuarezApp() {
       supabase.from("funnel_presets").select("*").order("created_at", { ascending: true }),
       supabase.from("funnel_inflows").select("*").order("date", { ascending: false }),
       supabase.from("team_members").select("*").order("created_at", { ascending: true }),
-      supabase.from("app_users").select("*").order("created_at", { ascending: true }),
+      supabase.from("user_profiles").select("*").order("created_at", { ascending: true }),
       supabase.from("robots").select("*").order("created_at", { ascending: true }),
       supabase.from("staff_members").select("*").order("name", { ascending: true }),
       supabase.from("organizations").select("*"),
