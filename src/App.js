@@ -6966,6 +6966,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
     { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
     { key: "contacts", icon: "📇", label: "Contacts", desc: `${(contacts || []).length} contacts` },
     { key: "inbox", icon: "📨", label: "Inbox", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
+    { key: "social", icon: "📱", label: "Social", desc: "Posts & creator" },
   ];
 
   const navigate = (k) => {
