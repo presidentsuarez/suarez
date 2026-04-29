@@ -5951,7 +5951,6 @@ function LifeConsolidatedView(props) {
     { key: "chess", label: "♟️ Chess" },
     { key: "family", label: "👨‍👩‍👧‍👦 Family" },
     { key: "health", label: "💪 Health" },
-    { key: "calendar", label: "📅 Calendar" },
     { key: "links", label: "🔗 Links" },
   ];
 
@@ -5963,7 +5962,6 @@ function LifeConsolidatedView(props) {
         {tab === "chess" && <LifeEventsTab isMobile={isMobile} kids={props.kids || []} milestones={props.milestones || []} onAdd={props.onAddMilestone} onUpdate={props.onUpdateMilestone} onDelete={props.onDeleteMilestone} />}
         {tab === "family" && <FamilyView {...props} activeTab={familyTab} onTabChange={setFamilyTab} nested />}
         {tab === "health" && <HealthView {...props} activeTab={healthTab} onTabChange={setHealthTab} nested />}
-        {tab === "calendar" && <CalendarView isMobile={isMobile} events={props.calendarEvents} onAdd={props.onAddEvent} onDelete={props.onDeleteEvent} asTab />}
         {tab === "links" && <LinksTab isMobile={isMobile} links={props.savedLinks || []} onAdd={props.onAddLink} onDelete={props.onDeleteLink} />}
       </div>
     </div>
@@ -8952,6 +8950,7 @@ export default function SuarezApp() {
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
+    { id: "calendar", label: "Calendar", icon: <span style={{ fontSize: 18 }}>📅</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
@@ -8981,6 +8980,7 @@ export default function SuarezApp() {
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       case "team": 
       case "contacts": return <ContactsPageView isMobile={isMobile} contacts={contacts} staff={staffMembers} businesses={businesses} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} onAddStaff={handleAddStaff} onUpdateStaff={handleUpdateStaff} onDeleteStaff={handleDeleteStaff} />;
+      case "calendar": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle="Events & schedule" isMobile={isMobile} icon="📅" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><CalendarView isMobile={isMobile} events={calendarEvents} onAdd={handleAddEvent} onDelete={handleDeleteEvent} asTab /></div></div>;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} />;
       default: return null;
     }
