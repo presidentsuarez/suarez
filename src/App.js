@@ -767,7 +767,7 @@ function RobotsTab({ isMobile, robots, onAdd, onUpdate, onDelete, inputStyle }) 
         </div>
       )}
 
-      {activeRobots.map((r) => {
+      {robots.map((r) => {
         const isExpanded = expanded === r.id;
         const statusColors = { active: "#16a34a", paused: "#f59e0b", offline: "#94a3b8" };
         return (
@@ -827,11 +827,12 @@ function RobotChatModal({ robot, onClose, isMobile }) {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("robot-chat", {
-        body: { robot_id: robot.id, messages: newMessages },
+        body: { robot_id: robot.id, message: userMsg.content },
       });
       if (error) throw error;
-      if (data?.reply) {
-        setMessages((p) => [...p, { role: "assistant", content: data.reply }]);
+      const reply = data?.response || data?.reply || data?.content || "";
+      if (reply) {
+        setMessages((p) => [...p, { role: "assistant", content: reply }]);
       } else if (data?.error) {
         setMessages((p) => [...p, { role: "assistant", content: `⚠️ Error: ${data.error}${data.details ? ` — ${data.details}` : ""}` }]);
       }
