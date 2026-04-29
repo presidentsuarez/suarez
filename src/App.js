@@ -6964,7 +6964,6 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
 
   const sections = [
     { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
-    { key: "contacts", icon: "📇", label: "Contacts", desc: `${(contacts || []).length} contacts` },
     { key: "inbox", icon: "📨", label: "Inbox", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
     { key: "social", icon: "📱", label: "Social", desc: "Posts & creator" },
   ];
@@ -8418,6 +8417,7 @@ export default function SuarezApp() {
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
     { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Outreach", icon: <span style={{ fontSize: 18 }}>📡</span> },
+    { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
     { id: "team", label: "Team", icon: <span style={{ fontSize: 18 }}>👥</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
@@ -8446,6 +8446,7 @@ export default function SuarezApp() {
       }} />;
       case "clickup": return <ClickUpView isMobile={isMobile} spaces={cuSpaces} folders={cuFolders} lists={cuLists} tasks={cuTasks} onAddSpace={handleAddSpace} onUpdateSpace={handleUpdateSpace} onDeleteSpace={handleDeleteSpace} onAddFolder={handleAddFolder} onUpdateFolder={handleUpdateFolder} onDeleteFolder={handleDeleteFolder} onAddList={handleAddList} onUpdateList={handleUpdateList} onDeleteList={handleDeleteList} onAddTask={handleAddTask2} onUpdateTask={handleUpdateTask2} onDeleteTask={handleDeleteTask2} />;
       case "team": return <TeamView isMobile={isMobile} staff={staffMembers} businesses={businesses} onAdd={handleAddStaff} onUpdate={handleUpdateStaff} onDelete={handleDeleteStaff} />;
+      case "contacts": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Contacts" subtitle={`${contacts.length} contact${contacts.length !== 1 ? "s" : ""}`} isMobile={isMobile} icon="📇" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><ContactsTab isMobile={isMobile} contacts={contacts} onAdd={handleAddContact} onUpdate={handleUpdateContact} onDelete={handleDeleteContact} /></div></div>;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} />;
       default: return null;
     }
