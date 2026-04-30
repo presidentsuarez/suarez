@@ -451,6 +451,7 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
     { key: "tier", label: "Permissions / Tier" },
     { key: "users", label: "Users" },
     { key: "api", label: "API Usage" },
+    { key: "notepad", label: "Notepad" },
     { key: "uploads", label: "Upload Log" },
     { key: "settings", label: "Settings" },
   ];
@@ -663,6 +664,7 @@ function ProfileView({ session, isMobile, onSignOut, uploadLogs, teamMembers, ap
         )}
         {profileTab === "settings" && <SettingsView isMobile={isMobile} session={session} />}
         {profileTab === "api" && <APIUsageView isMobile={isMobile} session={session} />}
+        {profileTab === "notepad" && <NotepadTab isMobile={isMobile} session={session} />}
       </div>
     </div>
   );
@@ -5197,6 +5199,106 @@ function ScorecardTab({ isMobile, memberId, scorecards, onAdd, onDelete }) {
    SETTINGS (Tabbed: Status, Organization, Users)
    ═══════════════════════════════════════════════════════════ */
 
+/* — Notepad Tab — */
+function NotepadTab({ isMobile, session }) {
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ title: "", content: "", priority: "normal", status: "open" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  React.useEffect(() => {
+    supabase.from("notepad").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }).then(({ data }) => { setNotes(data || []); setLoading(false); });
+  }, [session]);
+
+  const resetForm = () => { setForm({ title: "", content: "", priority: "normal", status: "open" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.title.trim()) return;
+    if (editingId) {
+      const { data } = await supabase.from("notepad").update({ ...form, updated_at: new Date().toISOString() }).eq("id", editingId).select().single();
+      if (data) setNotes((p) => p.map((n) => n.id === editingId ? data : n));
+    } else {
+      const { data } = await supabase.from("notepad").insert({ ...form, user_id: session.user.id }).select().single();
+      if (data) setNotes((p) => [data, ...p]);
+    }
+    resetForm();
+  };
+  const startEdit = (n) => { setForm({ title: n.title, content: n.content || "", priority: n.priority || "normal", status: n.status || "open" }); setEditingId(n.id); setShowForm(true); };
+  const deleteNote = async (id) => { if (!window.confirm("Delete this note?")) return; await supabase.from("notepad").delete().eq("id", id); setNotes((p) => p.filter((n) => n.id !== id)); };
+  const toggleStatus = async (n) => {
+    const newStatus = n.status === "open" ? "done" : "open";
+    const { data } = await supabase.from("notepad").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", n.id).select().single();
+    if (data) setNotes((p) => p.map((x) => x.id === n.id ? data : x));
+  };
+
+  const priorityColors = { high: "#dc2626", normal: "#f59e0b", low: "#94a3b8" };
+
+  if (loading) return <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>;
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#64748b" }}>{notes.length} note{notes.length !== 1 ? "s" : ""}</span>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Note</GreenButton>
+      </div>
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+          <SectionHeader text={editingId ? "Edit Note" : "New Note"} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="What needs to be done?" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Details</label><textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Add details, context, links..." rows={4} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Priority</label><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="high">🔴 High</option><option value="normal">🟡 Normal</option><option value="low">⚪ Low</option></select></div>
+              <div style={{ flex: 1 }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="open">Open</option><option value="in-progress">In Progress</option><option value="done">Done</option></select></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={!form.title.trim()}>{editingId ? "Update" : "Add"}</GreenButton>
+          </div>
+        </div>
+      )}
+      {notes.length === 0 && !showForm ? (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📝</div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Notepad Empty</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Keep track of ideas, reminders, and things to build later.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {notes.map((n) => {
+            const pc = priorityColors[n.priority] || "#f59e0b";
+            const isDone = n.status === "done";
+            return (
+              <div key={n.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", opacity: isDone ? 0.5 : 1, borderLeft: `3px solid ${pc}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <button onClick={() => toggleStatus(n)} style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${isDone ? "#16a34a" : "#e2e8f0"}`, background: isDone ? "#16a34a" : "#fff", color: "#fff", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>{isDone ? "✓" : ""}</button>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", textDecoration: isDone ? "line-through" : "none" }}>{n.title}</div>
+                      {n.content && <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{n.content}</div>}
+                      <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${pc}15`, color: pc, textTransform: "uppercase" }}>{n.priority}</span>
+                        {n.status === "in-progress" && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#3b82f615", color: "#3b82f6" }}>IN PROGRESS</span>}
+                        <span style={{ fontSize: 9, color: "#94a3b8" }}>{n.created_at ? new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => startEdit(n)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                    <button onClick={() => deleteNote(n.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 /* — API Usage View — */
 function APIUsageView({ isMobile, session }) {
   const [apiTab, setApiTab] = useState("dashboard");
@@ -7535,6 +7637,7 @@ function FBAdsManagerTab({ isMobile, session }) {
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [datePreset, setDatePreset] = useState("last_30d");
   const [subTab, setSubTab] = useState("overview");
+  const [selectedAccount, setSelectedAccount] = useState("");
 
   React.useEffect(() => {
     const check = async () => {
@@ -7549,13 +7652,13 @@ function FBAdsManagerTab({ isMobile, session }) {
     window.open("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-auth", "fb-auth", "width=600,height=700");
   };
 
-  const fetchCampaigns = async () => {
+  const fetchCampaigns = async (acct) => {
     if (!fbToken) return;
     setLoadingCampaigns(true);
     try {
       const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-proxy", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: session.user.id, action: "campaigns" }),
+        body: JSON.stringify({ user_id: session.user.id, action: "campaigns", params: { ad_account_id: acct || selectedAccount } }),
       });
       const data = await res.json();
       setCampaigns(data?.data || []);
@@ -7563,12 +7666,12 @@ function FBAdsManagerTab({ isMobile, session }) {
     setLoadingCampaigns(false);
   };
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (acct) => {
     if (!fbToken) return;
     try {
       const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-proxy", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: session.user.id, action: "account_insights", params: { date_preset: datePreset } }),
+        body: JSON.stringify({ user_id: session.user.id, action: "account_insights", params: { date_preset: datePreset, ad_account_id: acct || selectedAccount } }),
       });
       const data = await res.json();
       setInsights(data?.data?.[0] || null);
@@ -7588,8 +7691,15 @@ function FBAdsManagerTab({ isMobile, session }) {
   };
 
   React.useEffect(() => {
-    if (fbConnected && fbToken) { fetchCampaigns(); fetchInsights(); fetchAdAccounts(); }
-  }, [fbConnected, datePreset]);
+    if (fbConnected && fbToken) {
+      if (!selectedAccount) setSelectedAccount(fbToken.ad_account_id || "");
+      fetchAdAccounts();
+    }
+  }, [fbConnected]);
+
+  React.useEffect(() => {
+    if (fbConnected && fbToken && selectedAccount) { fetchCampaigns(selectedAccount); fetchInsights(selectedAccount); }
+  }, [fbConnected, selectedAccount, datePreset]);
 
   if (loading) return <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>;
 
@@ -7624,7 +7734,14 @@ function FBAdsManagerTab({ isMobile, session }) {
           <div style={{ width: 36, height: 36, borderRadius: 8, background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 18, fontWeight: 800 }}>f</div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Connected as {fbToken.fb_user_name || "Unknown"}</div>
-            <div style={{ fontSize: 10, color: "#64748b" }}>Ad Account: {fbToken.ad_account_id || "Not set"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+              <span style={{ fontSize: 10, color: "#64748b" }}>Account:</span>
+              {adAccounts.length > 1 ? (
+                <select value={selectedAccount} onChange={(e) => { setSelectedAccount(e.target.value); supabase.from("fb_tokens").update({ ad_account_id: e.target.value }).eq("user_id", session.user.id); }} style={{ fontSize: 10, fontFamily: "'DM Mono', monospace", border: "1px solid #e2e8f0", borderRadius: 4, padding: "2px 6px", cursor: "pointer", color: "#0f172a", background: "#fff" }}>
+                  {adAccounts.map((a) => <option key={a.id} value={a.id}>{a.name || a.id}</option>)}
+                </select>
+              ) : <span style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{selectedAccount}</span>}
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
@@ -7670,7 +7787,7 @@ function FBAdsManagerTab({ isMobile, session }) {
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <span style={{ fontSize: 12, color: "#64748b" }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</span>
-            <button onClick={fetchCampaigns} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
+            <button onClick={() => fetchCampaigns(selectedAccount)} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
           </div>
           {loadingCampaigns ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : campaigns.length === 0 ? (
             <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
