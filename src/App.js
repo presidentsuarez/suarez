@@ -7450,7 +7450,7 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete, 
       <PageHeader title="Special Projects" subtitle="Creative production & campaigns" isMobile={isMobile} icon="🎬" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        {tab === "fbads" ? <FBAdsManagerTab isMobile={isMobile} session={session} /> : <CandidatePipeline isMobile={isMobile} category={tab} candidates={(candidates || []).filter((c) => c.category === tab)} onAdd={onAdd} onUpdate={onUpdate} onDelete={onDelete} />}
+        <CandidatePipeline isMobile={isMobile} category={tab} candidates={(candidates || []).filter((c) => c.category === tab)} onAdd={onAdd} onUpdate={onUpdate} onDelete={onDelete} />
       </div>
     </div>
   );
@@ -9169,6 +9169,7 @@ export default function SuarezApp() {
     { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
     { id: "calendar", label: "Calendar", icon: <span style={{ fontSize: 18 }}>📅</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
+    { id: "marketing", label: "Marketing", icon: <span style={{ fontSize: 18 }}>📣</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
 
@@ -9199,6 +9200,7 @@ export default function SuarezApp() {
       case "contacts": return <ContactsPageView isMobile={isMobile} contacts={contacts} staff={staffMembers} businesses={businesses} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} onAddStaff={handleAddStaff} onUpdateStaff={handleUpdateStaff} onDeleteStaff={handleDeleteStaff} />;
       case "calendar": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle="Events & schedule" isMobile={isMobile} icon="📅" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><CalendarView isMobile={isMobile} events={calendarEvents} onAdd={handleAddEvent} onDelete={handleDeleteEvent} asTab /></div></div>;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} session={session} />;
+      case "marketing": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Marketing" subtitle="Ads, campaigns & analytics" isMobile={isMobile} icon="📣" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><FBAdsManagerTab isMobile={isMobile} session={session} /></div></div>;
       default: return null;
     }
   };
