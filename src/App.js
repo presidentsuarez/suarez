@@ -7618,6 +7618,142 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete, 
 
 /* — Marketing View with Sidebar — */
 /* — Client Portal Admin View — */
+/* — Products & Services View — */
+function ProductsServicesView({ isMobile, session }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ type: "product", name: "", description: "", price: "", price_type: "one-time", category: "", status: "active", features: [], url: "", notes: "" });
+  const [featureInput, setFeatureInput] = useState("");
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  React.useEffect(() => {
+    supabase.from("products_services").select("*").order("created_at", { ascending: false }).then(({ data }) => { setItems(data || []); setLoading(false); });
+  }, []);
+
+  const resetForm = () => { setForm({ type: "product", name: "", description: "", price: "", price_type: "one-time", category: "", status: "active", features: [], url: "", notes: "" }); setFeatureInput(""); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    const payload = { ...form, price: form.price ? Number(form.price) : 0, features: JSON.stringify(form.features) };
+    if (editingId) {
+      const { data } = await supabase.from("products_services").update({ ...payload, updated_at: new Date().toISOString() }).eq("id", editingId).select().single();
+      if (data) setItems((p) => p.map((x) => x.id === editingId ? data : x));
+    } else {
+      const { data } = await supabase.from("products_services").insert({ ...payload, user_id: session.user.id }).select().single();
+      if (data) setItems((p) => [data, ...p]);
+    }
+    resetForm();
+  };
+  const startEdit = (item) => {
+    const f = Array.isArray(item.features) ? item.features : (typeof item.features === "string" ? JSON.parse(item.features || "[]") : []);
+    setForm({ type: item.type || "product", name: item.name, description: item.description || "", price: item.price?.toString() || "", price_type: item.price_type || "one-time", category: item.category || "", status: item.status || "active", features: f, url: item.url || "", notes: item.notes || "" });
+    setEditingId(item.id); setShowForm(true);
+  };
+  const deleteItem = async (id) => { if (!window.confirm("Delete?")) return; await supabase.from("products_services").delete().eq("id", id); setItems((p) => p.filter((x) => x.id !== id)); };
+  const addFeature = () => { if (featureInput.trim() && !form.features.includes(featureInput.trim())) { setForm({ ...form, features: [...form.features, featureInput.trim()] }); setFeatureInput(""); } };
+
+  const filtered = tab === "all" ? items : items.filter((i) => i.type === tab);
+  const products = items.filter((i) => i.type === "product");
+  const services = items.filter((i) => i.type === "service");
+
+  if (loading) return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Products & Services" subtitle="Your offerings" isMobile={isMobile} icon="🛍️" /><div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div></div>;
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Products & Services" subtitle={`${products.length} product${products.length !== 1 ? "s" : ""} · ${services.length} service${services.length !== 1 ? "s" : ""}`} isMobile={isMobile} icon="🛍️" />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+          <TabBar tabs={[{ key: "all", label: `All (${items.length})` }, { key: "product", label: `📦 Products (${products.length})` }, { key: "service", label: `⚡ Services (${services.length})` }]} active={tab} onChange={setTab} isMobile={isMobile} />
+          <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add New</GreenButton>
+        </div>
+
+        {showForm && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+            <SectionHeader text={editingId ? "Edit Item" : "New Product or Service"} />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Type *</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="product">📦 Product</option><option value="service">⚡ Service</option></select></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Name *</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Product or service name" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Price ($)</label><input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Pricing Type</label><select value={form.price_type} onChange={(e) => setForm({ ...form, price_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="one-time">One-Time</option><option value="monthly">Monthly</option><option value="annual">Annual</option><option value="hourly">Hourly</option><option value="per-project">Per Project</option><option value="custom">Custom / Quote</option></select></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. Real Estate, Consulting, SaaS" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Status</label><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="active">Active</option><option value="draft">Draft</option><option value="retired">Retired</option></select></div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What is this product or service? Who is it for?" rows={3} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Features / What's Included</label>
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <input value={featureInput} onChange={(e) => setFeatureInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFeature(); } }} placeholder="Add a feature..." style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+                  <button onClick={addFeature} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 12, fontWeight: 600, color: "#475569", cursor: "pointer" }}>Add</button>
+                </div>
+                {form.features.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{form.features.map((f, i) => <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "4px 10px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: 4 }}>✓ {f} <button onClick={() => setForm({ ...form, features: form.features.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12, padding: 0, lineHeight: 1 }}>×</button></span>)}</div>}
+              </div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>URL / Link</label><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Internal Notes</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="For your team only" style={inputStyle} className="sz-input" /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+              <GreenButton small onClick={handleSubmit} disabled={!form.name.trim()}>{editingId ? "Update" : "Add"}</GreenButton>
+            </div>
+          </div>
+        )}
+
+        {filtered.length === 0 && !showForm ? (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🛍️</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No {tab === "product" ? "Products" : tab === "service" ? "Services" : "Items"} Yet</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add your products and services to track offerings, pricing, and features.</p>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+            {filtered.map((item) => {
+              const features = Array.isArray(item.features) ? item.features : (typeof item.features === "string" ? JSON.parse(item.features || "[]") : []);
+              const statusColors = { active: "#16a34a", draft: "#f59e0b", retired: "#94a3b8" };
+              const sc = statusColors[item.status] || "#94a3b8";
+              const priceLabels = { "one-time": "", monthly: "/mo", annual: "/yr", hourly: "/hr", "per-project": "/project", custom: "" };
+              return (
+                <div key={item.id} style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                  <div style={{ padding: "4px 0 0", background: item.type === "product" ? "linear-gradient(90deg, #1C3820, #2d5a33)" : "linear-gradient(90deg, #3b82f6, #6366f1)", height: 4 }} />
+                  <div style={{ padding: "18px 22px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 14 }}>{item.type === "product" ? "📦" : "⚡"}</span>
+                          <span style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{item.name}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${sc}15`, color: sc, textTransform: "uppercase" }}>{item.status}</span>
+                          {item.category && <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: "#f8fafc", color: "#64748b" }}>{item.category}</span>}
+                          <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: item.type === "product" ? "#f0fdf4" : "#eff6ff", color: item.type === "product" ? "#16a34a" : "#3b82f6" }}>{item.type.toUpperCase()}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <button onClick={() => startEdit(item)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                        <button onClick={() => deleteItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                      </div>
+                    </div>
+                    {item.price > 0 && (
+                      <div style={{ fontSize: 22, fontWeight: 800, color: "#1C3820", fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>${Number(item.price).toLocaleString()}<span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}>{priceLabels[item.price_type] || ""}</span>{item.price_type === "custom" && <span style={{ fontSize: 11, fontWeight: 500, color: "#94a3b8" }}> (custom)</span>}</div>
+                    )}
+                    {item.description && <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 10 }}>{item.description}</div>}
+                    {features.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                        {features.map((f, i) => <div key={i} style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}><span style={{ color: "#16a34a", fontSize: 10 }}>✓</span> {f}</div>)}
+                      </div>
+                    )}
+                    {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#3b82f6", textDecoration: "none" }}>🔗 {item.url.length > 50 ? item.url.slice(0, 50) + "..." : item.url}</a>}
+                    {item.notes && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6, fontStyle: "italic" }}>📝 {item.notes}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* — Research View with Sidebar — */
 function ResearchView({ isMobile, session, activeTab, onTabChange }) {
   const tab = activeTab || "brand";
@@ -10333,6 +10469,7 @@ export default function SuarezApp() {
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
     { id: "marketing", label: "Marketing", icon: <span style={{ fontSize: 18 }}>📣</span> },
     { id: "research", label: "Research", icon: <span style={{ fontSize: 18 }}>🔬</span> },
+    { id: "products", label: "Products & Services", icon: <span style={{ fontSize: 18 }}>🛍️</span> },
     { id: "portal", label: "Client Portal", icon: <span style={{ fontSize: 18 }}>🔐</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
@@ -10367,6 +10504,7 @@ export default function SuarezApp() {
       case "marketing": return <MarketingView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "portal": return <ClientPortalAdminView isMobile={isMobile} session={session} contacts={contacts} onUpdateContact={handleUpdateContact} />;
       case "research": return <ResearchView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "products": return <ProductsServicesView isMobile={isMobile} session={session} />;
       default: return null;
     }
   };
