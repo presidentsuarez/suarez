@@ -7164,6 +7164,60 @@ function InboxTab({ isMobile, companies, onAddCompany }) {
   );
 }
 
+/* — Contact Portal Tab — */
+function ContactPortalTab({ contact: c, onUpdate }) {
+  const [portalEmailInput, setPortalEmailInput] = useState(c.portal_email || c.email || "");
+  const emailChanged = portalEmailInput !== (c.portal_email || c.email || "");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: "#fff", borderRadius: 14, border: `1px solid ${c.portal_access ? "#16a34a" : "#e2e8f0"}`, padding: "18px 22px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Client Portal Access</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Allow {c.name} to log into Suarez Global and view their client portal.</div>
+          </div>
+          <button onClick={() => {
+            const newVal = !c.portal_access;
+            const updates = { portal_access: newVal };
+            if (newVal) { updates.portal_enabled_at = new Date().toISOString(); updates.portal_email = portalEmailInput || c.email || ""; }
+            else { updates.portal_disabled_at = new Date().toISOString(); }
+            onUpdate(c.id, updates);
+          }} style={{ width: 50, height: 28, borderRadius: 14, border: "none", background: c.portal_access ? "#16a34a" : "#e2e8f0", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: c.portal_access ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }} />
+          </button>
+        </div>
+        {c.portal_access && (
+          <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "12px 16px", border: "1px solid #bbf7d0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><span style={{ color: "#16a34a", fontSize: 14 }}>✅</span><span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>Portal Active</span></div>
+            <div style={{ fontSize: 11, color: "#475569" }}>When {c.name} logs in with their portal email, they'll see their personalized client portal instead of the full app.</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+        <SectionHeader text="Portal Login Email" />
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>This is the email {c.name} will use to log into the client portal.</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={portalEmailInput} onChange={(e) => setPortalEmailInput(e.target.value)} placeholder="client@example.com" style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: `1px solid ${emailChanged ? "#f59e0b" : "#e2e8f0"}`, fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none", boxSizing: "border-box" }} className="sz-input" />
+          <GreenButton small onClick={() => onUpdate(c.id, { portal_email: portalEmailInput })} disabled={!emailChanged || !portalEmailInput.trim()}>Save</GreenButton>
+        </div>
+        {portalEmailInput && c.email && portalEmailInput !== c.email && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>⚠️ Portal email differs from contact email ({c.email})</div>}
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+        <SectionHeader text="Portal Details" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Status</span><span style={{ fontWeight: 600, color: c.portal_access ? "#16a34a" : "#dc2626" }}>{c.portal_access ? "Active" : "Disabled"}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Portal Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{c.portal_email || c.email || "Not set"}</span></div>
+          {c.portal_enabled_at && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Enabled</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{new Date(c.portal_enabled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>}
+          {c.portal_disabled_at && !c.portal_access && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Disabled</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{new Date(c.portal_disabled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* — Unified Contacts Tab — */
 function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
@@ -7279,55 +7333,7 @@ function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
             </div>
           )}
 
-          {contactTab === "portal" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {/* Portal Access Toggle */}
-              <div style={{ background: "#fff", borderRadius: 14, border: `1px solid ${c.portal_access ? "#16a34a" : "#e2e8f0"}`, padding: "18px 22px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Client Portal Access</div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Allow {c.name} to log into Suarez Global and view their client portal.</div>
-                  </div>
-                  <button onClick={() => {
-                    const newVal = !c.portal_access;
-                    const updates = { portal_access: newVal };
-                    if (newVal) { updates.portal_enabled_at = new Date().toISOString(); updates.portal_email = c.portal_email || c.email || ""; }
-                    else { updates.portal_disabled_at = new Date().toISOString(); }
-                    onUpdate(c.id, updates);
-                  }} style={{ width: 50, height: 28, borderRadius: 14, border: "none", background: c.portal_access ? "#16a34a" : "#e2e8f0", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
-                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: c.portal_access ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }} />
-                  </button>
-                </div>
-                {c.portal_access && (
-                  <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "12px 16px", border: "1px solid #bbf7d0" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><span style={{ color: "#16a34a", fontSize: 14 }}>✅</span><span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>Portal Active</span></div>
-                    <div style={{ fontSize: 11, color: "#475569" }}>When {c.name} logs in with their portal email, they'll see their personalized client portal instead of the full app.</div>
-                  </div>
-                )}
-              </div>
-
-              {/* Portal Email */}
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
-                <SectionHeader text="Portal Login Email" />
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>This is the email {c.name} will use to log into the client portal.</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input value={c.portal_email || c.email || ""} onChange={(e) => onUpdate(c.id, { portal_email: e.target.value })} placeholder="client@example.com" style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none", boxSizing: "border-box" }} className="sz-input" />
-                </div>
-                {c.portal_email && c.portal_email !== c.email && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>⚠️ Portal email differs from contact email ({c.email})</div>}
-              </div>
-
-              {/* Portal Status */}
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
-                <SectionHeader text="Portal Details" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Status</span><span style={{ fontWeight: 600, color: c.portal_access ? "#16a34a" : "#dc2626" }}>{c.portal_access ? "Active" : "Disabled"}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Portal Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{c.portal_email || c.email || "Not set"}</span></div>
-                  {c.portal_enabled_at && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Enabled</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{new Date(c.portal_enabled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>}
-                  {c.portal_disabled_at && !c.portal_access && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Disabled</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{new Date(c.portal_disabled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>}
-                </div>
-              </div>
-            </div>
-          )}
+          {contactTab === "portal" && <ContactPortalTab contact={c} onUpdate={onUpdate} />}
         </div>
       </>
     );
