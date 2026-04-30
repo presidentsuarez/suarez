@@ -7568,7 +7568,7 @@ function MarketingView({ isMobile, session, activeTab, onTabChange }) {
     { key: "google-ads", icon: "🔵", label: "Google Ads", desc: "Coming soon" },
     { key: "instagram", icon: "📸", label: "Instagram", desc: "Coming soon" },
     { key: "seo", icon: "🔍", label: "SEO", desc: "Coming soon" },
-    { key: "email-mktg", icon: "📧", label: "Email Marketing", desc: "Coming soon" },
+    { key: "email-mktg", icon: "📧", label: "Email Marketing", desc: "Constant Contact" },
     { key: "analytics", icon: "📊", label: "Analytics", desc: "Coming soon" },
   ];
 
@@ -7618,7 +7618,7 @@ function MarketingView({ isMobile, session, activeTab, onTabChange }) {
           {tab === "google-ads" && renderComingSoon("Google Ads", "🔵")}
           {tab === "instagram" && renderComingSoon("Instagram Marketing", "📸")}
           {tab === "seo" && renderComingSoon("SEO", "🔍")}
-          {tab === "email-mktg" && renderComingSoon("Email Marketing", "📧")}
+          {tab === "email-mktg" && <EmailMarketingTab isMobile={isMobile} session={session} />}
           {tab === "analytics" && renderComingSoon("Analytics Dashboard", "📊")}
         </div>
       </div>
@@ -7627,6 +7627,167 @@ function MarketingView({ isMobile, session, activeTab, onTabChange }) {
 }
 
 /* — FB Ads Manager Tab — */
+/* — Email Marketing (Constant Contact) Tab — */
+function EmailMarketingTab({ isMobile, session }) {
+  const [ccConnected, setCcConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [campaigns, setCampaigns] = useState([]);
+  const [contactLists, setContactLists] = useState([]);
+  const [account, setAccount] = useState(null);
+  const [loadingData, setLoadingData] = useState(false);
+  const [subTab, setSubTab] = useState("campaigns");
+
+  React.useEffect(() => {
+    const check = async () => {
+      const { data } = await supabase.from("cc_tokens").select("*").eq("user_id", session.user.id).maybeSingle();
+      if (data) setCcConnected(true);
+      setLoading(false);
+    };
+    check();
+  }, [session]);
+
+  const connectCC = () => {
+    window.open("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/cc-auth", "cc-auth", "width=600,height=700");
+  };
+
+  const callCC = async (action, params) => {
+    const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/cc-proxy", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: session.user.id, action, params }),
+    });
+    return res.json();
+  };
+
+  const fetchData = async () => {
+    setLoadingData(true);
+    try {
+      const [campaignData, listData, acctData] = await Promise.all([
+        callCC("campaigns"),
+        callCC("contact_lists"),
+        callCC("account"),
+      ]);
+      setCampaigns(campaignData?.campaigns || campaignData?.emails || []);
+      setContactLists(listData?.lists || []);
+      setAccount(acctData || null);
+    } catch (e) { console.error("CC fetch error:", e); }
+    setLoadingData(false);
+  };
+
+  React.useEffect(() => { if (ccConnected) fetchData(); }, [ccConnected]);
+
+  if (loading) return <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>;
+
+  if (!ccConnected) {
+    return (
+      <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>Connect Constant Contact</h3>
+        <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 20px", maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>Connect your Constant Contact account to manage email campaigns, track opens and clicks, and sync your contact lists.</p>
+        <GreenButton onClick={connectCC}>🔗 Connect Constant Contact</GreenButton>
+      </div>
+    );
+  }
+
+  const statusColors = { Draft: "#94a3b8", Scheduled: "#3b82f6", Sent: "#16a34a", Done: "#16a34a", Running: "#f59e0b", Error: "#dc2626" };
+
+  return (
+    <>
+      {/* Connected header */}
+      <div style={{ background: "linear-gradient(135deg, #0070c915, #f8fafc)", borderRadius: 14, border: "1px solid #0070c930", padding: "14px 20px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: "#0070c9", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16, fontWeight: 800 }}>CC</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Constant Contact Connected</div>
+            <div style={{ fontSize: 10, color: "#64748b" }}>{account?.organization_name || account?.first_name ? `${account.first_name || ""} ${account.last_name || ""} — ${account.organization_name || ""}`.trim() : "Account linked"}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button onClick={fetchData} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>↻ Refresh</button>
+          <button onClick={connectCC} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔄 Reconnect</button>
+        </div>
+      </div>
+
+      <TabBar tabs={[{ key: "campaigns", label: `📨 Campaigns (${campaigns.length})` }, { key: "lists", label: `📋 Lists (${contactLists.length})` }]} active={subTab} onChange={setSubTab} isMobile={isMobile} />
+
+      {loadingData && <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>}
+
+      {/* Campaigns */}
+      {subTab === "campaigns" && !loadingData && (
+        <>
+          {campaigns.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No campaigns found. Campaigns created in Constant Contact will appear here.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {campaigns.map((c) => {
+                const status = c.current_status || c.status || "Draft";
+                const sc = statusColors[status] || "#94a3b8";
+                const stats = c.activity || c.reporting_summary || {};
+                const opens = stats.opens || stats.unique_opens || 0;
+                const clicks = stats.clicks || stats.unique_clicks || 0;
+                const sends = stats.sends || stats.em_sends || 0;
+                const openRate = sends > 0 ? ((opens / sends) * 100).toFixed(1) : "—";
+                const clickRate = sends > 0 ? ((clicks / sends) * 100).toFixed(1) : "—";
+                return (
+                  <div key={c.campaign_id || c.campaign_activity_id || c.name} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{c.name || "(Untitled)"}</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
+                          {c.created_at || c.updated_at ? new Date(c.updated_at || c.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${sc}15`, color: sc, textTransform: "uppercase" }}>{status}</span>
+                    </div>
+                    {sends > 0 && (
+                      <div style={{ display: "flex", gap: 16, fontSize: 12 }}>
+                        <div><span style={{ color: "#94a3b8", fontSize: 9 }}>SENT</span><div style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{sends.toLocaleString()}</div></div>
+                        <div><span style={{ color: "#94a3b8", fontSize: 9 }}>OPENS</span><div style={{ fontWeight: 700, color: "#16a34a", fontFamily: "'DM Mono', monospace" }}>{opens.toLocaleString()} ({openRate}%)</div></div>
+                        <div><span style={{ color: "#94a3b8", fontSize: 9 }}>CLICKS</span><div style={{ fontWeight: 700, color: "#3b82f6", fontFamily: "'DM Mono', monospace" }}>{clicks.toLocaleString()} ({clickRate}%)</div></div>
+                        {stats.bounces > 0 && <div><span style={{ color: "#94a3b8", fontSize: 9 }}>BOUNCES</span><div style={{ fontWeight: 700, color: "#dc2626", fontFamily: "'DM Mono', monospace" }}>{stats.bounces}</div></div>}
+                        {stats.unsubscribes > 0 && <div><span style={{ color: "#94a3b8", fontSize: 9 }}>UNSUBS</span><div style={{ fontWeight: 700, color: "#f59e0b", fontFamily: "'DM Mono', monospace" }}>{stats.unsubscribes}</div></div>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Contact Lists */}
+      {subTab === "lists" && !loadingData && (
+        <>
+          {contactLists.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No contact lists found.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+              {contactLists.map((l) => (
+                <div key={l.list_id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{l.name}</div>
+                      {l.description && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{l.description}</div>}
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: "#1C3820", fontFamily: "'DM Mono', monospace" }}>{(l.membership_count || 0).toLocaleString()}</div>
+                      <div style={{ fontSize: 9, color: "#94a3b8" }}>contacts</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 function FBAdsManagerTab({ isMobile, session }) {
   const [fbConnected, setFbConnected] = useState(false);
   const [fbToken, setFbToken] = useState(null);
