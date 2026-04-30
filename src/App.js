@@ -7744,10 +7744,11 @@ function FBAdsManagerTab({ isMobile, session }) {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {dateOptions.map((d) => (
             <button key={d.k} onClick={() => setDatePreset(d.k)} style={{ padding: "4px 8px", borderRadius: 5, border: `1px solid ${datePreset === d.k ? "#1877f2" : "#e2e8f0"}`, background: datePreset === d.k ? "#1877f2" : "#fff", color: datePreset === d.k ? "#fff" : "#64748b", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>{d.l}</button>
           ))}
+          <button onClick={connectFB} style={{ padding: "4px 8px", borderRadius: 5, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 9, fontWeight: 700, cursor: "pointer", marginLeft: 4 }}>🔄 Reconnect</button>
         </div>
       </div>
 
