@@ -7626,12 +7626,14 @@ function ClientPortalAdminView({ isMobile, session, contacts, onUpdateContact })
 
   if (previewMode && previewClient) {
     return (
-      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <div style={{ background: "#f59e0b", padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>👁 Previewing as: {previewClient.name}</span>
-          <button onClick={() => { setPreviewMode(false); setPreviewClient(null); }} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.2)", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Exit Preview</button>
+      <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#f8fafc", overflow: "auto" }}>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 10000, background: "#f59e0b", padding: "8px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>👁 Preview Mode — Viewing as: {previewClient.name}</span>
+          <button onClick={() => { setPreviewMode(false); setPreviewClient(null); }} style={{ padding: "6px 16px", borderRadius: 6, border: "none", background: "#fff", color: "#f59e0b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Exit Preview</button>
         </div>
-        <ClientPortalView isMobile={isMobile} client={previewClient} isPreview />
+        <div style={{ paddingTop: 40 }}>
+          <ClientPortalView isMobile={isMobile} client={previewClient} isPreview />
+        </div>
       </div>
     );
   }
@@ -7709,61 +7711,142 @@ function ClientPortalAdminView({ isMobile, session, contacts, onUpdateContact })
 /* — Client Portal View (what clients see) — */
 function ClientPortalView({ isMobile, client, isPreview }) {
   const [tab, setTab] = useState("overview");
+  const firstName = client?.name?.split(" ")[0] || "Client";
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+
+  const portalNav = [
+    { key: "overview", icon: "◆", label: "Overview" },
+    { key: "documents", icon: "◈", label: "Documents" },
+    { key: "messages", icon: "◇", label: "Messages" },
+  ];
 
   return (
-    <>
-      <div style={{ background: "linear-gradient(135deg, #1C3820, #2d5a33)", padding: isMobile ? "24px 16px" : "32px 40px", color: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: "rgba(212,192,140,0.2)", border: "1px solid rgba(212,192,140,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: "#D4C08C" }}>{client?.name?.charAt(0) || "?"}</div>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>Welcome, {client?.name?.split(" ")[0] || "Client"}</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{client?.company || "Suarez Global Client Portal"}</div>
+    <div style={{ display: "flex", minHeight: "100dvh", background: "#faf9f7" }}>
+      {/* Portal Sidebar */}
+      {!isMobile && (
+        <div style={{ width: 260, background: "linear-gradient(180deg, #0f1a0f 0%, #1C3820 40%, #1a2e1a 100%)", color: "#fff", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+          <div style={{ padding: "32px 24px 24px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #D4C08C, #b8a472)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#1C3820" }}>SG</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#D4C08C", letterSpacing: "0.03em" }}>Suarez Global</div>
+                <div style={{ fontSize: 9, color: "rgba(212,192,140,0.4)", fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" }}>Client Portal</div>
+              </div>
+            </div>
+            <div style={{ padding: "14px 16px", background: "rgba(212,192,140,0.08)", borderRadius: 10, border: "1px solid rgba(212,192,140,0.1)", marginBottom: 24 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{client?.name || "Client"}</div>
+              <div style={{ fontSize: 10, color: "rgba(212,192,140,0.5)", marginTop: 2 }}>{client?.company || "Welcome"}</div>
+            </div>
+          </div>
+          <div style={{ padding: "0 12px", flex: 1 }}>
+            {portalNav.map((n) => (
+              <button key={n.key} onClick={() => setTab(n.key)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderRadius: 10, border: "none", background: tab === n.key ? "rgba(212,192,140,0.12)" : "transparent", color: tab === n.key ? "#D4C08C" : "rgba(255,255,255,0.35)", cursor: "pointer", marginBottom: 4, textAlign: "left", transition: "all 0.2s", fontSize: 13, fontWeight: tab === n.key ? 700 : 500, fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.02em" }}>
+                <span style={{ fontSize: 10, opacity: tab === n.key ? 1 : 0.5 }}>{n.icon}</span> {n.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ padding: "16px 24px 24px" }}>
+            <div style={{ borderTop: "1px solid rgba(212,192,140,0.1)", paddingTop: 16 }}>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", textAlign: "center", letterSpacing: "0.1em", textTransform: "uppercase" }}>Powered by Suarez Global</div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-        <TabBar tabs={[{ key: "overview", label: "📊 Overview" }, { key: "documents", label: "📄 Documents" }, { key: "messages", label: "💬 Messages" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+      {/* Portal Content */}
+      <div style={{ flex: 1, overflow: "auto" }}>
+        {/* Hero Header */}
+        <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #2d5a33 50%, #1C3820 100%)", padding: isMobile ? "32px 20px" : "40px 48px", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, right: 0, width: 300, height: 300, background: "radial-gradient(circle, rgba(212,192,140,0.06) 0%, transparent 70%)", borderRadius: "50%" }} />
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: isMobile ? 13 : 14, color: "rgba(212,192,140,0.6)", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{greeting}</div>
+            <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#fff", marginBottom: 4 }}>{firstName}</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", maxWidth: 500 }}>Welcome to your private portal. Here you'll find your documents, updates, and direct communication with our team.</div>
+          </div>
+          {/* Gold accent line */}
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, #D4C08C, transparent)" }} />
+        </div>
 
-        {tab === "overview" && (
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "22px 26px" }}>
-              <SectionHeader text="Your Information" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Name</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{client?.name || "—"}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{client?.portal_email || client?.email || "—"}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Phone</span><span style={{ fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{client?.phone || "—"}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Company</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{client?.company || "—"}</span></div>
+        {/* Mobile Nav */}
+        {isMobile && (
+          <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #e8e5de", padding: "0 4px" }}>
+            {portalNav.map((n) => (
+              <button key={n.key} onClick={() => setTab(n.key)} style={{ flex: 1, padding: "14px 8px", border: "none", borderBottom: `2px solid ${tab === n.key ? "#D4C08C" : "transparent"}`, background: "transparent", color: tab === n.key ? "#1C3820" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{n.label}</button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ padding: isMobile ? "24px 16px" : "36px 48px" }}>
+          {tab === "overview" && (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+              {/* Account Summary */}
+              <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e8e5de", padding: "28px 32px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 16 }}>Your Account</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#64748b" }}>Name</span><span style={{ fontWeight: 600, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{client?.name || "—"}</span></div>
+                  <div style={{ height: 1, background: "#f1f0ec" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#64748b" }}>Email</span><span style={{ fontWeight: 500, color: "#0f172a" }}>{client?.portal_email || client?.email || "—"}</span></div>
+                  <div style={{ height: 1, background: "#f1f0ec" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#64748b" }}>Phone</span><span style={{ fontWeight: 500, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{client?.phone || "—"}</span></div>
+                  <div style={{ height: 1, background: "#f1f0ec" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#64748b" }}>Company</span><span style={{ fontWeight: 500, color: "#0f172a" }}>{client?.company || "—"}</span></div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>Quick Actions</div>
+                {[
+                  { icon: "📄", label: "View Documents", desc: "Access shared files and reports", tab: "documents" },
+                  { icon: "💬", label: "Contact Your Team", desc: "Send a message to Suarez Global", tab: "messages" },
+                ].map((a) => (
+                  <button key={a.tab} onClick={() => setTab(a.tab)} style={{ padding: "20px 24px", borderRadius: 14, border: "1px solid #e8e5de", background: "#fff", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.2s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#D4C08C"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(212,192,140,0.15)"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e8e5de"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04)"; }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 12, background: "#faf9f7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{a.icon}</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{a.label}</div>
+                      <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{a.desc}</div>
+                    </div>
+                    <span style={{ marginLeft: "auto", color: "#D4C08C", fontSize: 16 }}>→</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Status Card */}
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1", background: "linear-gradient(135deg, #1C3820, #2d5a33)", borderRadius: 16, padding: "28px 32px", color: "#fff", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: -20, right: -20, width: 120, height: 120, background: "radial-gradient(circle, rgba(212,192,140,0.1) 0%, transparent 70%)", borderRadius: "50%" }} />
+                <div style={{ position: "relative" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>Your Relationship</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>Active Client</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>You have a dedicated team at Suarez Global ready to assist you. Use this portal to stay connected and access your resources.</div>
+                </div>
               </div>
             </div>
-            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "22px 26px" }}>
-              <SectionHeader text="Quick Actions" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button style={{ padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#0f172a", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}><span>📄</span> View Documents</button>
-                <button style={{ padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#0f172a", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}><span>💬</span> Send Message</button>
-                <button style={{ padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#0f172a", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}><span>📅</span> Schedule Meeting</button>
-              </div>
+          )}
+
+          {tab === "documents" && (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e8e5de", padding: "48px 32px", textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ width: 64, height: 64, borderRadius: 16, background: "#faf9f7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 16px" }}>📄</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>No Documents Yet</h3>
+              <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, maxWidth: 360, marginLeft: "auto", marginRight: "auto" }}>When your team shares documents, reports, or files with you, they'll appear here for easy access.</p>
             </div>
-          </div>
-        )}
+          )}
 
-        {tab === "documents" && (
-          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Documents Yet</h3>
-            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Documents shared with you will appear here.</p>
-          </div>
-        )}
+          {tab === "messages" && (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e8e5de", padding: "48px 32px", textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ width: 64, height: 64, borderRadius: 16, background: "#faf9f7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 auto 16px" }}>💬</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>Messages</h3>
+              <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, maxWidth: 360, marginLeft: "auto", marginRight: "auto" }}>Direct communication with your team at Suarez Global will be available here.</p>
+            </div>
+          )}
+        </div>
 
-        {tab === "messages" && (
-          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>💬</div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Messages Yet</h3>
-            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Messages from your team at Suarez Global will appear here.</p>
-          </div>
-        )}
+        {/* Footer */}
+        <div style={{ padding: "24px 48px", borderTop: "1px solid #e8e5de", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: "#c4c0b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>© {new Date().getFullYear()} Suarez Global · Private & Confidential</div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -10067,10 +10150,10 @@ export default function SuarezApp() {
   if (portalClient) {
     return (
       <><GlobalStyles />
-        <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "#f8fafc" }}>
+        <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "#faf9f7" }}>
           <ClientPortalView isMobile={isMobile} client={portalClient} />
-          <div style={{ padding: "12px 24px", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
-            <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>Sign Out</button>
+          <div style={{ padding: "12px 24px", textAlign: "center" }}>
+            <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#c4c0b8", fontSize: 11, cursor: "pointer", letterSpacing: "0.05em" }}>Sign Out</button>
           </div>
         </div>
       </>
