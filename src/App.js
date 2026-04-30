@@ -7226,7 +7226,7 @@ function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
           </div>
         </PageHeader>
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-          <TabBar tabs={[{ key: "history", label: "📜 History" }, { key: "info", label: "📋 Info" }, { key: "notes", label: "📝 Notes" }]} active={contactTab} onChange={setContactTab} isMobile={isMobile} />
+          <TabBar tabs={[{ key: "history", label: "📜 History" }, { key: "info", label: "📋 Info" }, { key: "notes", label: "📝 Notes" }, { key: "portal", label: "🔐 Client Portal" }]} active={contactTab} onChange={setContactTab} isMobile={isMobile} />
 
           {contactTab === "history" && (
             <>
@@ -7276,6 +7276,56 @@ function ContactsTab({ isMobile, contacts, onAdd, onUpdate, onDelete }) {
             <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
               <SectionHeader text="Notes" />
               <textarea value={c.notes || ""} onChange={(e) => onUpdate(c.id, { notes: e.target.value })} placeholder="Add notes about this contact..." rows={6} style={{ width: "100%", padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none", resize: "vertical", boxSizing: "border-box" }} className="sz-input" />
+            </div>
+          )}
+
+          {contactTab === "portal" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {/* Portal Access Toggle */}
+              <div style={{ background: "#fff", borderRadius: 14, border: `1px solid ${c.portal_access ? "#16a34a" : "#e2e8f0"}`, padding: "18px 22px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Client Portal Access</div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Allow {c.name} to log into Suarez Global and view their client portal.</div>
+                  </div>
+                  <button onClick={() => {
+                    const newVal = !c.portal_access;
+                    const updates = { portal_access: newVal };
+                    if (newVal) { updates.portal_enabled_at = new Date().toISOString(); updates.portal_email = c.portal_email || c.email || ""; }
+                    else { updates.portal_disabled_at = new Date().toISOString(); }
+                    onUpdate(c.id, updates);
+                  }} style={{ width: 50, height: 28, borderRadius: 14, border: "none", background: c.portal_access ? "#16a34a" : "#e2e8f0", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: c.portal_access ? 25 : 3, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.15)" }} />
+                  </button>
+                </div>
+                {c.portal_access && (
+                  <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "12px 16px", border: "1px solid #bbf7d0" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}><span style={{ color: "#16a34a", fontSize: 14 }}>✅</span><span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>Portal Active</span></div>
+                    <div style={{ fontSize: 11, color: "#475569" }}>When {c.name} logs in with their portal email, they'll see their personalized client portal instead of the full app.</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Portal Email */}
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+                <SectionHeader text="Portal Login Email" />
+                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>This is the email {c.name} will use to log into the client portal.</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={c.portal_email || c.email || ""} onChange={(e) => onUpdate(c.id, { portal_email: e.target.value })} placeholder="client@example.com" style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none", boxSizing: "border-box" }} className="sz-input" />
+                </div>
+                {c.portal_email && c.portal_email !== c.email && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>⚠️ Portal email differs from contact email ({c.email})</div>}
+              </div>
+
+              {/* Portal Status */}
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+                <SectionHeader text="Portal Details" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Status</span><span style={{ fontWeight: 600, color: c.portal_access ? "#16a34a" : "#dc2626" }}>{c.portal_access ? "Active" : "Disabled"}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Portal Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{c.portal_email || c.email || "Not set"}</span></div>
+                  {c.portal_enabled_at && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Enabled</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{new Date(c.portal_enabled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>}
+                  {c.portal_disabled_at && !c.portal_access && <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Disabled</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{new Date(c.portal_disabled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -7561,6 +7611,156 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete, 
 }
 
 /* — Marketing View with Sidebar — */
+/* — Client Portal Admin View — */
+function ClientPortalAdminView({ isMobile, session, contacts, onUpdateContact }) {
+  const [previewMode, setPreviewMode] = useState(false);
+  const [previewClient, setPreviewClient] = useState(null);
+  const portalClients = (contacts || []).filter((c) => c.portal_access);
+  const disabledClients = (contacts || []).filter((c) => !c.portal_access && c.portal_email);
+
+  if (previewMode && previewClient) {
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <div style={{ background: "#f59e0b", padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>👁 Previewing as: {previewClient.name}</span>
+          <button onClick={() => { setPreviewMode(false); setPreviewClient(null); }} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.2)", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Exit Preview</button>
+        </div>
+        <ClientPortalView isMobile={isMobile} client={previewClient} isPreview />
+      </div>
+    );
+  }
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Client Portal" subtitle={`${portalClients.length} active client${portalClients.length !== 1 ? "s" : ""}`} isMobile={isMobile} icon="🔐" />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+
+        {/* Active Clients */}
+        <SectionHeader text="Active Portal Clients" />
+        {portalClients.length === 0 ? (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center", marginBottom: 24 }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🔐</div>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 8px" }}>No clients have portal access yet.</p>
+            <p style={{ fontSize: 11, color: "#94a3b8", margin: 0 }}>Go to Contacts → click a contact → Client Portal tab → toggle access on.</p>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
+            {portalClients.map((c) => (
+              <div key={c.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#16a34a" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{c.portal_email || c.email}</div>
+                  </div>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", marginTop: 6 }} />
+                </div>
+                {c.company && <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>{c.company}</div>}
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => { setPreviewClient(c); setPreviewMode(true); }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #3b82f6", background: "#eff6ff", color: "#3b82f6", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>👁 Preview</button>
+                  <button onClick={() => onUpdateContact(c.id, { portal_access: false, portal_disabled_at: new Date().toISOString() })} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #dc2626", background: "#fef2f2", color: "#dc2626", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Disable</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Disabled Clients */}
+        {disabledClients.length > 0 && (
+          <>
+            <SectionHeader text="Previously Enabled" />
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 24 }}>
+              {disabledClients.map((c, i) => (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: i < disabledClients.length - 1 ? "1px solid #f1f5f9" : "none", opacity: 0.6 }}>
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{c.name}</span>
+                    <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 8 }}>{c.portal_email || c.email}</span>
+                  </div>
+                  <button onClick={() => onUpdateContact(c.id, { portal_access: true, portal_enabled_at: new Date().toISOString() })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Re-enable</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Portal Settings */}
+        <SectionHeader text="Portal Settings" />
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Portal URL</span><span style={{ fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>app.suarezglobal.com</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Active Clients</span><span style={{ fontWeight: 700, color: "#16a34a" }}>{portalClients.length}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Login Method</span><span style={{ fontWeight: 600, color: "#0f172a" }}>Email + Password (Supabase Auth)</span></div>
+            <div style={{ padding: "10px 14px", background: "#f8fafc", borderRadius: 8, marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>When a client logs in with their portal email, they see a dedicated client portal instead of the full app. The portal shows their overview, documents, and messages. Toggle access on/off from any contact's detail page.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Client Portal View (what clients see) — */
+function ClientPortalView({ isMobile, client, isPreview }) {
+  const [tab, setTab] = useState("overview");
+
+  return (
+    <>
+      <div style={{ background: "linear-gradient(135deg, #1C3820, #2d5a33)", padding: isMobile ? "24px 16px" : "32px 40px", color: "#fff" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: "rgba(212,192,140,0.2)", border: "1px solid rgba(212,192,140,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: "#D4C08C" }}>{client?.name?.charAt(0) || "?"}</div>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>Welcome, {client?.name?.split(" ")[0] || "Client"}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{client?.company || "Suarez Global Client Portal"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        <TabBar tabs={[{ key: "overview", label: "📊 Overview" }, { key: "documents", label: "📄 Documents" }, { key: "messages", label: "💬 Messages" }]} active={tab} onChange={setTab} isMobile={isMobile} />
+
+        {tab === "overview" && (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "22px 26px" }}>
+              <SectionHeader text="Your Information" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Name</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{client?.name || "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Email</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{client?.portal_email || client?.email || "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Phone</span><span style={{ fontWeight: 600, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{client?.phone || "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Company</span><span style={{ fontWeight: 600, color: "#0f172a" }}>{client?.company || "—"}</span></div>
+              </div>
+            </div>
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "22px 26px" }}>
+              <SectionHeader text="Quick Actions" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button style={{ padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#0f172a", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}><span>📄</span> View Documents</button>
+                <button style={{ padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#0f172a", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}><span>💬</span> Send Message</button>
+                <button style={{ padding: "12px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#0f172a", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10 }}><span>📅</span> Schedule Meeting</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "documents" && (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Documents Yet</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Documents shared with you will appear here.</p>
+          </div>
+        )}
+
+        {tab === "messages" && (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>💬</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Messages Yet</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Messages from your team at Suarez Global will appear here.</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function MarketingView({ isMobile, session, activeTab, onTabChange }) {
   const tab = activeTab || "fbads";
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
@@ -9854,6 +10054,23 @@ export default function SuarezApp() {
   if (authLoading) return (<><GlobalStyles /><div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", flexDirection: "column", gap: 16 }}><Spinner /><p style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'DM Sans', sans-serif" }}>Loading...</p></div></>);
   if (!session) return (<><GlobalStyles /><AuthScreen /></>);
 
+  // Check if user is a portal client (not a team member)
+  const isOrgMember = orgMembers.some((om) => om.user_id === session.user.id);
+  const portalClient = !isOrgMember ? contacts.find((c) => c.portal_access && (c.portal_email === session.user.email || c.email === session.user.email)) : null;
+
+  if (portalClient) {
+    return (
+      <><GlobalStyles />
+        <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "#f8fafc" }}>
+          <ClientPortalView isMobile={isMobile} client={portalClient} />
+          <div style={{ padding: "12px 24px", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
+            <button onClick={() => supabase.auth.signOut()} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>Sign Out</button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   const userEmail = session?.user?.email || "";
   const userName = session?.user?.user_metadata?.full_name || fmtUserName(userEmail);
   const initials = userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -9868,6 +10085,7 @@ export default function SuarezApp() {
     { id: "calendar", label: "Calendar", icon: <span style={{ fontSize: 18 }}>📅</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
     { id: "marketing", label: "Marketing", icon: <span style={{ fontSize: 18 }}>📣</span> },
+    { id: "portal", label: "Client Portal", icon: <span style={{ fontSize: 18 }}>🔐</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
 
@@ -9899,6 +10117,7 @@ export default function SuarezApp() {
       case "calendar": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle="Events & schedule" isMobile={isMobile} icon="📅" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><CalendarView isMobile={isMobile} events={calendarEvents} onAdd={handleAddEvent} onDelete={handleDeleteEvent} asTab /></div></div>;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} session={session} />;
       case "marketing": return <MarketingView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "portal": return <ClientPortalAdminView isMobile={isMobile} session={session} contacts={contacts} onUpdateContact={handleUpdateContact} />;
       default: return null;
     }
   };
