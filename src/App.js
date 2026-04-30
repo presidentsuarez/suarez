@@ -7456,6 +7456,74 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete, 
   );
 }
 
+/* — Marketing View with Sidebar — */
+function MarketingView({ isMobile, session, activeTab, onTabChange }) {
+  const tab = activeTab || "fbads";
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+
+  const sections = [
+    { key: "fbads", icon: "📘", label: "Facebook Ads", desc: "Campaigns & insights" },
+    { key: "google-ads", icon: "🔵", label: "Google Ads", desc: "Coming soon" },
+    { key: "instagram", icon: "📸", label: "Instagram", desc: "Coming soon" },
+    { key: "seo", icon: "🔍", label: "SEO", desc: "Coming soon" },
+    { key: "email-mktg", icon: "📧", label: "Email Marketing", desc: "Coming soon" },
+    { key: "analytics", icon: "📊", label: "Analytics", desc: "Coming soon" },
+  ];
+
+  const Sidebar = () => (
+    <div style={{ width: 240, height: "100%", background: "linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)", color: "#fff", display: "flex", flexDirection: "column", borderRight: "1px solid rgba(255,255,255,0.05)", flexShrink: 0, overflow: "auto" }}>
+      <div style={{ padding: "20px 16px 12px" }}>
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>📣 Marketing</h2>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Ads & Campaigns</div>
+      </div>
+      <div style={{ padding: "0 8px", flex: 1 }}>
+        {sections.map((s) => (
+          <button key={s.key} onClick={() => { onTabChange(s.key); if (isMobile) setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "none", background: tab === s.key ? "rgba(212,192,140,0.15)" : "transparent", color: tab === s.key ? "#D4C08C" : "rgba(255,255,255,0.5)", cursor: "pointer", marginBottom: 2, textAlign: "left", transition: "all 0.15s" }}>
+            <span style={{ fontSize: 16, width: 24, textAlign: "center" }}>{s.icon}</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: tab === s.key ? 700 : 500 }}>{s.label}</div>
+              <div style={{ fontSize: 9, opacity: 0.6 }}>{s.desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderComingSoon = (name, icon) => (
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>{icon}</div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>{name}</h3>
+      <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>This channel is coming soon. We'll integrate it when you're ready.</p>
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1a1a2e", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><Sidebar /></div>
+        </>
+      )}
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+        <PageHeader title="Marketing" subtitle="Ads, campaigns & analytics" isMobile={isMobile} icon="📣" />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
+          {tab === "fbads" && <FBAdsManagerTab isMobile={isMobile} session={session} />}
+          {tab === "google-ads" && renderComingSoon("Google Ads", "🔵")}
+          {tab === "instagram" && renderComingSoon("Instagram Marketing", "📸")}
+          {tab === "seo" && renderComingSoon("SEO", "🔍")}
+          {tab === "email-mktg" && renderComingSoon("Email Marketing", "📧")}
+          {tab === "analytics" && renderComingSoon("Analytics Dashboard", "📊")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* — FB Ads Manager Tab — */
 function FBAdsManagerTab({ isMobile, session }) {
   const [fbConnected, setFbConnected] = useState(false);
@@ -9200,7 +9268,7 @@ export default function SuarezApp() {
       case "contacts": return <ContactsPageView isMobile={isMobile} contacts={contacts} staff={staffMembers} businesses={businesses} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} onAddStaff={handleAddStaff} onUpdateStaff={handleUpdateStaff} onDeleteStaff={handleDeleteStaff} />;
       case "calendar": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle="Events & schedule" isMobile={isMobile} icon="📅" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><CalendarView isMobile={isMobile} events={calendarEvents} onAdd={handleAddEvent} onDelete={handleDeleteEvent} asTab /></div></div>;
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} session={session} />;
-      case "marketing": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Marketing" subtitle="Ads, campaigns & analytics" isMobile={isMobile} icon="📣" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><FBAdsManagerTab isMobile={isMobile} session={session} /></div></div>;
+      case "marketing": return <MarketingView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       default: return null;
     }
   };
