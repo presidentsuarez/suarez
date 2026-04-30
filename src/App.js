@@ -7638,6 +7638,9 @@ function EmailMarketingTab({ isMobile, session }) {
   const [subTab, setSubTab] = useState("campaigns");
   const [showComposer, setShowComposer] = useState(false);
   const [sending, setSending] = useState(false);
+  const [segments, setSegments] = useState([]);
+  const [ccContacts, setCcContacts] = useState([]);
+  const [syncing, setSyncing] = useState(false);
   const [composerForm, setComposerForm] = useState({
     name: "", subject: "", from_name: "", from_email: "", preheader: "",
     html_content: "", text_content: "", list_ids: [], schedule_date: "", schedule_time: "",
@@ -7670,14 +7673,18 @@ function EmailMarketingTab({ isMobile, session }) {
   const fetchData = async () => {
     setLoadingData(true);
     try {
-      const [campaignData, listData, acctData] = await Promise.all([
+      const [campaignData, listData, acctData, segmentData, contactData] = await Promise.all([
         callCC("campaigns"),
         callCC("contact_lists"),
         callCC("account"),
+        callCC("segments"),
+        callCC("contacts", { limit: 50 }),
       ]);
       setCampaigns(campaignData?.campaigns || campaignData?.emails || []);
       setContactLists(listData?.lists || []);
       setAccount(acctData || null);
+      setSegments(segmentData?.segments || []);
+      setCcContacts(contactData?.contacts || []);
       if (acctData && !composerForm.from_name) {
         setComposerForm((f) => ({ ...f, from_name: `${acctData.first_name || ""} ${acctData.last_name || ""}`.trim(), from_email: acctData.contact_email || "" }));
       }
@@ -7686,6 +7693,28 @@ function EmailMarketingTab({ isMobile, session }) {
   };
 
   React.useEffect(() => { if (ccConnected) fetchData(); }, [ccConnected]);
+
+  const syncContactsToCC = async (listId) => {
+    setSyncing(true);
+    try {
+      const { data: appContacts } = await supabase.from("contacts").select("*");
+      if (!appContacts || appContacts.length === 0) { alert("No contacts in your app to sync."); setSyncing(false); return; }
+      const importContacts = appContacts.filter((c) => c.email).map((c) => {
+        const names = (c.name || "").split(" ");
+        return { email: c.email, first_name: names[0] || "", last_name: names.slice(1).join(" ") || "", phone: c.phone || "", company: c.company || "" };
+      });
+      if (importContacts.length === 0) { alert("No contacts with email addresses to sync."); setSyncing(false); return; }
+      const importData = { import_data: importContacts, list_ids: listId ? [listId] : [] };
+      const result = await callCC("sync_contacts", { import_data: importData });
+      if (result?.activity_id) {
+        alert(`Syncing ${importContacts.length} contacts to Constant Contact! Activity ID: ${result.activity_id}`);
+        setTimeout(() => fetchData(), 3000);
+      } else {
+        alert("Sync result: " + JSON.stringify(result));
+      }
+    } catch (e) { alert("Sync error: " + String(e)); }
+    setSyncing(false);
+  };
 
   const toggleList = (listId) => {
     setComposerForm((f) => ({
@@ -7811,7 +7840,7 @@ function EmailMarketingTab({ isMobile, session }) {
         </div>
       )}
 
-      <TabBar tabs={[{ key: "campaigns", label: `📨 Campaigns (${campaigns.length})` }, { key: "lists", label: `📋 Lists (${contactLists.length})` }]} active={subTab} onChange={setSubTab} isMobile={isMobile} />
+      <TabBar tabs={[{ key: "campaigns", label: `📨 Campaigns (${campaigns.length})` }, { key: "lists", label: `📋 Lists (${contactLists.length})` }, { key: "segments", label: `🎯 Segments (${segments.length})` }, { key: "cc-contacts", label: `👤 Contacts (${ccContacts.length})` }]} active={subTab} onChange={setSubTab} isMobile={isMobile} />
 
       {loadingData && <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>}
 
@@ -7880,8 +7909,88 @@ function EmailMarketingTab({ isMobile, session }) {
                       <div style={{ fontSize: 9, color: "#94a3b8" }}>contacts</div>
                     </div>
                   </div>
+                  <button onClick={() => syncContactsToCC(l.list_id)} disabled={syncing} style={{ marginTop: 8, padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{syncing ? "Syncing..." : "⬆️ Sync App Contacts → This List"}</button>
                 </div>
               ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Segments */}
+      {subTab === "segments" && !loadingData && (
+        <>
+          {segments.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No segments found. Create segments in Constant Contact to target specific audiences.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+              {segments.map((s) => {
+                const statusColors = { ACTIVE: "#16a34a", INACTIVE: "#94a3b8", ERROR: "#dc2626" };
+                const sc = statusColors[s.status] || "#94a3b8";
+                return (
+                  <div key={s.segment_id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{s.name}</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{s.segment_criteria ? `${s.segment_criteria.length} criteria` : "No criteria"}</div>
+                      </div>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${sc}15`, color: sc }}>{s.status || "ACTIVE"}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, marginTop: 10, fontSize: 12 }}>
+                      <div><span style={{ color: "#94a3b8", fontSize: 9 }}>CONTACTS</span><div style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{(s.contact_count || 0).toLocaleString()}</div></div>
+                      {s.created_at && <div><span style={{ color: "#94a3b8", fontSize: 9 }}>CREATED</span><div style={{ fontWeight: 600, color: "#64748b" }}>{new Date(s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div></div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* CC Contacts */}
+      {subTab === "cc-contacts" && !loadingData && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 12, color: "#64748b" }}>{ccContacts.length} contacts in Constant Contact</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => syncContactsToCC(null)} disabled={syncing} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{syncing ? "Syncing..." : "⬆️ Sync All App Contacts → CC"}</button>
+            </div>
+          </div>
+          {ccContacts.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No contacts found in Constant Contact.</p>
+            </div>
+          ) : (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+                <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Name</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Email</th>
+                  {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Phone</th>}
+                  {!isMobile && <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Lists</th>}
+                  <th style={{ textAlign: "center", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Source</th>
+                </tr></thead>
+                <tbody>{ccContacts.map((c) => {
+                  const email = c.email_address?.address || c.email_addresses?.[0]?.address || "—";
+                  const name = `${c.first_name || ""} ${c.last_name || ""}`.trim() || email;
+                  const phone = c.phone_numbers?.[0]?.phone_number || "—";
+                  const lists = c.list_memberships || [];
+                  const source = c.source || "Unknown";
+                  return (
+                    <tr key={c.contact_id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                      <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1C3820", color: "#D4C08C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{name.charAt(0).toUpperCase()}</div><span style={{ fontWeight: 600, color: "#0f172a" }}>{name}</span></div></td>
+                      <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11 }}>{email}</td>
+                      {!isMobile && <td style={{ padding: "10px 14px", color: "#64748b", fontFamily: "'DM Mono', monospace", fontSize: 11 }}>{phone}</td>}
+                      {!isMobile && <td style={{ padding: "10px 14px" }}><span style={{ fontSize: 9, color: "#94a3b8" }}>{lists.length} list{lists.length !== 1 ? "s" : ""}</span></td>}
+                      <td style={{ padding: "10px 14px", textAlign: "center" }}><span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#f8fafc", color: "#64748b" }}>{source}</span></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
             </div>
           )}
         </>
