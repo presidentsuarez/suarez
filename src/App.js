@@ -7618,6 +7618,164 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete, 
 
 /* — Marketing View with Sidebar — */
 /* — Client Portal Admin View — */
+/* — Research View with Sidebar — */
+function ResearchView({ isMobile, session, activeTab, onTabChange }) {
+  const tab = activeTab || "brand";
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ title: "", content: "", url: "", tags: [] });
+  const [tagInput, setTagInput] = useState("");
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  React.useEffect(() => {
+    supabase.from("research_notes").select("*").order("created_at", { ascending: false }).then(({ data }) => { setNotes(data || []); setLoading(false); });
+  }, []);
+
+  const resetForm = () => { setForm({ title: "", content: "", url: "", tags: [] }); setTagInput(""); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.title.trim()) return;
+    if (editingId) {
+      const { data } = await supabase.from("research_notes").update({ ...form, tags: JSON.stringify(form.tags), category: tab, updated_at: new Date().toISOString() }).eq("id", editingId).select().single();
+      if (data) setNotes((p) => p.map((n) => n.id === editingId ? data : n));
+    } else {
+      const { data } = await supabase.from("research_notes").insert({ ...form, tags: JSON.stringify(form.tags), category: tab, user_id: session.user.id }).select().single();
+      if (data) setNotes((p) => [data, ...p]);
+    }
+    resetForm();
+  };
+  const startEdit = (n) => {
+    const t = Array.isArray(n.tags) ? n.tags : (typeof n.tags === "string" ? JSON.parse(n.tags || "[]") : []);
+    setForm({ title: n.title, content: n.content || "", url: n.url || "", tags: t });
+    setEditingId(n.id); setShowForm(true);
+  };
+  const deleteNote = async (id) => { if (!window.confirm("Delete?")) return; await supabase.from("research_notes").delete().eq("id", id); setNotes((p) => p.filter((n) => n.id !== id)); };
+  const addTag = () => { if (tagInput.trim() && !form.tags.includes(tagInput.trim())) { setForm({ ...form, tags: [...form.tags, tagInput.trim()] }); setTagInput(""); } };
+
+  const sections = [
+    { key: "brand", icon: "🏷️", label: "Brand Research", desc: "Identity & positioning" },
+    { key: "market", icon: "📊", label: "Market Research", desc: "Industry & trends" },
+    { key: "competitor", icon: "🎯", label: "Competitor Analysis", desc: "Landscape & intel" },
+    { key: "audience", icon: "👥", label: "Audience Research", desc: "Demographics & behavior" },
+    { key: "product", icon: "💡", label: "Product Research", desc: "Ideas & validation" },
+    { key: "tech", icon: "⚙️", label: "Tech & Tools", desc: "Software & systems" },
+  ];
+
+  const filteredNotes = notes.filter((n) => n.category === tab);
+
+  const Sidebar = () => (
+    <div style={{ width: 240, height: "100%", background: "linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)", color: "#fff", display: "flex", flexDirection: "column", borderRight: "1px solid rgba(255,255,255,0.05)", flexShrink: 0, overflow: "auto" }}>
+      <div style={{ padding: "20px 16px 12px" }}>
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>🔬 Research</h2>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Intelligence Hub</div>
+      </div>
+      <div style={{ padding: "0 8px", flex: 1 }}>
+        {sections.map((s) => {
+          const count = notes.filter((n) => n.category === s.key).length;
+          return (
+            <button key={s.key} onClick={() => { onTabChange(s.key); if (isMobile) setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "none", background: tab === s.key ? "rgba(212,192,140,0.15)" : "transparent", color: tab === s.key ? "#D4C08C" : "rgba(255,255,255,0.5)", cursor: "pointer", marginBottom: 2, textAlign: "left", transition: "all 0.15s" }}>
+              <span style={{ fontSize: 16, width: 24, textAlign: "center" }}>{s.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: tab === s.key ? 700 : 500 }}>{s.label}</div>
+                <div style={{ fontSize: 9, opacity: 0.6 }}>{s.desc}</div>
+              </div>
+              {count > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "rgba(212,192,140,0.2)", color: "#D4C08C" }}>{count}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const currentSection = sections.find((s) => s.key === tab) || sections[0];
+
+  return (
+    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1a1a2e", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><Sidebar /></div>
+        </>
+      )}
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+        <PageHeader title="Research" subtitle="Intelligence & analysis" isMobile={isMobile} icon="🔬" />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <span style={{ fontSize: 18, marginRight: 8 }}>{currentSection.icon}</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{currentSection.label}</span>
+              <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: 8 }}>{filteredNotes.length} item{filteredNotes.length !== 1 ? "s" : ""}</span>
+            </div>
+            <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Research</GreenButton>
+          </div>
+
+          {showForm && (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+              <SectionHeader text={editingId ? "Edit Research" : "New Research"} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
+                <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Research topic or finding..." style={inputStyle} className="sz-input" /></div>
+                <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes / Details</label><textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Key findings, insights, data points..." rows={5} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+                <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>URL / Source</label><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." style={inputStyle} className="sz-input" /></div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Tags</label>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                    <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="Add tag..." style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+                    <button onClick={addTag} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 12, fontWeight: 600, color: "#475569", cursor: "pointer" }}>Add</button>
+                  </div>
+                  {form.tags.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{form.tags.map((t, i) => <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "#eff6ff", color: "#3b82f6", border: "1px solid #bfdbfe", display: "flex", alignItems: "center", gap: 4 }}>{t} <button onClick={() => setForm({ ...form, tags: form.tags.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 12, padding: 0, lineHeight: 1 }}>×</button></span>)}</div>}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+                <GreenButton small onClick={handleSubmit} disabled={!form.title.trim()}>{editingId ? "Update" : "Save"}</GreenButton>
+              </div>
+            </div>
+          )}
+
+          {loading ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : filteredNotes.length === 0 && !showForm ? (
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>{currentSection.icon}</div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No {currentSection.label} Yet</h3>
+              <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Add research notes, findings, and insights to track your {currentSection.label.toLowerCase()}.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {filteredNotes.map((n) => {
+                const tags = Array.isArray(n.tags) ? n.tags : (typeof n.tags === "string" ? JSON.parse(n.tags || "[]") : []);
+                return (
+                  <div key={n.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{n.title}</div>
+                        {n.content && <div style={{ fontSize: 13, color: "#475569", marginTop: 6, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.content}</div>}
+                        {n.url && <a href={n.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#3b82f6", marginTop: 6, display: "inline-block", textDecoration: "none" }}>🔗 {n.url.length > 60 ? n.url.slice(0, 60) + "..." : n.url}</a>}
+                        <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          {tags.map((t, i) => <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: "#eff6ff", color: "#3b82f6", border: "1px solid #bfdbfe" }}>{t}</span>)}
+                          <span style={{ fontSize: 9, color: "#94a3b8" }}>{n.created_at ? new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <button onClick={() => startEdit(n)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                        <button onClick={() => deleteNote(n.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ClientPortalAdminView({ isMobile, session, contacts, onUpdateContact }) {
   const [previewMode, setPreviewMode] = useState(false);
   const [previewClient, setPreviewClient] = useState(null);
@@ -10174,6 +10332,7 @@ export default function SuarezApp() {
     { id: "calendar", label: "Calendar", icon: <span style={{ fontSize: 18 }}>📅</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
     { id: "marketing", label: "Marketing", icon: <span style={{ fontSize: 18 }}>📣</span> },
+    { id: "research", label: "Research", icon: <span style={{ fontSize: 18 }}>🔬</span> },
     { id: "portal", label: "Client Portal", icon: <span style={{ fontSize: 18 }}>🔐</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
@@ -10207,6 +10366,7 @@ export default function SuarezApp() {
       case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} session={session} />;
       case "marketing": return <MarketingView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "portal": return <ClientPortalAdminView isMobile={isMobile} session={session} contacts={contacts} onUpdateContact={handleUpdateContact} />;
+      case "research": return <ResearchView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       default: return null;
     }
   };
