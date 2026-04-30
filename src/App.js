@@ -7641,6 +7641,8 @@ function EmailMarketingTab({ isMobile, session }) {
   const [segments, setSegments] = useState([]);
   const [ccContacts, setCcContacts] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [composerForm, setComposerForm] = useState({
     name: "", subject: "", from_name: "", from_email: "", preheader: "",
     html_content: "", text_content: "", list_ids: [], schedule_date: "", schedule_time: "",
@@ -7760,6 +7762,8 @@ function EmailMarketingTab({ isMobile, session }) {
     }
     setSending(true);
     try {
+      const listIds = composerForm.list_ids.filter((id) => !id.startsWith("seg_"));
+      const segmentIds = composerForm.list_ids.filter((id) => id.startsWith("seg_")).map((id) => id.replace("seg_", ""));
       const campaign = {
         name: composerForm.name,
         email_campaign_activities: [{
@@ -7769,8 +7773,9 @@ function EmailMarketingTab({ isMobile, session }) {
           reply_to_email: composerForm.from_email,
           subject: composerForm.subject,
           preheader: composerForm.preheader || "",
-          html_content: `<html><body>${composerForm.html_content.replace(/\n/g, "<br>")}</body></html>`,
-          contact_list_ids: composerForm.list_ids,
+          html_content: composerForm.html_content.includes("<html") ? composerForm.html_content : `<html><body>${composerForm.html_content.replace(/\n/g, "<br>")}</body></html>`,
+          contact_list_ids: listIds.length > 0 ? listIds : undefined,
+          segment_ids: segmentIds.length > 0 ? segmentIds : undefined,
         }],
       };
       if (mode === "schedule" && composerForm.schedule_date && composerForm.schedule_time) {
@@ -7837,20 +7842,53 @@ function EmailMarketingTab({ isMobile, session }) {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email Content *</label>
-            <textarea value={composerForm.html_content} onChange={(e) => setComposerForm({ ...composerForm, html_content: e.target.value })} placeholder="Write your email here... Line breaks will be preserved. You can also paste HTML." rows={8} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} className="sz-input" />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#475569" }}>Email Content *</label>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => setShowPreview(false)} style={{ padding: "3px 10px", borderRadius: 5, border: `1px solid ${!showPreview ? "#1C3820" : "#e2e8f0"}`, background: !showPreview ? "#1C3820" : "#fff", color: !showPreview ? "#D4C08C" : "#64748b", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>✏️ Edit</button>
+                <button onClick={() => setShowPreview(true)} style={{ padding: "3px 10px", borderRadius: 5, border: `1px solid ${showPreview ? "#1C3820" : "#e2e8f0"}`, background: showPreview ? "#1C3820" : "#fff", color: showPreview ? "#D4C08C" : "#64748b", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>👁 Preview</button>
+              </div>
+            </div>
+            {!showPreview ? (
+              <textarea value={composerForm.html_content} onChange={(e) => setComposerForm({ ...composerForm, html_content: e.target.value })} placeholder="Write your email or paste HTML here..." rows={10} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6, fontFamily: composerForm.html_content.includes("<") ? "'DM Mono', monospace" : "'DM Sans', sans-serif", fontSize: composerForm.html_content.includes("<") ? 12 : 14 }} className="sz-input" />
+            ) : (
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, background: "#fff", minHeight: 200, overflow: "auto" }}>
+                {composerForm.html_content ? (
+                  <iframe srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Arial,sans-serif;margin:16px;color:#333;line-height:1.6}img{max-width:100%;height:auto}</style></head><body>${composerForm.html_content}</body></html>`} style={{ width: "100%", minHeight: 300, border: "none", borderRadius: 8 }} title="Email Preview" />
+                ) : (
+                  <div style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>Paste HTML or write content in the Edit tab to see a preview here.</div>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Send To (select lists) *</label>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {contactLists.map((l) => (
-                <button key={l.list_id} onClick={() => toggleList(l.list_id)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${composerForm.list_ids.includes(l.list_id) ? "#16a34a" : "#e2e8f0"}`, background: composerForm.list_ids.includes(l.list_id) ? "#16a34a" : "#fff", color: composerForm.list_ids.includes(l.list_id) ? "#fff" : "#475569", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                  {composerForm.list_ids.includes(l.list_id) ? "✓ " : ""}{l.name} ({l.membership_count || 0})
-                </button>
-              ))}
-              {contactLists.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>No lists found. Create lists in Constant Contact first.</span>}
-            </div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Send To (select lists and/or segments) *</label>
+            {contactLists.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>📋 Lists</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {contactLists.map((l) => (
+                    <button key={l.list_id} onClick={() => toggleList(l.list_id)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${composerForm.list_ids.includes(l.list_id) ? "#16a34a" : "#e2e8f0"}`, background: composerForm.list_ids.includes(l.list_id) ? "#16a34a" : "#fff", color: composerForm.list_ids.includes(l.list_id) ? "#fff" : "#475569", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      {composerForm.list_ids.includes(l.list_id) ? "✓ " : ""}{l.name} ({l.membership_count || 0})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {segments.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>🎯 Segments</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {segments.map((s) => (
+                    <button key={s.segment_id} onClick={() => { const sid = `seg_${s.segment_id}`; setComposerForm((f) => ({ ...f, list_ids: f.list_ids.includes(sid) ? f.list_ids.filter((id) => id !== sid) : [...f.list_ids, sid] })); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${composerForm.list_ids.includes(`seg_${s.segment_id}`) ? "#8b5cf6" : "#e2e8f0"}`, background: composerForm.list_ids.includes(`seg_${s.segment_id}`) ? "#8b5cf6" : "#fff", color: composerForm.list_ids.includes(`seg_${s.segment_id}`) ? "#fff" : "#475569", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      {composerForm.list_ids.includes(`seg_${s.segment_id}`) ? "✓ " : ""}🎯 {s.name} ({s.contact_count || 0})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {contactLists.length === 0 && segments.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>No lists or segments found. Create them in Constant Contact first.</span>}
           </div>
 
           <div style={{ marginBottom: 16, padding: "12px 16px", background: "#f8fafc", borderRadius: 10, border: "1px solid #f1f5f9" }}>
@@ -7863,11 +7901,35 @@ function EmailMarketingTab({ isMobile, session }) {
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
             <button onClick={() => setShowComposer(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <button onClick={async () => {
+              if (!composerForm.subject || !composerForm.html_content) { alert("Add subject and content first."); return; }
+              const testEmail = prompt("Send test to which email?", "javier@thesuarezcapital.com");
+              if (!testEmail) return;
+              setSendingTest(true);
+              try {
+                const campaign = {
+                  name: `[TEST] ${composerForm.name || "Untitled"}`,
+                  email_campaign_activities: [{
+                    format_type: 5,
+                    from_name: composerForm.from_name || "Javier Suarez",
+                    from_email: composerForm.from_email,
+                    reply_to_email: composerForm.from_email,
+                    subject: `[TEST] ${composerForm.subject}`,
+                    preheader: composerForm.preheader || "",
+                    html_content: composerForm.html_content.includes("<html") ? composerForm.html_content : `<html><body>${composerForm.html_content.replace(/\n/g, "<br>")}</body></html>`,
+                    personal_contact: { test_send_to: [testEmail] },
+                  }],
+                };
+                const result = await callCC("send_campaign", { campaign });
+                alert(result?.campaign_id ? `Test sent to ${testEmail}!` : "Result: " + JSON.stringify(result));
+              } catch (e) { alert("Test send error: " + String(e)); }
+              setSendingTest(false);
+            }} disabled={sendingTest} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #0891b2", background: "#ecfeff", fontSize: 12, fontWeight: 700, color: "#0891b2", cursor: "pointer" }}>{sendingTest ? "Sending..." : "📬 Send Test"}</button>
             <button onClick={() => handleSendCampaign("draft")} disabled={sending} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #94a3b8", background: "#f8fafc", fontSize: 12, fontWeight: 700, color: "#475569", cursor: "pointer" }}>{sending ? "..." : "💾 Save Draft"}</button>
             {composerForm.schedule_date && composerForm.schedule_time && (
               <button onClick={() => handleSendCampaign("schedule")} disabled={sending} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #3b82f6", background: "#eff6ff", fontSize: 12, fontWeight: 700, color: "#3b82f6", cursor: "pointer" }}>{sending ? "..." : "📅 Schedule"}</button>
             )}
-            <GreenButton small onClick={() => { if (window.confirm(`Send this campaign to ${composerForm.list_ids.length} list(s) now?`)) handleSendCampaign("send"); }} disabled={sending}>{sending ? "Sending..." : "🚀 Send Now"}</GreenButton>
+            <GreenButton small onClick={() => { if (window.confirm(`Send this campaign to ${composerForm.list_ids.length} list(s)/segment(s) now?`)) handleSendCampaign("send"); }} disabled={sending}>{sending ? "Sending..." : "🚀 Send Now"}</GreenButton>
           </div>
         </div>
       )}
