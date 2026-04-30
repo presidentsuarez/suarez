@@ -7697,22 +7697,54 @@ function EmailMarketingTab({ isMobile, session }) {
   const syncContactsToCC = async (listId) => {
     setSyncing(true);
     try {
-      const { data: appContacts } = await supabase.from("contacts").select("*");
-      if (!appContacts || appContacts.length === 0) { alert("No contacts in your app to sync."); setSyncing(false); return; }
+      const { data: appContacts } = await supabase.from("contacts").select("*").eq("email_opt_in", true);
+      if (!appContacts || appContacts.length === 0) { alert("No opted-in contacts to sync."); setSyncing(false); return; }
       const importContacts = appContacts.filter((c) => c.email).map((c) => {
         const names = (c.name || "").split(" ");
-        return { email: c.email, first_name: names[0] || "", last_name: names.slice(1).join(" ") || "", phone: c.phone || "", company: c.company || "" };
+        return {
+          email: c.email,
+          first_name: names[0] || "",
+          last_name: names.slice(1).join(" ") || "",
+          phone: c.phone || "",
+          company: c.company || "",
+          permission_to_send: "explicit",
+        };
       });
       if (importContacts.length === 0) { alert("No contacts with email addresses to sync."); setSyncing(false); return; }
       const importData = { import_data: importContacts, list_ids: listId ? [listId] : [] };
       const result = await callCC("sync_contacts", { import_data: importData });
       if (result?.activity_id) {
-        alert(`Syncing ${importContacts.length} contacts to Constant Contact! Activity ID: ${result.activity_id}`);
+        alert(`Syncing ${importContacts.length} opted-in contacts with explicit permission. Activity ID: ${result.activity_id}`);
         setTimeout(() => fetchData(), 3000);
       } else {
         alert("Sync result: " + JSON.stringify(result));
       }
     } catch (e) { alert("Sync error: " + String(e)); }
+    setSyncing(false);
+  };
+
+  // Pull unsubscribes from CC back into our system
+  const syncUnsubscribes = async () => {
+    setSyncing(true);
+    try {
+      const ccData = await callCC("contacts", { limit: 500 });
+      const ccList = ccData?.contacts || [];
+      let unsubCount = 0;
+      for (const cc of ccList) {
+        const email = cc.email_address?.address || cc.email_addresses?.[0]?.address;
+        if (!email) continue;
+        const status = cc.permission_to_send || cc.email_address?.permission_to_send;
+        if (status === "unsubscribed" || status === "temp_hold") {
+          const { data: match } = await supabase.from("contacts").select("id").eq("email", email).maybeSingle();
+          if (match) {
+            await supabase.from("contacts").update({ email_opt_in: false, unsubscribed_at: new Date().toISOString() }).eq("id", match.id);
+            unsubCount++;
+          }
+        }
+      }
+      alert(unsubCount > 0 ? `Updated ${unsubCount} contact(s) as unsubscribed.` : "All contacts are still opted in — no unsubscribes found.");
+      fetchData();
+    } catch (e) { alert("Unsubscribe sync error: " + String(e)); }
     setSyncing(false);
   };
 
@@ -7909,7 +7941,7 @@ function EmailMarketingTab({ isMobile, session }) {
                       <div style={{ fontSize: 9, color: "#94a3b8" }}>contacts</div>
                     </div>
                   </div>
-                  <button onClick={() => syncContactsToCC(l.list_id)} disabled={syncing} style={{ marginTop: 8, padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{syncing ? "Syncing..." : "⬆️ Sync App Contacts → This List"}</button>
+                  <button onClick={() => syncContactsToCC(l.list_id)} disabled={syncing} style={{ marginTop: 8, padding: "4px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>{syncing ? "Syncing..." : "⬆️ Sync Opted-In Contacts → This List"}</button>
                 </div>
               ))}
             </div>
@@ -7957,7 +7989,8 @@ function EmailMarketingTab({ isMobile, session }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontSize: 12, color: "#64748b" }}>{ccContacts.length} contacts in Constant Contact</span>
             <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => syncContactsToCC(null)} disabled={syncing} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{syncing ? "Syncing..." : "⬆️ Sync All App Contacts → CC"}</button>
+              <button onClick={() => syncContactsToCC(null)} disabled={syncing} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{syncing ? "Syncing..." : "⬆️ Sync Opted-In Contacts → CC"}</button>
+              <button onClick={syncUnsubscribes} disabled={syncing} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{syncing ? "..." : "⬇️ Pull Unsubscribes"}</button>
             </div>
           </div>
           {ccContacts.length === 0 ? (
