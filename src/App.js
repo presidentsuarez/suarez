@@ -7435,7 +7435,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
    SPECIAL PROJECTS — Editor, Videographer, Marketing
    ═══════════════════════════════════════════════════════════ */
 
-function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete }) {
+function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete, session }) {
   const [tab, setTab] = useState("editor");
   const tabs = [
     { key: "editor", label: "✂️ Editor" },
@@ -7450,9 +7450,226 @@ function SpecialProjectsView({ isMobile, candidates, onAdd, onUpdate, onDelete }
       <PageHeader title="Special Projects" subtitle="Creative production & campaigns" isMobile={isMobile} icon="🎬" />
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={tab} onChange={setTab} isMobile={isMobile} />
-        <CandidatePipeline isMobile={isMobile} category={tab} candidates={(candidates || []).filter((c) => c.category === tab)} onAdd={onAdd} onUpdate={onUpdate} onDelete={onDelete} />
+        {tab === "fbads" ? <FBAdsManagerTab isMobile={isMobile} session={session} /> : <CandidatePipeline isMobile={isMobile} category={tab} candidates={(candidates || []).filter((c) => c.category === tab)} onAdd={onAdd} onUpdate={onUpdate} onDelete={onDelete} />}
       </div>
     </div>
+  );
+}
+
+/* — FB Ads Manager Tab — */
+function FBAdsManagerTab({ isMobile, session }) {
+  const [fbConnected, setFbConnected] = useState(false);
+  const [fbToken, setFbToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [campaigns, setCampaigns] = useState([]);
+  const [insights, setInsights] = useState(null);
+  const [adAccounts, setAdAccounts] = useState([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+  const [datePreset, setDatePreset] = useState("last_30d");
+  const [subTab, setSubTab] = useState("overview");
+
+  React.useEffect(() => {
+    const check = async () => {
+      const { data } = await supabase.from("fb_tokens").select("*").eq("user_id", session.user.id).maybeSingle();
+      if (data) { setFbConnected(true); setFbToken(data); }
+      setLoading(false);
+    };
+    check();
+  }, [session]);
+
+  const connectFB = () => {
+    window.open("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-auth", "fb-auth", "width=600,height=700");
+  };
+
+  const fetchCampaigns = async () => {
+    if (!fbToken) return;
+    setLoadingCampaigns(true);
+    try {
+      const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: session.user.id, action: "campaigns" }),
+      });
+      const data = await res.json();
+      setCampaigns(data?.data || []);
+    } catch (e) { console.error("FB campaigns error:", e); }
+    setLoadingCampaigns(false);
+  };
+
+  const fetchInsights = async () => {
+    if (!fbToken) return;
+    try {
+      const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: session.user.id, action: "account_insights", params: { date_preset: datePreset } }),
+      });
+      const data = await res.json();
+      setInsights(data?.data?.[0] || null);
+    } catch (e) { console.error("FB insights error:", e); }
+  };
+
+  const fetchAdAccounts = async () => {
+    if (!fbToken) return;
+    try {
+      const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/fb-proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: session.user.id, action: "ad_accounts" }),
+      });
+      const data = await res.json();
+      setAdAccounts(data?.data || []);
+    } catch (e) { console.error("FB ad accounts error:", e); }
+  };
+
+  React.useEffect(() => {
+    if (fbConnected && fbToken) { fetchCampaigns(); fetchInsights(); fetchAdAccounts(); }
+  }, [fbConnected, datePreset]);
+
+  if (loading) return <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>;
+
+  if (!fbConnected) {
+    return (
+      <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📘</div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 8px" }}>Connect Facebook Ads</h3>
+        <p style={{ fontSize: 13, color: "#94a3b8", margin: "0 0 20px", maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>Connect your Facebook Ads account to track campaigns, spend, impressions, clicks, conversions, and ROAS right from your dashboard.</p>
+        <GreenButton onClick={connectFB}>🔗 Connect Facebook Ads</GreenButton>
+      </div>
+    );
+  }
+
+  const dateOptions = [
+    { k: "today", l: "Today" }, { k: "yesterday", l: "Yesterday" }, { k: "last_7d", l: "Last 7 Days" },
+    { k: "last_14d", l: "14 Days" }, { k: "last_30d", l: "30 Days" }, { k: "last_90d", l: "90 Days" },
+    { k: "this_month", l: "This Month" }, { k: "last_month", l: "Last Month" },
+  ];
+
+  const getActions = (actions, type) => {
+    if (!actions) return 0;
+    const a = actions.find((x) => x.action_type === type);
+    return a ? parseInt(a.value) : 0;
+  };
+
+  return (
+    <>
+      {/* Connected header */}
+      <div style={{ background: "linear-gradient(135deg, #1877f215, #f8fafc)", borderRadius: 14, border: "1px solid #1877f230", padding: "14px 20px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 18, fontWeight: 800 }}>f</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>Connected as {fbToken.fb_user_name || "Unknown"}</div>
+            <div style={{ fontSize: 10, color: "#64748b" }}>Ad Account: {fbToken.ad_account_id || "Not set"}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {dateOptions.map((d) => (
+            <button key={d.k} onClick={() => setDatePreset(d.k)} style={{ padding: "4px 8px", borderRadius: 5, border: `1px solid ${datePreset === d.k ? "#1877f2" : "#e2e8f0"}`, background: datePreset === d.k ? "#1877f2" : "#fff", color: datePreset === d.k ? "#fff" : "#64748b", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>{d.l}</button>
+          ))}
+        </div>
+      </div>
+
+      <TabBar tabs={[{ key: "overview", label: "📊 Overview" }, { key: "campaigns", label: "📋 Campaigns" }, { key: "accounts", label: "🏦 Accounts" }]} active={subTab} onChange={setSubTab} isMobile={isMobile} />
+
+      {/* Overview */}
+      {subTab === "overview" && (
+        <>
+          {insights ? (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
+              {[
+                { label: "SPEND", value: "$" + Number(insights.spend || 0).toFixed(2), color: "#dc2626" },
+                { label: "IMPRESSIONS", value: Number(insights.impressions || 0).toLocaleString(), color: "#3b82f6" },
+                { label: "CLICKS", value: Number(insights.clicks || 0).toLocaleString(), color: "#16a34a" },
+                { label: "CTR", value: Number(insights.ctr || 0).toFixed(2) + "%", color: "#f59e0b" },
+                { label: "CPC", value: "$" + Number(insights.cpc || 0).toFixed(2), color: "#8b5cf6" },
+                { label: "LEADS", value: getActions(insights.actions, "lead"), color: "#0891b2" },
+                { label: "PURCHASES", value: getActions(insights.actions, "purchase"), color: "#16a34a" },
+                { label: "ROAS", value: insights.purchase_roas?.[0]?.value ? Number(insights.purchase_roas[0].value).toFixed(2) + "x" : "—", color: "#f59e0b" },
+              ].map((c) => (
+                <div key={c.label} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px" }}>
+                  <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: c.color, fontFamily: "'DM Mono', monospace", marginTop: 4 }}>{c.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center", marginBottom: 16 }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No insights data for this period. Try a different date range.</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Campaigns */}
+      {subTab === "campaigns" && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontSize: 12, color: "#64748b" }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</span>
+            <button onClick={fetchCampaigns} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 10px", fontSize: 10, color: "#64748b", cursor: "pointer", fontWeight: 600 }}>↻ Refresh</button>
+          </div>
+          {loadingCampaigns ? <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div> : campaigns.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No campaigns found. Create campaigns in Facebook Ads Manager and they'll appear here.</p>
+            </div>
+          ) : (
+            <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}>
+                <thead><tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Campaign</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Status</th>
+                  <th style={{ textAlign: "left", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Objective</th>
+                  {!isMobile && <th style={{ textAlign: "right", padding: "10px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>Budget</th>}
+                </tr></thead>
+                <tbody>{campaigns.map((c) => {
+                  const statusColors = { ACTIVE: "#16a34a", PAUSED: "#f59e0b", ARCHIVED: "#94a3b8", DELETED: "#dc2626" };
+                  const sc = statusColors[c.status] || "#94a3b8";
+                  const budget = c.daily_budget ? "$" + (Number(c.daily_budget) / 100).toFixed(2) + "/day" : c.lifetime_budget ? "$" + (Number(c.lifetime_budget) / 100).toFixed(2) + " lifetime" : "—";
+                  return (
+                    <tr key={c.id} style={{ borderBottom: "1px solid #f8fafc" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "10px 14px", fontWeight: 600, color: "#0f172a" }}>{c.name}</td>
+                      <td style={{ padding: "10px 14px" }}><span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${sc}15`, color: sc }}>{c.status}</span></td>
+                      <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 11 }}>{c.objective || "—"}</td>
+                      {!isMobile && <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'DM Mono', monospace", color: "#0f172a" }}>{budget}</td>}
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Accounts */}
+      {subTab === "accounts" && (
+        <>
+          {adAccounts.length === 0 ? (
+            <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No ad accounts found.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+              {adAccounts.map((a) => {
+                const statusMap = { 1: { l: "ACTIVE", c: "#16a34a" }, 2: { l: "DISABLED", c: "#dc2626" }, 3: { l: "UNSETTLED", c: "#f59e0b" }, 7: { l: "PENDING_RISK_REVIEW", c: "#f59e0b" }, 9: { l: "IN_GRACE_PERIOD", c: "#f59e0b" } };
+                const st = statusMap[a.account_status] || { l: "UNKNOWN", c: "#94a3b8" };
+                return (
+                  <div key={a.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>{a.name || a.id}</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{a.id}</div>
+                      </div>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: `${st.c}15`, color: st.c }}>{st.l}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+                      <div><span style={{ color: "#94a3b8", fontSize: 10 }}>CURRENCY</span><div style={{ fontWeight: 700, color: "#0f172a" }}>{a.currency || "USD"}</div></div>
+                      <div><span style={{ color: "#94a3b8", fontSize: 10 }}>TOTAL SPENT</span><div style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>${(Number(a.amount_spent || 0) / 100).toFixed(2)}</div></div>
+                      {a.balance && <div><span style={{ color: "#94a3b8", fontSize: 10 }}>BALANCE</span><div style={{ fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>${(Number(a.balance) / 100).toFixed(2)}</div></div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -8981,7 +9198,7 @@ export default function SuarezApp() {
       case "team": 
       case "contacts": return <ContactsPageView isMobile={isMobile} contacts={contacts} staff={staffMembers} businesses={businesses} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} onAddStaff={handleAddStaff} onUpdateStaff={handleUpdateStaff} onDeleteStaff={handleDeleteStaff} />;
       case "calendar": return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Calendar" subtitle="Events & schedule" isMobile={isMobile} icon="📅" /><div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}><CalendarView isMobile={isMobile} events={calendarEvents} onAdd={handleAddEvent} onDelete={handleDeleteEvent} asTab /></div></div>;
-      case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} />;
+      case "projects": return <SpecialProjectsView isMobile={isMobile} candidates={projectCandidates} onAdd={handleAddCandidate} onUpdate={handleUpdateCandidate} onDelete={handleDeleteCandidate} session={session} />;
       default: return null;
     }
   };
