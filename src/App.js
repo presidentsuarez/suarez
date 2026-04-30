@@ -7636,10 +7636,19 @@ function EmailMarketingTab({ isMobile, session }) {
   const [account, setAccount] = useState(null);
   const [loadingData, setLoadingData] = useState(false);
   const [subTab, setSubTab] = useState("campaigns");
+  const [showComposer, setShowComposer] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [composerForm, setComposerForm] = useState({
+    name: "", subject: "", from_name: "", from_email: "", preheader: "",
+    html_content: "", text_content: "", list_ids: [], schedule_date: "", schedule_time: "",
+  });
+
+  // Use owner's user_id for API calls so org members can access
+  const apiUserId = "bf4a59c7-9929-4c35-b972-9e4dae31c1ba";
 
   React.useEffect(() => {
     const check = async () => {
-      const { data } = await supabase.from("cc_tokens").select("*").eq("user_id", session.user.id).maybeSingle();
+      const { data } = await supabase.from("cc_tokens").select("*").maybeSingle();
       if (data) setCcConnected(true);
       setLoading(false);
     };
@@ -7653,7 +7662,7 @@ function EmailMarketingTab({ isMobile, session }) {
   const callCC = async (action, params) => {
     const res = await fetch("https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/cc-proxy", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: session.user.id, action, params }),
+      body: JSON.stringify({ user_id: apiUserId, action, params }),
     });
     return res.json();
   };
@@ -7669,11 +7678,58 @@ function EmailMarketingTab({ isMobile, session }) {
       setCampaigns(campaignData?.campaigns || campaignData?.emails || []);
       setContactLists(listData?.lists || []);
       setAccount(acctData || null);
+      if (acctData && !composerForm.from_name) {
+        setComposerForm((f) => ({ ...f, from_name: `${acctData.first_name || ""} ${acctData.last_name || ""}`.trim(), from_email: acctData.contact_email || "" }));
+      }
     } catch (e) { console.error("CC fetch error:", e); }
     setLoadingData(false);
   };
 
   React.useEffect(() => { if (ccConnected) fetchData(); }, [ccConnected]);
+
+  const toggleList = (listId) => {
+    setComposerForm((f) => ({
+      ...f, list_ids: f.list_ids.includes(listId) ? f.list_ids.filter((id) => id !== listId) : [...f.list_ids, listId],
+    }));
+  };
+
+  const handleSendCampaign = async (mode) => {
+    if (!composerForm.name || !composerForm.subject || !composerForm.html_content || composerForm.list_ids.length === 0) {
+      alert("Please fill in campaign name, subject, content, and select at least one list."); return;
+    }
+    setSending(true);
+    try {
+      const campaign = {
+        name: composerForm.name,
+        email_campaign_activities: [{
+          format_type: 5,
+          from_name: composerForm.from_name || "Javier Suarez",
+          from_email: composerForm.from_email,
+          reply_to_email: composerForm.from_email,
+          subject: composerForm.subject,
+          preheader: composerForm.preheader || "",
+          html_content: `<html><body>${composerForm.html_content.replace(/\n/g, "<br>")}</body></html>`,
+          contact_list_ids: composerForm.list_ids,
+        }],
+      };
+      if (mode === "schedule" && composerForm.schedule_date && composerForm.schedule_time) {
+        campaign.email_campaign_activities[0].scheduled_date = `${composerForm.schedule_date}T${composerForm.schedule_time}:00.000Z`;
+      }
+      const result = await callCC("send_campaign", { campaign });
+      if (result?.campaign_id || result?.campaign_activity_id) {
+        alert(mode === "schedule" ? "Campaign scheduled!" : mode === "send" ? "Campaign sent!" : "Campaign saved as draft!");
+        setShowComposer(false);
+        setComposerForm({ name: "", subject: "", from_name: composerForm.from_name, from_email: composerForm.from_email, preheader: "", html_content: "", text_content: "", list_ids: [], schedule_date: "", schedule_time: "" });
+        fetchData();
+      } else {
+        console.error("CC create result:", result);
+        alert("Error: " + (result?.error_message || result?.error || JSON.stringify(result)));
+      }
+    } catch (e) { alert("Error: " + String(e)); }
+    setSending(false);
+  };
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
   if (loading) return <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>;
 
@@ -7688,11 +7744,10 @@ function EmailMarketingTab({ isMobile, session }) {
     );
   }
 
-  const statusColors = { Draft: "#94a3b8", Scheduled: "#3b82f6", Sent: "#16a34a", Done: "#16a34a", Running: "#f59e0b", Error: "#dc2626" };
+  const statusColors = { Draft: "#94a3b8", DRAFT: "#94a3b8", Scheduled: "#3b82f6", SCHEDULED: "#3b82f6", Sent: "#16a34a", SENT: "#16a34a", Done: "#16a34a", DONE: "#16a34a", Running: "#f59e0b", RUNNING: "#f59e0b", Error: "#dc2626" };
 
   return (
     <>
-      {/* Connected header */}
       <div style={{ background: "linear-gradient(135deg, #0070c915, #f8fafc)", borderRadius: 14, border: "1px solid #0070c930", padding: "14px 20px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 8, background: "#0070c9", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 16, fontWeight: 800 }}>CC</div>
@@ -7703,20 +7758,68 @@ function EmailMarketingTab({ isMobile, session }) {
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           <button onClick={fetchData} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>↻ Refresh</button>
-          <button onClick={connectCC} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔄 Reconnect</button>
+          <GreenButton small onClick={() => setShowComposer(!showComposer)}>✏️ New Campaign</GreenButton>
+          <button onClick={connectCC} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", color: "#92400e", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔄</button>
         </div>
       </div>
+
+      {/* Campaign Composer */}
+      {showComposer && (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "24px 28px", marginBottom: 16 }}>
+          <SectionHeader text="Create Campaign" />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Campaign Name *</label><input value={composerForm.name} onChange={(e) => setComposerForm({ ...composerForm, name: e.target.value })} placeholder="Q2 Investor Update" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Subject Line *</label><input value={composerForm.subject} onChange={(e) => setComposerForm({ ...composerForm, subject: e.target.value })} placeholder="Big news from Suarez Capital..." style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>From Name</label><input value={composerForm.from_name} onChange={(e) => setComposerForm({ ...composerForm, from_name: e.target.value })} placeholder="Javier Suarez" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>From Email</label><input value={composerForm.from_email} onChange={(e) => setComposerForm({ ...composerForm, from_email: e.target.value })} placeholder="javier@thesuarezcapital.com" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Preheader (preview text)</label><input value={composerForm.preheader} onChange={(e) => setComposerForm({ ...composerForm, preheader: e.target.value })} placeholder="Short preview text shown in inbox..." style={inputStyle} className="sz-input" /></div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email Content *</label>
+            <textarea value={composerForm.html_content} onChange={(e) => setComposerForm({ ...composerForm, html_content: e.target.value })} placeholder="Write your email here... Line breaks will be preserved. You can also paste HTML." rows={8} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} className="sz-input" />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Send To (select lists) *</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {contactLists.map((l) => (
+                <button key={l.list_id} onClick={() => toggleList(l.list_id)} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${composerForm.list_ids.includes(l.list_id) ? "#16a34a" : "#e2e8f0"}`, background: composerForm.list_ids.includes(l.list_id) ? "#16a34a" : "#fff", color: composerForm.list_ids.includes(l.list_id) ? "#fff" : "#475569", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                  {composerForm.list_ids.includes(l.list_id) ? "✓ " : ""}{l.name} ({l.membership_count || 0})
+                </button>
+              ))}
+              {contactLists.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>No lists found. Create lists in Constant Contact first.</span>}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16, padding: "12px 16px", background: "#f8fafc", borderRadius: 10, border: "1px solid #f1f5f9" }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Schedule (optional — leave blank to save as draft)</label>
+            <div style={{ display: "flex", gap: 12 }}>
+              <input type="date" value={composerForm.schedule_date} onChange={(e) => setComposerForm({ ...composerForm, schedule_date: e.target.value })} style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+              <input type="time" value={composerForm.schedule_time} onChange={(e) => setComposerForm({ ...composerForm, schedule_time: e.target.value })} style={{ ...inputStyle, flex: 1 }} className="sz-input" />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            <button onClick={() => setShowComposer(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <button onClick={() => handleSendCampaign("draft")} disabled={sending} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #94a3b8", background: "#f8fafc", fontSize: 12, fontWeight: 700, color: "#475569", cursor: "pointer" }}>{sending ? "..." : "💾 Save Draft"}</button>
+            {composerForm.schedule_date && composerForm.schedule_time && (
+              <button onClick={() => handleSendCampaign("schedule")} disabled={sending} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #3b82f6", background: "#eff6ff", fontSize: 12, fontWeight: 700, color: "#3b82f6", cursor: "pointer" }}>{sending ? "..." : "📅 Schedule"}</button>
+            )}
+            <GreenButton small onClick={() => { if (window.confirm(`Send this campaign to ${composerForm.list_ids.length} list(s) now?`)) handleSendCampaign("send"); }} disabled={sending}>{sending ? "Sending..." : "🚀 Send Now"}</GreenButton>
+          </div>
+        </div>
+      )}
 
       <TabBar tabs={[{ key: "campaigns", label: `📨 Campaigns (${campaigns.length})` }, { key: "lists", label: `📋 Lists (${contactLists.length})` }]} active={subTab} onChange={setSubTab} isMobile={isMobile} />
 
       {loadingData && <div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div>}
 
-      {/* Campaigns */}
       {subTab === "campaigns" && !loadingData && (
         <>
           {campaigns.length === 0 ? (
             <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: "32px", textAlign: "center" }}>
-              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No campaigns found. Campaigns created in Constant Contact will appear here.</p>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>No campaigns found. Click "New Campaign" to create your first one.</p>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -7757,7 +7860,6 @@ function EmailMarketingTab({ isMobile, session }) {
         </>
       )}
 
-      {/* Contact Lists */}
       {subTab === "lists" && !loadingData && (
         <>
           {contactLists.length === 0 ? (
