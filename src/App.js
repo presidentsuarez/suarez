@@ -81,6 +81,7 @@ const GlobalStyles = () => (
     @keyframes float2 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-25px,20px) scale(1.08); } 66% { transform: translate(15px,-25px) scale(0.92); } }
     @keyframes szPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
     .sz-pulse { animation: szPulse 1.4s ease-in-out infinite; color: #16a34a; font-size: 18px; }
+    .sz-hover-card:hover { border-color: #1C3820 !important; box-shadow: 0 2px 8px rgba(28,56,32,0.12) !important; }
   `}</style>
 );
 
@@ -7771,6 +7772,7 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [rightPaneTab, setRightPaneTab] = useState("tasks");
+  const [quoDraftToReview, setQuoDraftToReview] = useState(null);
   const messagesEndRef = React.useRef(null);
 
   // Load conversation + tasks + artifacts whenever selected robot changes
@@ -7981,9 +7983,10 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
               <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480, margin: "0 auto" }}>
                 {[
                   "Draft an HTML email in Constant Contact for the REAP analytics platform launch",
-                  "Create a task to follow up with Q3 prospects next Monday",
-                  "What products are in our catalog?",
-                  "Find contacts at companies in real estate",
+                  "Draft a Quo text from the assistant line to (813) 555-1234 confirming our 3pm meeting",
+                  "What does my pipeline look like? Show me open deals.",
+                  "Give me a summary of this month's spending",
+                  "What's on my calendar this week?",
                 ].map((suggestion) => (
                   <button key={suggestion} onClick={() => setInput(suggestion)} style={{ padding: "10px 14px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 12, color: "#475569", textAlign: "left", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>💬 {suggestion}</button>
                 ))}
@@ -8066,12 +8069,25 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
                     No drafts yet. Ask {selected.name} to draft a Constant Contact email.
                   </div>
                 ) : (
-                  artifacts.map((art) => <ArtifactCard key={art.id} artifact={art} />)
+                  artifacts.map((art) => <ArtifactCard key={art.id} artifact={art} onClick={() => art.artifact_type === "quo_text_draft" && art.status === "draft" ? setQuoDraftToReview(art) : null} />)
                 )}
               </>
             )}
           </div>
         </div>
+      )}
+      {quoDraftToReview && (
+        <QuoDraftModal
+          artifact={quoDraftToReview}
+          isMobile={isMobile}
+          session={session}
+          onClose={() => setQuoDraftToReview(null)}
+          onSent={async () => {
+            // Refresh artifacts after send/cancel
+            const { data } = await supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("robot_id", selected.id).order("created_at", { ascending: false }).limit(50);
+            if (data) setArtifacts(data);
+          }}
+        />
       )}
     </div>
   );
@@ -8108,9 +8124,9 @@ function AssistantBubble({ text, robotName, robotColor, artifacts = [] }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             {artifacts.map((a, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
-                <span style={{ fontSize: 16 }}>{a.type === "cc_email_draft" ? "📧" : a.type === "task" ? "✅" : "📎"}</span>
+                <span style={{ fontSize: 16 }}>{({ cc_email_draft: "📧", gmail_draft: "✉️", quo_text_draft: "💬", task: "✅", calendar_event: "📅", pipeline_deal: "🎯" })[a.type] || "📎"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>{a.type === "cc_email_draft" ? "CC Draft Created" : a.type === "task" ? "Task Created" : "Artifact"}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>{({ cc_email_draft: "CC Draft Created", gmail_draft: "Gmail Draft Created", quo_text_draft: "Quo Text Drafted", task: "Task Created", calendar_event: "Event Scheduled", pipeline_deal: "Deal Added" })[a.type] || "Artifact"}</div>
                   <div style={{ fontSize: 11, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>
                 </div>
                 {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none", padding: "4px 8px", border: "1px solid #16a34a", borderRadius: 6 }}>Open ↗</a>}
@@ -8126,9 +8142,19 @@ function AssistantBubble({ text, robotName, robotColor, artifacts = [] }) {
 function ToolCallCard({ toolCall }) {
   const labels = {
     create_cc_email_draft: { icon: "📧", label: "Drafting Constant Contact email" },
+    create_gmail_draft: { icon: "✉️", label: "Drafting Gmail email" },
+    draft_quo_text: { icon: "💬", label: "Drafting Quo text" },
     assign_task: { icon: "✅", label: "Creating task" },
     query_contacts: { icon: "🔍", label: "Searching contacts" },
     list_products_services: { icon: "🛍️", label: "Looking up products" },
+    query_pipeline_deals: { icon: "🎯", label: "Searching pipeline" },
+    add_pipeline_deal: { icon: "🎯", label: "Adding pipeline deal" },
+    update_deal_stage: { icon: "🎯", label: "Updating deal stage" },
+    query_calendar_events: { icon: "📅", label: "Checking calendar" },
+    create_calendar_event: { icon: "📅", label: "Scheduling event" },
+    query_transactions: { icon: "💰", label: "Searching transactions" },
+    get_financial_summary: { icon: "📊", label: "Calculating finance summary" },
+    query_accounts: { icon: "🏦", label: "Looking up accounts" },
   };
   const meta = labels[toolCall.tool] || { icon: "🔧", label: toolCall.tool };
   return (
@@ -8136,7 +8162,7 @@ function ToolCallCard({ toolCall }) {
       <span>{meta.icon}</span>
       <span style={{ fontWeight: 600 }}>{meta.label}</span>
       <span style={{ color: "#cbd5e1" }}>·</span>
-      <span style={{ fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toolCall.input?.name || toolCall.input?.search || toolCall.input?.subject || "executed"}</span>
+      <span style={{ fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toolCall.input?.name || toolCall.input?.deal_name || toolCall.input?.title || toolCall.input?.search || toolCall.input?.subject || toolCall.input?.to_number || toolCall.input?.body?.slice(0, 40) || "executed"}</span>
     </div>
   );
 }
@@ -8163,19 +8189,120 @@ function TaskCard({ task, onToggle, onDelete }) {
   );
 }
 
-function ArtifactCard({ artifact }) {
-  const icons = { cc_email_draft: "📧", task: "✅" };
+function ArtifactCard({ artifact, onClick }) {
+  const icons = { cc_email_draft: "📧", gmail_draft: "✉️", quo_text_draft: "💬", task: "✅", calendar_event: "📅", pipeline_deal: "🎯" };
+  const labels = { cc_email_draft: "CC Email", gmail_draft: "Gmail Draft", quo_text_draft: "Quo Text", task: "Task", calendar_event: "Event", pipeline_deal: "Pipeline Deal" };
+  const isQuoDraft = artifact.artifact_type === "quo_text_draft" && artifact.status === "draft";
+  const statusColors = { draft: { bg: "#fffbeb", color: "#f59e0b" }, sent: { bg: "#f0fdf4", color: "#16a34a" }, cancelled: { bg: "#fef2f2", color: "#dc2626" }, created: { bg: "#f0fdf4", color: "#16a34a" } };
+  const sc = statusColors[artifact.status] || statusColors.created;
+
   return (
-    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 12px", marginBottom: 8 }}>
+    <div onClick={isQuoDraft ? onClick : undefined} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 12px", marginBottom: 8, cursor: isQuoDraft ? "pointer" : "default", transition: "all 0.15s" }} className={isQuoDraft ? "sz-hover-card" : ""}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <span style={{ fontSize: 16 }}>{icons[artifact.artifact_type] || "📎"}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{labels[artifact.artifact_type] || artifact.artifact_type}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", lineHeight: 1.3 }}>{artifact.title}</div>
-          {artifact.summary && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{artifact.summary}</div>}
-          <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", textTransform: "uppercase" }}>{artifact.status || "created"}</span>
+          {artifact.summary && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{artifact.summary}</div>}
+          <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: sc.bg, color: sc.color, textTransform: "uppercase" }}>{artifact.status || "created"}</span>
             <span style={{ fontSize: 10, color: "#94a3b8" }}>{new Date(artifact.created_at).toLocaleDateString()}</span>
-            {artifact.external_url && <a href={artifact.external_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", marginLeft: "auto", textDecoration: "none" }}>Open ↗</a>}
+            {artifact.external_url && <a onClick={(e) => e.stopPropagation()} href={artifact.external_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", marginLeft: "auto", textDecoration: "none" }}>Open ↗</a>}
+            {isQuoDraft && <span style={{ fontSize: 10, fontWeight: 700, color: "#1C3820", marginLeft: "auto" }}>Review & Send →</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Quo Draft Review/Send Modal — */
+function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
+  const payload = artifact.payload || {};
+  const [body, setBody] = useState(payload.body || "");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const charCount = body.length;
+  const segments = Math.ceil(charCount / 160) || 1;
+
+  const handleSend = async () => {
+    if (!body.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("quo-send-draft", {
+        body: {
+          artifact_id: artifact.id,
+          user_id: session.user.id,
+          body_override: body.trim() !== payload.body ? body.trim() : null,
+        },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) {
+        setError(data.error + (data.details ? ` — ${typeof data.details === "string" ? data.details : JSON.stringify(data.details).slice(0, 200)}` : ""));
+        setSending(false);
+        return;
+      }
+      onSent?.();
+      onClose();
+    } catch (err) {
+      setError(err.message || String(err));
+      setSending(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!window.confirm("Discard this draft?")) return;
+    await supabase.from("robot_artifacts").update({ status: "cancelled" }).eq("id", artifact.id);
+    onSent?.();
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 540, maxHeight: isMobile ? "100dvh" : "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", padding: "18px 22px", color: "#fff", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.08em" }}>📱 Review & Send Quo Text</div>
+            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 28, height: 28, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{payload.from_label || "Phone Line"}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{payload.from_number} → {payload.to_number}</div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>
+          {payload.context && (
+            <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 14px", marginBottom: 14, borderLeft: "3px solid #D4C08C" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Context</div>
+              <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>{payload.context}</div>
+            </div>
+          )}
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Message</label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={6}
+            disabled={sending}
+            style={{ width: "100%", padding: "12px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 10, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "vertical", lineHeight: 1.5 }}
+            className="sz-input"
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 10, color: "#94a3b8" }}>
+            <span>{charCount} chars · {segments} segment{segments !== 1 ? "s" : ""}</span>
+            {body.trim() !== (payload.body || "").trim() && <span style={{ color: "#f59e0b", fontWeight: 700 }}>● edited</span>}
+          </div>
+          {error && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#dc2626", fontSize: 12 }}>⚠️ {error}</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 8, justifyContent: "space-between", flexShrink: 0, background: "#f8fafc" }}>
+          <button onClick={handleCancel} disabled={sending} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 12, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer" }}>Discard</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} disabled={sending} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 12, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer" }}>Close</button>
+            <button onClick={handleSend} disabled={sending || !body.trim()} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: sending || !body.trim() ? "#cbd5e1" : "#1C3820", color: "#fff", fontSize: 13, fontWeight: 700, cursor: sending || !body.trim() ? "not-allowed" : "pointer" }}>{sending ? "Sending..." : "📤 Send Now"}</button>
           </div>
         </div>
       </div>
