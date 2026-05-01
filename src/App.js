@@ -7754,6 +7754,222 @@ function ProductsServicesView({ isMobile, session }) {
   );
 }
 
+/* — Sales Pipeline View — */
+const PIPELINE_STAGES = [
+  { key: "lead", label: "Lead", color: "#94a3b8", bg: "#f1f5f9" },
+  { key: "qualified", label: "Qualified", color: "#3b82f6", bg: "#eff6ff" },
+  { key: "proposal", label: "Proposal", color: "#8b5cf6", bg: "#f5f3ff" },
+  { key: "negotiation", label: "Negotiation", color: "#f59e0b", bg: "#fffbeb" },
+  { key: "won", label: "Won", color: "#16a34a", bg: "#f0fdf4" },
+  { key: "lost", label: "Lost", color: "#ef4444", bg: "#fef2f2" },
+];
+
+function SalesPipelineView({ isMobile, session }) {
+  const [deals, setDeals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("kanban");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ deal_name: "", contact_name: "", contact_email: "", contact_phone: "", company: "", stage: "lead", value: "", probability: "", expected_close_date: "", source: "", notes: "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  React.useEffect(() => {
+    supabase.from("sales_pipeline").select("*").order("created_at", { ascending: false }).then(({ data }) => { setDeals(data || []); setLoading(false); });
+  }, []);
+
+  const resetForm = () => { setForm({ deal_name: "", contact_name: "", contact_email: "", contact_phone: "", company: "", stage: "lead", value: "", probability: "", expected_close_date: "", source: "", notes: "" }); setEditingId(null); setShowForm(false); };
+
+  const handleSubmit = async () => {
+    if (!form.deal_name.trim()) return;
+    const payload = {
+      deal_name: form.deal_name.trim(),
+      contact_name: form.contact_name || null,
+      contact_email: form.contact_email || null,
+      contact_phone: form.contact_phone || null,
+      company: form.company || null,
+      stage: form.stage,
+      value: form.value ? Number(form.value) : 0,
+      probability: form.probability ? Number(form.probability) : 0,
+      expected_close_date: form.expected_close_date || null,
+      source: form.source || null,
+      notes: form.notes || null,
+    };
+    if (editingId) {
+      const { data } = await supabase.from("sales_pipeline").update({ ...payload, updated_at: new Date().toISOString() }).eq("id", editingId).select().single();
+      if (data) setDeals((p) => p.map((x) => x.id === editingId ? data : x));
+    } else {
+      const { data } = await supabase.from("sales_pipeline").insert({ ...payload, user_id: session.user.id }).select().single();
+      if (data) setDeals((p) => [data, ...p]);
+    }
+    resetForm();
+  };
+
+  const startEdit = (deal) => {
+    setForm({
+      deal_name: deal.deal_name || "",
+      contact_name: deal.contact_name || "",
+      contact_email: deal.contact_email || "",
+      contact_phone: deal.contact_phone || "",
+      company: deal.company || "",
+      stage: deal.stage || "lead",
+      value: deal.value?.toString() || "",
+      probability: deal.probability?.toString() || "",
+      expected_close_date: deal.expected_close_date || "",
+      source: deal.source || "",
+      notes: deal.notes || "",
+    });
+    setEditingId(deal.id); setShowForm(true);
+  };
+
+  const deleteDeal = async (id) => { if (!window.confirm("Delete this deal?")) return; await supabase.from("sales_pipeline").delete().eq("id", id); setDeals((p) => p.filter((x) => x.id !== id)); };
+
+  const moveStage = async (id, newStage) => {
+    const { data } = await supabase.from("sales_pipeline").update({ stage: newStage, updated_at: new Date().toISOString() }).eq("id", id).select().single();
+    if (data) setDeals((p) => p.map((x) => x.id === id ? data : x));
+  };
+
+  const totalPipeline = deals.filter((d) => d.stage !== "lost" && d.stage !== "won").reduce((s, d) => s + Number(d.value || 0), 0);
+  const totalWon = deals.filter((d) => d.stage === "won").reduce((s, d) => s + Number(d.value || 0), 0);
+  const weightedPipeline = deals.filter((d) => d.stage !== "lost" && d.stage !== "won").reduce((s, d) => s + (Number(d.value || 0) * Number(d.probability || 0) / 100), 0);
+
+  if (loading) return <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}><PageHeader title="Sales Pipeline" subtitle="Deals & opportunities" isMobile={isMobile} icon="🎯" /><div style={{ textAlign: "center", padding: "40px 0" }}><Spinner /></div></div>;
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Sales Pipeline" subtitle={`${deals.length} deal${deals.length !== 1 ? "s" : ""}`} isMobile={isMobile} icon="🎯" />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
+        {/* Stats */}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Open Pipeline</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#1C3820", fontFamily: "'DM Mono', monospace" }}>${Number(totalPipeline).toLocaleString()}</div>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Weighted Pipeline</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#3b82f6", fontFamily: "'DM Mono', monospace" }}>${Number(weightedPipeline).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "16px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Won (All Time)</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#16a34a", fontFamily: "'DM Mono', monospace" }}>${Number(totalWon).toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+          <TabBar tabs={[{ key: "kanban", label: "📋 Kanban" }, { key: "list", label: "📃 List" }]} active={view} onChange={setView} isMobile={isMobile} />
+          <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Deal</GreenButton>
+        </div>
+
+        {showForm && (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #16a34a", padding: isMobile ? "16px" : "20px 24px", marginBottom: 16 }}>
+            <SectionHeader text={editingId ? "Edit Deal" : "New Deal"} />
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Deal Name *</label><input value={form.deal_name} onChange={(e) => setForm({ ...form, deal_name: e.target.value })} placeholder="e.g. Acme Corp - Q3 Renewal" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Contact Name</label><input value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} placeholder="John Smith" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Company</label><input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="Acme Corp" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Email</label><input type="email" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} placeholder="john@acme.com" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Phone</label><input value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} placeholder="(555) 555-5555" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Stage</label><select value={form.stage} onChange={(e) => setForm({ ...form, stage: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>{PIPELINE_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Source</label><input value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="e.g. Referral, Website, Cold Outreach" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Deal Value ($)</label><input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} placeholder="0.00" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Probability (%)</label><input type="number" min="0" max="100" value={form.probability} onChange={(e) => setForm({ ...form, probability: e.target.value })} placeholder="0-100" style={inputStyle} className="sz-input" /></div>
+              <div><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Expected Close Date</label><input type="date" value={form.expected_close_date} onChange={(e) => setForm({ ...form, expected_close_date: e.target.value })} style={inputStyle} className="sz-input" /></div>
+              <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Notes</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Deal notes, next steps, key context..." rows={3} style={{ ...inputStyle, resize: "vertical" }} className="sz-input" /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+              <GreenButton small onClick={handleSubmit} disabled={!form.deal_name.trim()}>{editingId ? "Update" : "Add Deal"}</GreenButton>
+            </div>
+          </div>
+        )}
+
+        {deals.length === 0 && !showForm ? (
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>No Deals Yet</h3>
+            <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>Start tracking your sales pipeline. Add a deal to begin.</p>
+          </div>
+        ) : view === "kanban" ? (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(6, minmax(220px, 1fr))", gap: 12, overflowX: "auto" }}>
+            {PIPELINE_STAGES.map((stage) => {
+              const stageDeals = deals.filter((d) => d.stage === stage.key);
+              const stageTotal = stageDeals.reduce((s, d) => s + Number(d.value || 0), 0);
+              return (
+                <div key={stage.key} style={{ background: stage.bg, borderRadius: 12, padding: 12, minHeight: 200 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingBottom: 8, borderBottom: `2px solid ${stage.color}30` }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: stage.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{stage.label}</div>
+                      <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>{stageDeals.length} · ${Number(stageTotal).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {stageDeals.map((deal) => (
+                      <div key={deal.id} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "12px 14px", boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, gap: 6 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", flex: 1, lineHeight: 1.3 }}>{deal.deal_name}</div>
+                          <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                            <button onClick={() => startEdit(deal)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                            <button onClick={() => deleteDeal(deal.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                          </div>
+                        </div>
+                        {deal.company && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>🏢 {deal.company}</div>}
+                        {deal.contact_name && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>👤 {deal.contact_name}</div>}
+                        {Number(deal.value) > 0 && <div style={{ fontSize: 15, fontWeight: 800, color: "#1C3820", fontFamily: "'DM Mono', monospace", marginTop: 6 }}>${Number(deal.value).toLocaleString()}{Number(deal.probability) > 0 && <span style={{ fontSize: 10, fontWeight: 500, color: "#94a3b8", marginLeft: 6 }}>· {deal.probability}%</span>}</div>}
+                        {deal.expected_close_date && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>📅 {new Date(deal.expected_close_date).toLocaleDateString()}</div>}
+                        <select value={deal.stage} onChange={(e) => moveStage(deal.id, e.target.value)} style={{ marginTop: 8, width: "100%", padding: "5px 8px", fontSize: 10, fontWeight: 600, border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc", color: "#475569", cursor: "pointer" }}>{PIPELINE_STAGES.map((s) => <option key={s.key} value={s.key}>Move to: {s.label}</option>)}</select>
+                      </div>
+                    ))}
+                    {stageDeals.length === 0 && <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", padding: "12px 0", fontStyle: "italic" }}>No deals</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Deal</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Company</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Stage</th>
+                    <th style={{ padding: "10px 14px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Value</th>
+                    <th style={{ padding: "10px 14px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Prob.</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Close</th>
+                    <th style={{ padding: "10px 14px", width: 60 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deals.map((deal) => {
+                    const stage = PIPELINE_STAGES.find((s) => s.key === deal.stage) || PIPELINE_STAGES[0];
+                    return (
+                      <tr key={deal.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 14px" }}>
+                          <div style={{ fontWeight: 700, color: "#0f172a" }}>{deal.deal_name}</div>
+                          {deal.contact_name && <div style={{ fontSize: 11, color: "#94a3b8" }}>{deal.contact_name}</div>}
+                        </td>
+                        <td style={{ padding: "10px 14px", color: "#475569" }}>{deal.company || "—"}</td>
+                        <td style={{ padding: "10px 14px" }}><span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 5, background: `${stage.color}15`, color: stage.color, textTransform: "uppercase" }}>{stage.label}</span></td>
+                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'DM Mono', monospace", fontWeight: 700, color: "#1C3820" }}>${Number(deal.value || 0).toLocaleString()}</td>
+                        <td style={{ padding: "10px 14px", textAlign: "right", color: "#475569" }}>{deal.probability || 0}%</td>
+                        <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{deal.expected_close_date ? new Date(deal.expected_close_date).toLocaleDateString() : "—"}</td>
+                        <td style={{ padding: "10px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button onClick={() => startEdit(deal)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                          <button onClick={() => deleteDeal(deal.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* — Research View with Sidebar — */
 function ResearchView({ isMobile, session, activeTab, onTabChange }) {
   const tab = activeTab || "brand";
@@ -10472,6 +10688,7 @@ export default function SuarezApp() {
     { id: "products", label: "Products & Services", icon: <span style={{ fontSize: 18 }}>🛍️</span> },
     { id: "portal", label: "Client Portal", icon: <span style={{ fontSize: 18 }}>🔐</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
+    { id: "pipeline", label: "Sales Pipeline", icon: <span style={{ fontSize: 18 }}>🎯</span> },
   ];
 
   const mobileNavItems = [
@@ -10505,6 +10722,7 @@ export default function SuarezApp() {
       case "portal": return <ClientPortalAdminView isMobile={isMobile} session={session} contacts={contacts} onUpdateContact={handleUpdateContact} />;
       case "research": return <ResearchView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "products": return <ProductsServicesView isMobile={isMobile} session={session} />;
+      case "pipeline": return <SalesPipelineView isMobile={isMobile} session={session} />;
       default: return null;
     }
   };
