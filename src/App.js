@@ -9230,6 +9230,402 @@ function FeedbackLogTab({ session, isMobile, robots }) {
 }
 
 
+/* — Reports View — Brand audits and other AI-generated reports — */
+function ReportsView({ isMobile, session, robots = [] }) {
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState("");
+  const [viewing, setViewing] = useState(null);
+
+  const atlas = robots.find((r) => r.name === "Atlas") || robots.find((r) => (r.role || "").toLowerCase().includes("strategic")) || robots[0];
+
+  const loadReports = React.useCallback(async () => {
+    const { data } = await supabase
+      .from("robot_artifacts")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .eq("artifact_type", "brand_audit_report")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setReports(data || []);
+    setLoading(false);
+  }, [session.user.id]);
+
+  React.useEffect(() => { loadReports(); }, [loadReports]);
+
+  const runAuditNow = async () => {
+    if (!atlas) { setRunError("No Atlas robot configured."); return; }
+    setRunning(true);
+    setRunError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("robot-chat", {
+        body: { robot_id: atlas.id, user_id: session.user.id, message: "Run the weekly brand audit now.", history: [] },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        const detail = typeof data.details === "string" ? data.details : JSON.stringify(data.details || "").slice(0, 300);
+        if (detail.includes("rate_limit") || detail.includes("rate limit")) {
+          setRunError("Anthropic rate limit hit. See Profile → Notepad → 'rate-limit considerations' for context. The scheduled weekly run won't have this issue. To unblock manual runs now, add a small credit to your Anthropic billing balance.");
+        } else {
+          setRunError(`${data.error}${detail ? ` — ${detail}` : ""}`);
+        }
+      } else if (!data?.artifacts || data.artifacts.length === 0) {
+        setRunError("Audit completed but no report was saved. Check the Robots conversation with Atlas for details.");
+      } else {
+        await loadReports();
+      }
+    } catch (err) {
+      setRunError(err.message || String(err));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const deleteReport = async (id) => {
+    if (!window.confirm("Delete this report?")) return;
+    await supabase.from("robot_artifacts").delete().eq("id", id);
+    setReports((p) => p.filter((r) => r.id !== id));
+    setViewing(null);
+  };
+
+  // Score trend data — chronological, oldest to newest
+  const trendData = reports
+    .slice()
+    .reverse()
+    .map((r) => ({ date: r.payload?.audit_date || r.created_at?.slice(0, 10), score: Number(r.payload?.overall_score || 0) }))
+    .filter((d) => d.score > 0);
+
+  if (loading) {
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <PageHeader title="Reports" subtitle="AI-generated business intelligence" icon="📊" isMobile={isMobile} />
+        <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>
+      </div>
+    );
+  }
+
+  const latestScore = reports[0]?.payload?.overall_score;
+  const previousScore = reports[1]?.payload?.overall_score;
+  const scoreDelta = latestScore != null && previousScore != null ? Number(latestScore) - Number(previousScore) : null;
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Reports" subtitle="Weekly brand audits & AI-generated business intelligence" icon="📊" isMobile={isMobile} />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: 60, maxWidth: 1200, margin: "0 auto" }}>
+
+        {/* Header card: latest score + trend + run button */}
+        <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f2614 100%)", borderRadius: 16, padding: isMobile ? 20 : 28, marginBottom: 18, color: "#fff", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: -40, right: -40, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(212,192,140,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>🔎 Brand Intelligence</div>
+              <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif", margin: 0 }}>Suarez Global Brand Audit</h2>
+              {reports.length === 0 ? (
+                <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "12px 0 0", lineHeight: 1.5 }}>No audits run yet. Click "Run audit now" to generate your first one — Atlas will run 6 web searches and produce a structured brand strength report.</p>
+              ) : (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: isMobile ? 44 : 54, fontWeight: 800, fontFamily: "'Playfair Display', serif", color: "#D4C08C", lineHeight: 1 }}>
+                      {Number(latestScore).toFixed(1)}<span style={{ fontSize: 18, color: "rgba(255,255,255,0.5)" }}>/10</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 4 }}>Latest score</div>
+                  </div>
+                  {scoreDelta != null && (
+                    <div style={{ marginLeft: 8 }}>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: scoreDelta > 0 ? "#86efac" : scoreDelta < 0 ? "#fca5a5" : "rgba(255,255,255,0.7)" }}>
+                        {scoreDelta > 0 ? "▲" : scoreDelta < 0 ? "▼" : "—"} {Math.abs(scoreDelta).toFixed(1)}
+                      </div>
+                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>vs. last audit</div>
+                    </div>
+                  )}
+                  {reports[0]?.payload?.audit_date && (
+                    <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", fontFamily: "'DM Mono', monospace" }}>{new Date(reports[0].payload.audit_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
+                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Last run</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: isMobile ? "flex-start" : "flex-end" }}>
+              <button
+                onClick={runAuditNow}
+                disabled={running || !atlas}
+                style={{
+                  padding: "12px 22px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)",
+                  background: running ? "rgba(212,192,140,0.2)" : "#D4C08C",
+                  color: running ? "#D4C08C" : "#1C3820",
+                  fontSize: 13, fontWeight: 700, cursor: running || !atlas ? "not-allowed" : "pointer",
+                  fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.02em",
+                }}
+              >
+                {running ? "🔍 Running audit..." : "🔎 Run audit now"}
+              </button>
+              {atlas && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Powered by {atlas.name}</div>}
+            </div>
+          </div>
+
+          {runError && (
+            <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", borderRadius: 8, fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>
+              ⚠️ {runError}
+            </div>
+          )}
+        </div>
+
+        {/* Score trend chart */}
+        {trendData.length >= 2 && (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? 16 : 22, marginBottom: 18 }}>
+            <SectionHeader text="📈 Score Trend" />
+            <ScoreTrendChart data={trendData} isMobile={isMobile} />
+          </div>
+        )}
+
+        {/* Reports list */}
+        <SectionHeader text={`Past Audits (${reports.length})`} />
+        {reports.length === 0 ? (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>No reports yet. Run your first audit to begin tracking brand strength over time.</p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {reports.map((r) => <BrandAuditListCard key={r.id} report={r} onClick={() => setViewing(r)} />)}
+          </div>
+        )}
+
+        {viewing && <BrandAuditDetailModal report={viewing} isMobile={isMobile} onClose={() => setViewing(null)} onDelete={() => deleteReport(viewing.id)} />}
+      </div>
+    </div>
+  );
+}
+
+function ScoreTrendChart({ data, isMobile }) {
+  // Hand-rolled SVG line chart
+  const W = isMobile ? 320 : 800;
+  const H = 160;
+  const padX = 36, padTop = 16, padBottom = 30;
+  const innerW = W - padX * 2;
+  const innerH = H - padTop - padBottom;
+  const xStep = data.length > 1 ? innerW / (data.length - 1) : 0;
+
+  const yMin = 0, yMax = 10;
+  const yScale = (v) => padTop + innerH - ((v - yMin) / (yMax - yMin)) * innerH;
+  const xScale = (i) => padX + i * xStep;
+
+  const linePath = data.map((d, i) => `${i === 0 ? "M" : "L"} ${xScale(i)} ${yScale(d.score)}`).join(" ");
+  const areaPath = `${linePath} L ${xScale(data.length - 1)} ${padTop + innerH} L ${xScale(0)} ${padTop + innerH} Z`;
+
+  return (
+    <div style={{ width: "100%", overflowX: "auto" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block" }}>
+        <defs>
+          <linearGradient id="scoreFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1C3820" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#1C3820" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* horizontal gridlines at 5 and 10 */}
+        {[5, 10].map((v) => (
+          <g key={v}>
+            <line x1={padX} y1={yScale(v)} x2={W - padX} y2={yScale(v)} stroke="#e2e8f0" strokeDasharray="3 3" />
+            <text x={padX - 6} y={yScale(v) + 4} fontSize="10" fill="#94a3b8" textAnchor="end">{v}</text>
+          </g>
+        ))}
+        {/* area */}
+        <path d={areaPath} fill="url(#scoreFill)" />
+        {/* line */}
+        <path d={linePath} stroke="#1C3820" strokeWidth="2.5" fill="none" />
+        {/* points */}
+        {data.map((d, i) => (
+          <g key={i}>
+            <circle cx={xScale(i)} cy={yScale(d.score)} r={4} fill="#D4C08C" stroke="#1C3820" strokeWidth="1.5" />
+            {(data.length <= 8 || i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 6) === 0) && (
+              <text x={xScale(i)} y={H - padBottom + 16} fontSize="9" fill="#64748b" textAnchor="middle" fontFamily="'DM Mono', monospace">
+                {(d.date || "").slice(5)}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function BrandAuditListCard({ report, onClick }) {
+  const p = report.payload || {};
+  const score = Number(p.overall_score || 0);
+  const scoreColor = score >= 8 ? "#16a34a" : score >= 6 ? "#3b82f6" : score >= 4 ? "#f59e0b" : "#dc2626";
+  const date = p.audit_date || (report.created_at ? report.created_at.slice(0, 10) : "");
+  return (
+    <div onClick={onClick} className="sz-hover-card" style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 70, textAlign: "center" }}>
+        <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor, fontFamily: "'Playfair Display', serif", lineHeight: 1 }}>{score.toFixed(1)}</div>
+        <div style={{ fontSize: 9, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>/ 10</div>
+      </div>
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>{date ? new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : ""}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>{report.title}</div>
+        <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>{p.score_rationale ? (p.score_rationale.slice(0, 180) + (p.score_rationale.length > 180 ? "…" : "")) : (report.summary || "")}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#f0fdf4", color: "#16a34a" }}>✅ {(p.top_wins || []).length} wins</span>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef2f2", color: "#dc2626" }}>⚠️ {(p.top_issues || []).length} issues</span>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#eff6ff", color: "#3b82f6" }}>🎯 {(p.immediate_actions || []).length} actions</span>
+      </div>
+    </div>
+  );
+}
+
+function BrandAuditDetailModal({ report, isMobile, onClose, onDelete }) {
+  const p = report.payload || {};
+  const score = Number(p.overall_score || 0);
+  const scoreColor = score >= 8 ? "#16a34a" : score >= 6 ? "#3b82f6" : score >= 4 ? "#f59e0b" : "#dc2626";
+  const date = p.audit_date || (report.created_at ? report.created_at.slice(0, 10) : "");
+
+  const Section = ({ title, children, icon }) => (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>{icon} {title}</div>
+      {children}
+    </div>
+  );
+
+  const SeverityPill = ({ sev }) => {
+    const c = sev === "high" ? { bg: "#fef2f2", color: "#dc2626" } : sev === "medium" ? { bg: "#fffbeb", color: "#f59e0b" } : { bg: "#f1f5f9", color: "#64748b" };
+    return <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: c.bg, color: c.color, textTransform: "uppercase" }}>{sev}</span>;
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 880, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "22px 26px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>🔎 Weekly Brand Audit</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>{date ? new Date(date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : ""}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 18, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 56, fontWeight: 800, fontFamily: "'Playfair Display', serif", color: scoreColor, lineHeight: 1 }}>
+              {score.toFixed(1)}<span style={{ fontSize: 20, color: "rgba(255,255,255,0.5)" }}>/10</span>
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 1.5, flex: 1, minWidth: 220, fontStyle: "italic" }}>{p.score_rationale}</div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 18px" : "24px 28px" }}>
+
+          {/* TOP WINS */}
+          {(p.top_wins || []).length > 0 && (
+            <Section title="Top Wins" icon="✅">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {p.top_wins.map((w, i) => (
+                  <div key={i} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", marginBottom: 4 }}>{i + 1}. {w.title}</div>
+                    <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.6 }}>{w.detail}</div>
+                    {w.evidence_url && <a href={w.evidence_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#16a34a", textDecoration: "none", marginTop: 6, display: "inline-block" }}>🔗 Evidence ↗</a>}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* TOP ISSUES */}
+          {(p.top_issues || []).length > 0 && (
+            <Section title="Critical Issues" icon="⚠️">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {p.top_issues.map((iss, i) => (
+                  <div key={i} style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b" }}>{i + 1}. {iss.title}</div>
+                      {iss.severity && <SeverityPill sev={iss.severity} />}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.6 }}>{iss.detail}</div>
+                    {iss.evidence_url && <a href={iss.evidence_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: "#dc2626", textDecoration: "none", marginTop: 6, display: "inline-block" }}>🔗 Evidence ↗</a>}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* IMMEDIATE ACTIONS */}
+          {(p.immediate_actions || []).length > 0 && (
+            <Section title="Immediate Actions (next 7 days)" icon="🎯">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {p.immediate_actions.map((a, i) => (
+                  <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderLeft: "3px solid #1C3820", borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", flexShrink: 0, lineHeight: 1, minWidth: 22 }}>{a.priority || i + 1}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, color: "#0f172a", lineHeight: 1.5 }}>{a.action}</div>
+                      {a.owner && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>Owner: {a.owner}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* WHAT'S MISSING */}
+          {(p.whats_missing || []).length > 0 && (
+            <Section title="What's Missing" icon="🕳️">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {p.whats_missing.map((m, i) => (
+                  <div key={i} style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#78350f" }}>{m.item}</div>
+                    {m.impact && <div style={{ fontSize: 11, color: "#92400e", marginTop: 2 }}>{m.impact}</div>}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* RISKS */}
+          {(p.risks || []).length > 0 && (
+            <Section title="Risks" icon="🚨">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {p.risks.map((r, i) => (
+                  <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 12, color: "#0f172a", lineHeight: 1.5 }}>{r.risk}</div>
+                    {r.mitigation && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, fontStyle: "italic" }}>Mitigation: {r.mitigation}</div>}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* QUERY FINDINGS */}
+          {(p.query_findings || []).length > 0 && (
+            <Section title="Per-Query Findings" icon="🔍">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {p.query_findings.map((q, i) => (
+                  <div key={i} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", marginBottom: 6, fontFamily: "'DM Mono', monospace" }}>"{q.query}"</div>
+                    <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.6 }}>{q.summary}</div>
+                    {(q.notable_urls || []).length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 8 }}>
+                        {(q.notable_urls || []).slice(0, 5).map((url, j) => (
+                          <a key={j} href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, color: "#3b82f6", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🔗 {url}</a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
+          <button onClick={onDelete} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+          <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* — Sales Pipeline View — */
 const PIPELINE_STAGES = [
   { key: "lead", label: "Lead", color: "#94a3b8", bg: "#f1f5f9" },
@@ -12250,6 +12646,7 @@ export default function SuarezApp() {
     { id: "pipeline", label: "Sales Pipeline", icon: <span style={{ fontSize: 18 }}>🎯</span> },
     { id: "robots", label: "Robots", icon: <span style={{ fontSize: 18 }}>🤖</span> },
     { id: "knowledge", label: "Knowledge Base", icon: <span style={{ fontSize: 18 }}>🧠</span> },
+    { id: "reports", label: "Reports", icon: <span style={{ fontSize: 18 }}>📊</span> },
   ];
 
   const mobileNavItems = [
@@ -12286,6 +12683,7 @@ export default function SuarezApp() {
       case "pipeline": return <SalesPipelineView isMobile={isMobile} session={session} businesses={businesses} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "robots": return <RobotsWorkspaceView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "knowledge": return <KnowledgeBaseView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "reports": return <ReportsView isMobile={isMobile} session={session} robots={robots} />;
       default: return null;
     }
   };
