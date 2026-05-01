@@ -483,12 +483,12 @@ async function createCCDraft(input: any, ctx: any) {
   if (!res.ok) return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 500)}` };
   const campaignId = data.campaign_id || data.id;
   const adminUrl = `https://app.constantcontact.com/pages/campaigns/email-details/${campaignId}`;
-  await ctx.supabase.from("robot_artifacts").insert({
+  const { data: artRow } = await ctx.supabase.from("robot_artifacts").insert({
     user_id: ctx.user_id, robot_id: ctx.robot_id, artifact_type: "cc_email_draft",
     title: input.name, summary: `Subject: ${input.subject}`, external_id: campaignId, external_url: adminUrl,
     payload: { subject: input.subject, from_name: fromName, from_email: fromEmail, preview_text: input.preview_text || "", html_content: input.html_content }, status: "draft",
-  });
-  return { result: `✓ CC draft "${input.name}" created. Review at ${adminUrl}`, artifact: { type: "cc_email_draft", title: input.name, url: adminUrl, id: campaignId } };
+  }).select("id").single();
+  return { result: `✓ CC draft "${input.name}" created. Review at ${adminUrl}`, artifact: { type: "cc_email_draft", title: input.name, url: adminUrl, id: artRow?.id, external_id: campaignId } };
 }
 
 // ─── GMAIL ─────────────────────────────────────────────────────────────────
@@ -530,12 +530,12 @@ async function createGmailDraft(input: any, ctx: any) {
 
   const draftId = data.id;
   const draftsUrl = `https://mail.google.com/mail/u/0/#drafts`;
-  await ctx.supabase.from("robot_artifacts").insert({
+  const { data: artRow } = await ctx.supabase.from("robot_artifacts").insert({
     user_id: ctx.user_id, robot_id: ctx.robot_id, artifact_type: "gmail_draft",
     title: input.subject, summary: `To: ${input.to}`, external_id: draftId, external_url: draftsUrl,
     payload: { to: input.to, cc: input.cc || null, subject: input.subject, body: input.body, is_html: !!input.is_html }, status: "draft",
-  });
-  return { result: `✓ Gmail draft saved. Review at ${draftsUrl}`, artifact: { type: "gmail_draft", title: input.subject, url: draftsUrl, id: draftId } };
+  }).select("id").single();
+  return { result: `✓ Gmail draft saved. Review at ${draftsUrl}`, artifact: { type: "gmail_draft", title: input.subject, url: draftsUrl, id: artRow?.id, external_id: draftId } };
 }
 
 // ─── QUO ───────────────────────────────────────────────────────────────────
@@ -858,7 +858,13 @@ You're not a generic AI. You're a member of this team. Act like it.`;
         body: JSON.stringify({ model: robot.model || "claude-sonnet-4-5", max_tokens: 8192, system: systemPrompt, tools: allTools, messages }),
       });
       const apiData = await apiRes.json();
-      if (!apiRes.ok) return new Response(JSON.stringify({ error: "Anthropic API error", details: apiData }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!apiRes.ok) {
+        // Persist the failed turn so it survives a page refresh
+        const errMsg = `⚠️ ${apiData?.error?.type === "rate_limit_error" ? "Rate limit hit — try again in a minute, or add Anthropic API credit to bump your tier." : `Anthropic API error: ${apiData?.error?.message || "unknown"}`}`;
+        const failedLog = { timestamp: new Date().toISOString(), user_message: message, assistant_response: errMsg, tool_calls: toolCalls, artifacts, error: true };
+        await persistConversation(supabase, user_id, robot_id, failedLog, "workspace");
+        return new Response(JSON.stringify({ error: "Anthropic API error", details: apiData, response: errMsg, tool_calls: toolCalls, artifacts }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
 
       messages.push({ role: "assistant", content: apiData.content });
 
@@ -883,22 +889,29 @@ You're not a generic AI. You're a member of this team. Act like it.`;
       break;
     }
 
-    const channelType = "workspace";
-    const { data: existingConv } = await supabase.from("robot_conversations").select("id, messages").eq("user_id", user_id).eq("robot_id", robot_id).eq("channel_type", channelType).maybeSingle();
     const newLog = { timestamp: new Date().toISOString(), user_message: message, assistant_response: finalText, tool_calls: toolCalls, artifacts };
-
-    let conversationId;
-    if (existingConv) {
-      const existingMessages = Array.isArray(existingConv.messages) ? existingConv.messages : [];
-      conversationId = existingConv.id;
-      await supabase.from("robot_conversations").update({ messages: [...existingMessages, newLog], updated_at: new Date().toISOString() }).eq("id", existingConv.id);
-    } else {
-      const { data: newConv } = await supabase.from("robot_conversations").insert({ user_id, robot_id, channel_type: channelType, messages: [newLog], status: "active" }).select("id").single();
-      conversationId = newConv?.id;
-    }
+    const conversationId = await persistConversation(supabase, user_id, robot_id, newLog, "workspace");
 
     return new Response(JSON.stringify({ response: finalText, tool_calls: toolCalls, artifacts, conversation_id: conversationId }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ error: "Server error", details: err.message || String(err) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
+
+// Append a turn to a robot's conversation log, creating the row if needed.
+async function persistConversation(supabase: any, user_id: string, robot_id: string, newLog: any, channel_type: string): Promise<string | undefined> {
+  try {
+    const { data: existing } = await supabase.from("robot_conversations").select("id, messages").eq("user_id", user_id).eq("robot_id", robot_id).eq("channel_type", channel_type).maybeSingle();
+    if (existing) {
+      const existingMessages = Array.isArray(existing.messages) ? existing.messages : [];
+      await supabase.from("robot_conversations").update({ messages: [...existingMessages, newLog], updated_at: new Date().toISOString() }).eq("id", existing.id);
+      return existing.id;
+    } else {
+      const { data: newConv } = await supabase.from("robot_conversations").insert({ user_id, robot_id, channel_type, messages: [newLog], status: "active" }).select("id").single();
+      return newConv?.id;
+    }
+  } catch (e) {
+    console.error("persistConversation failed:", e);
+    return undefined;
+  }
+}
