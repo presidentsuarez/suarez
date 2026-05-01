@@ -7995,7 +7995,20 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
           ) : (
             <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
               {conversationLog.map((entry, i) => (
-                <ChatTurn key={i} entry={entry} robotName={selected.name} robotColor={selected.avatar_color} />
+                <ChatTurn
+                  key={i}
+                  entry={entry}
+                  entryIndex={i}
+                  robotName={selected.name}
+                  robotColor={selected.avatar_color}
+                  robotId={selected.id}
+                  conversationId={null}
+                  session={session}
+                  onArtifactsChanged={async () => {
+                    const { data } = await supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("robot_id", selected.id).order("created_at", { ascending: false }).limit(50);
+                    if (data) setArtifacts(data);
+                  }}
+                />
               ))}
               {pendingMessage && (
                 <>
@@ -8069,7 +8082,10 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
                     No drafts yet. Ask {selected.name} to draft a Constant Contact email.
                   </div>
                 ) : (
-                  artifacts.map((art) => <ArtifactCard key={art.id} artifact={art} onClick={() => art.artifact_type === "quo_text_draft" && art.status === "draft" ? setQuoDraftToReview(art) : null} />)
+                  artifacts.map((art) => <ArtifactCard key={art.id} artifact={art} session={session} onChanged={async () => {
+                    const { data } = await supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("robot_id", selected.id).order("created_at", { ascending: false }).limit(50);
+                    if (data) setArtifacts(data);
+                  }} onClick={() => art.artifact_type === "quo_text_draft" && art.status === "draft" ? setQuoDraftToReview(art) : null} />)
                 )}
               </>
             )}
@@ -8094,14 +8110,27 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
 }
 
 /* — Chat turn renderer — */
-function ChatTurn({ entry, robotName, robotColor }) {
+function ChatTurn({ entry, entryIndex, robotName, robotColor, robotId, conversationId, session, onArtifactsChanged }) {
   return (
     <>
       <UserBubble text={entry.user_message} />
       {(entry.tool_calls || []).map((tc, i) => (
         <ToolCallCard key={i} toolCall={tc} />
       ))}
-      {entry.assistant_response && <AssistantBubble text={entry.assistant_response} robotName={robotName} robotColor={robotColor} artifacts={entry.artifacts || []} />}
+      {entry.assistant_response && (
+        <AssistantBubble
+          text={entry.assistant_response}
+          robotName={robotName}
+          robotColor={robotColor}
+          robotId={robotId}
+          conversationId={conversationId}
+          entryIndex={entryIndex}
+          artifacts={entry.artifacts || []}
+          toolCalls={entry.tool_calls || []}
+          session={session}
+          onArtifactsChanged={onArtifactsChanged}
+        />
+      )}
     </>
   );
 }
@@ -8114,26 +8143,152 @@ function UserBubble({ text }) {
   );
 }
 
-function AssistantBubble({ text, robotName, robotColor, artifacts = [] }) {
+function AssistantBubble({ text, robotName, robotColor, robotId, conversationId, entryIndex, artifacts = [], toolCalls = [], session, onArtifactsChanged }) {
+  const [feedback, setFeedback] = useState(null); // 'up' | 'down' | null
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [memoryExtracted, setMemoryExtracted] = useState(null);
+
+  const sendFeedback = async (kind, customNote = "") => {
+    if (submitting) return;
+    setSubmitting(true);
+    const eventType = kind === "up" ? "thumbs_up" : kind === "down" ? "thumbs_down" : "edit";
+    const verdict = kind === "up" ? "approved" : kind === "down" ? "rejected" : "edited";
+    try {
+      const { data } = await supabase.functions.invoke("feedback-capture", {
+        body: {
+          user_id: session.user.id,
+          robot_id: robotId,
+          conversation_id: conversationId,
+          event_type: eventType,
+          verdict,
+          original_content: text,
+          user_note: customNote || null,
+          extract_memory: kind === "down" && !!customNote,
+        },
+      });
+      if (data?.success) {
+        setFeedback(kind);
+        if (data.memory_extracted) setMemoryExtracted(data.extracted_memory);
+        if (kind !== "up") setShowNoteInput(false);
+        setNote("");
+      }
+    } catch (err) {
+      console.error("feedback failed", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitNote = () => {
+    if (!note.trim()) return;
+    sendFeedback("down", note.trim());
+  };
+
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
       <div style={{ width: 30, height: 30, borderRadius: 8, background: robotColor || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0, fontFamily: "'Playfair Display', serif" }}>{robotName?.slice(0, 2).toUpperCase()}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ background: "#fff", borderRadius: 12, padding: "10px 14px", border: "1px solid #e2e8f0", color: "#0f172a", fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{text}</div>
+
+        {/* Feedback row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, paddingLeft: 4 }}>
+          <button
+            onClick={() => sendFeedback("up")}
+            disabled={submitting || feedback === "up"}
+            title="Good response — on brand"
+            style={{ background: feedback === "up" ? "#f0fdf4" : "transparent", border: feedback === "up" ? "1px solid #16a34a" : "1px solid transparent", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: submitting ? "not-allowed" : "pointer", color: feedback === "up" ? "#16a34a" : "#94a3b8", transition: "all 0.15s" }}
+          >👍</button>
+          <button
+            onClick={() => setShowNoteInput(!showNoteInput)}
+            disabled={submitting}
+            title="Not quite right — give feedback"
+            style={{ background: feedback === "down" || showNoteInput ? "#fef2f2" : "transparent", border: feedback === "down" || showNoteInput ? "1px solid #dc2626" : "1px solid transparent", borderRadius: 6, padding: "3px 7px", fontSize: 12, cursor: submitting ? "not-allowed" : "pointer", color: feedback === "down" || showNoteInput ? "#dc2626" : "#94a3b8", transition: "all 0.15s" }}
+          >👎</button>
+          {feedback && <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 4 }}>{feedback === "up" ? "logged ✓" : feedback === "down" ? "feedback saved ✓" : ""}</span>}
+        </div>
+
+        {/* Note input for thumbs-down */}
+        {showNoteInput && !feedback && (
+          <div style={{ marginTop: 8, padding: "10px 12px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 6 }}>What would have been better? (this becomes a team memory)</div>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g., 'Too formal — drop the greeting and lead with the value prop' or 'Should have asked about budget first'"
+              rows={2}
+              style={{ width: "100%", padding: "8px 10px", fontSize: 12, fontFamily: "'DM Sans', sans-serif", border: "1px solid #fca5a5", borderRadius: 8, outline: "none", resize: "vertical", boxSizing: "border-box" }}
+              className="sz-input"
+            />
+            <div style={{ display: "flex", gap: 6, marginTop: 6, justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowNoteInput(false); setNote(""); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fff", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+              <button onClick={submitNote} disabled={!note.trim() || submitting} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: !note.trim() || submitting ? "#cbd5e1" : "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, cursor: !note.trim() || submitting ? "not-allowed" : "pointer" }}>{submitting ? "Saving..." : "Save feedback"}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Memory extracted notification */}
+        {memoryExtracted && (
+          <div style={{ marginTop: 8, padding: "10px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 4 }}>🧠 Memory saved to team knowledge base:</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{memoryExtracted.title}</div>
+            <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{memoryExtracted.content}</div>
+          </div>
+        )}
+
+        {/* Artifacts */}
         {artifacts.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             {artifacts.map((a, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
-                <span style={{ fontSize: 16 }}>{({ cc_email_draft: "📧", gmail_draft: "✉️", quo_text_draft: "💬", task: "✅", calendar_event: "📅", pipeline_deal: "🎯" })[a.type] || "📎"}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>{({ cc_email_draft: "CC Draft Created", gmail_draft: "Gmail Draft Created", quo_text_draft: "Quo Text Drafted", task: "Task Created", calendar_event: "Event Scheduled", pipeline_deal: "Deal Added" })[a.type] || "Artifact"}</div>
-                  <div style={{ fontSize: 11, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>
-                </div>
-                {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none", padding: "4px 8px", border: "1px solid #16a34a", borderRadius: 6 }}>Open ↗</a>}
-              </div>
+              <ArtifactInlineCard key={i} artifact={a} session={session} onChanged={onArtifactsChanged} />
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ArtifactInlineCard({ artifact, session, onChanged }) {
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const isSaveable = ["cc_email_draft", "gmail_draft", "quo_text_draft"].includes(artifact.type);
+  const labels = { cc_email_draft: "CC Draft Created", gmail_draft: "Gmail Draft Created", quo_text_draft: "Quo Text Drafted", task: "Task Created", calendar_event: "Event Scheduled", pipeline_deal: "Deal Added" };
+  const icons = { cc_email_draft: "📧", gmail_draft: "✉️", quo_text_draft: "💬", task: "✅", calendar_event: "📅", pipeline_deal: "🎯" };
+
+  const saveAsExemplar = async () => {
+    if (saving || saved || !artifact.id) return;
+    setSaving(true);
+    try {
+      const { data } = await supabase.functions.invoke("save-exemplar", {
+        body: { user_id: session.user.id, artifact_id: artifact.id, generate_why: true, importance: 8 },
+      });
+      if (data?.success) { setSaved(true); onChanged?.(); }
+    } catch (err) {
+      console.error("save exemplar failed", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+      <span style={{ fontSize: 16 }}>{icons[artifact.type] || "📎"}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>{labels[artifact.type] || "Artifact"}</div>
+        <div style={{ fontSize: 11, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{artifact.title}</div>
+      </div>
+      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+        {isSaveable && artifact.id && (
+          <button
+            onClick={saveAsExemplar}
+            disabled={saving || saved}
+            title={saved ? "Saved as exemplar" : "Save as exemplar — robots will learn this style"}
+            style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", border: "1px solid #16a34a", borderRadius: 6, background: saved ? "#16a34a" : "#fff", color: saved ? "#fff" : "#16a34a", cursor: saving || saved ? "default" : "pointer" }}
+          >{saving ? "Saving..." : saved ? "💾 Saved" : "💾 Save as exemplar"}</button>
+        )}
+        {artifact.url && <a href={artifact.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none", padding: "4px 8px", border: "1px solid #16a34a", borderRadius: 6 }}>Open ↗</a>}
       </div>
     </div>
   );
@@ -8189,12 +8344,31 @@ function TaskCard({ task, onToggle, onDelete }) {
   );
 }
 
-function ArtifactCard({ artifact, onClick }) {
+function ArtifactCard({ artifact, onClick, session, onChanged }) {
   const icons = { cc_email_draft: "📧", gmail_draft: "✉️", quo_text_draft: "💬", task: "✅", calendar_event: "📅", pipeline_deal: "🎯" };
   const labels = { cc_email_draft: "CC Email", gmail_draft: "Gmail Draft", quo_text_draft: "Quo Text", task: "Task", calendar_event: "Event", pipeline_deal: "Pipeline Deal" };
   const isQuoDraft = artifact.artifact_type === "quo_text_draft" && artifact.status === "draft";
+  const isSaveable = ["cc_email_draft", "gmail_draft", "quo_text_draft"].includes(artifact.artifact_type);
   const statusColors = { draft: { bg: "#fffbeb", color: "#f59e0b" }, sent: { bg: "#f0fdf4", color: "#16a34a" }, cancelled: { bg: "#fef2f2", color: "#dc2626" }, created: { bg: "#f0fdf4", color: "#16a34a" } };
   const sc = statusColors[artifact.status] || statusColors.created;
+  const [saving, setSaving] = useState(false);
+  const [savedAsExemplar, setSavedAsExemplar] = useState(false);
+
+  const saveAsExemplar = async (e) => {
+    e?.stopPropagation();
+    if (saving || savedAsExemplar) return;
+    setSaving(true);
+    try {
+      const { data } = await supabase.functions.invoke("save-exemplar", {
+        body: { user_id: session.user.id, artifact_id: artifact.id, generate_why: true, importance: 8 },
+      });
+      if (data?.success) { setSavedAsExemplar(true); onChanged?.(); }
+    } catch (err) {
+      console.error("save exemplar failed", err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div onClick={isQuoDraft ? onClick : undefined} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 12px", marginBottom: 8, cursor: isQuoDraft ? "pointer" : "default", transition: "all 0.15s" }} className={isQuoDraft ? "sz-hover-card" : ""}>
@@ -8207,8 +8381,11 @@ function ArtifactCard({ artifact, onClick }) {
           <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: sc.bg, color: sc.color, textTransform: "uppercase" }}>{artifact.status || "created"}</span>
             <span style={{ fontSize: 10, color: "#94a3b8" }}>{new Date(artifact.created_at).toLocaleDateString()}</span>
+            {isSaveable && session && (
+              <button onClick={saveAsExemplar} disabled={saving || savedAsExemplar} title={savedAsExemplar ? "Saved as exemplar" : "Save as exemplar"} style={{ fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 4, border: "1px solid #16a34a", background: savedAsExemplar ? "#16a34a" : "#fff", color: savedAsExemplar ? "#fff" : "#16a34a", cursor: saving || savedAsExemplar ? "default" : "pointer" }}>{saving ? "..." : savedAsExemplar ? "💾✓" : "💾 Save"}</button>
+            )}
             {artifact.external_url && <a onClick={(e) => e.stopPropagation()} href={artifact.external_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", marginLeft: "auto", textDecoration: "none" }}>Open ↗</a>}
-            {isQuoDraft && <span style={{ fontSize: 10, fontWeight: 700, color: "#1C3820", marginLeft: "auto" }}>Review & Send →</span>}
+            {isQuoDraft && <span style={{ fontSize: 10, fontWeight: 700, color: "#1C3820", marginLeft: "auto" }}>Review →</span>}
           </div>
         </div>
       </div>
@@ -11330,6 +11507,7 @@ export default function SuarezApp() {
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
     { id: "pipeline", label: "Sales Pipeline", icon: <span style={{ fontSize: 18 }}>🎯</span> },
     { id: "robots", label: "Robots", icon: <span style={{ fontSize: 18 }}>🤖</span> },
+    { id: "knowledge", label: "Knowledge Base", icon: <span style={{ fontSize: 18 }}>🧠</span> },
   ];
 
   const mobileNavItems = [
@@ -11365,6 +11543,7 @@ export default function SuarezApp() {
       case "products": return <ProductsServicesView isMobile={isMobile} session={session} />;
       case "pipeline": return <SalesPipelineView isMobile={isMobile} session={session} businesses={businesses} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "robots": return <RobotsWorkspaceView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "knowledge": return <KnowledgeBaseView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
       default: return null;
     }
   };
