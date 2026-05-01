@@ -307,6 +307,50 @@ const TOOLS = [
     description: "List accounts with balances.",
     input_schema: { type: "object", properties: { active_only: { type: "boolean" } } },
   },
+  // ─ Brand Audit ─
+  {
+    name: "save_brand_audit",
+    description: "Save a completed weekly brand audit report. Call this AFTER you've run web searches, analyzed findings, and built up the full structured analysis. Creates a brand_audit_report artifact the user can review in Reports.",
+    input_schema: {
+      type: "object",
+      properties: {
+        audit_date: { type: "string", description: "YYYY-MM-DD. Default: today." },
+        overall_score: { type: "number", description: "1-10 brand strength score using rubric: 1-3 minimal/scattered, 4-5 some presence but inconsistent, 6-7 solid consistent narrative, 8-9 strong institutional multi-channel, 10 dominant/polished/undeniable." },
+        score_rationale: { type: "string", description: "2-3 sentences explaining the score with specifics." },
+        top_wins: {
+          type: "array",
+          description: "3 strongest brand wins. Each has title (short headline), detail (1-2 sentences with specifics), evidence_url (where you saw this).",
+          items: { type: "object", properties: { title: { type: "string" }, detail: { type: "string" }, evidence_url: { type: "string" } }, required: ["title", "detail"] },
+        },
+        top_issues: {
+          type: "array",
+          description: "3 most critical issues, tied to investor trust / capital conversion / institutional credibility. Severity: high/medium/low.",
+          items: { type: "object", properties: { title: { type: "string" }, detail: { type: "string" }, severity: { type: "string", enum: ["high", "medium", "low"] }, evidence_url: { type: "string" } }, required: ["title", "detail", "severity"] },
+        },
+        immediate_actions: {
+          type: "array",
+          description: "Top 5 prioritized actions for the next 7 days. Specific, executable, ordered by priority (1 = most urgent).",
+          items: { type: "object", properties: { priority: { type: "number" }, action: { type: "string" }, owner: { type: "string" } }, required: ["priority", "action"] },
+        },
+        whats_missing: {
+          type: "array",
+          description: "Items that should exist but don't (pages, press footprint, schema, bios, listings, etc.).",
+          items: { type: "object", properties: { item: { type: "string" }, impact: { type: "string" } }, required: ["item", "impact"] },
+        },
+        risks: {
+          type: "array",
+          description: "Risks that reduce investor trust. Optional mitigation if obvious.",
+          items: { type: "object", properties: { risk: { type: "string" }, mitigation: { type: "string" } }, required: ["risk"] },
+        },
+        query_findings: {
+          type: "array",
+          description: "Per-query findings from your web searches. One entry per query.",
+          items: { type: "object", properties: { query: { type: "string" }, summary: { type: "string" }, notable_urls: { type: "array", items: { type: "string" } } }, required: ["query", "summary"] },
+        },
+      },
+      required: ["overall_score", "score_rationale", "top_wins", "top_issues", "immediate_actions"],
+    },
+  },
 ];
 
 // ─── TOOL EXECUTION ────────────────────────────────────────────────────────
@@ -329,6 +373,7 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "query_transactions": return await queryTransactions(input, ctx);
       case "get_financial_summary": return await getFinancialSummary(input, ctx);
       case "query_accounts": return await queryAccounts(input, ctx);
+      case "save_brand_audit": return await saveBrandAudit(input, ctx);
       default: return { result: `Error: unknown tool '${name}'` };
     }
   } catch (err) {
@@ -676,6 +721,48 @@ async function queryAccounts(input: any, ctx: any) {
   return { result: `${data.length} account(s), total $${total.toLocaleString()}:\n${data.map((a: any) => `• ${a.name} (${a.type}${a.institution ? `, ${a.institution}` : ""}) — $${Number(a.current_balance || 0).toLocaleString()}${a.credit_limit ? ` of $${Number(a.credit_limit).toLocaleString()}` : ""}`).join("\n")}` };
 }
 
+// ─── BRAND AUDIT ───────────────────────────────────────────────────────────
+async function saveBrandAudit(input: any, ctx: any) {
+  const today = input.audit_date || new Date().toISOString().slice(0, 10);
+  const score = Number(input.overall_score) || 0;
+  const wins = Array.isArray(input.top_wins) ? input.top_wins : [];
+  const issues = Array.isArray(input.top_issues) ? input.top_issues : [];
+  const actions = Array.isArray(input.immediate_actions) ? input.immediate_actions : [];
+  const missing = Array.isArray(input.whats_missing) ? input.whats_missing : [];
+  const risks = Array.isArray(input.risks) ? input.risks : [];
+  const findings = Array.isArray(input.query_findings) ? input.query_findings : [];
+
+  const payload = {
+    audit_date: today,
+    overall_score: score,
+    score_rationale: input.score_rationale || "",
+    top_wins: wins,
+    top_issues: issues,
+    immediate_actions: actions.sort((a: any, b: any) => (a.priority || 99) - (b.priority || 99)),
+    whats_missing: missing,
+    risks: risks,
+    query_findings: findings,
+  };
+
+  const summary = `Score ${score}/10 · ${wins.length} wins · ${issues.length} issues · ${actions.length} actions queued`;
+
+  const { data, error } = await ctx.supabase.from("robot_artifacts").insert({
+    user_id: ctx.user_id,
+    robot_id: ctx.robot_id,
+    artifact_type: "brand_audit_report",
+    title: `Weekly Brand Audit — ${today}`,
+    summary,
+    payload,
+    status: "created",
+  }).select().single();
+
+  if (error) return { result: `Error saving brand audit: ${error.message}` };
+  return {
+    result: `✓ Brand audit saved (score ${score}/10). ${wins.length} wins, ${issues.length} issues, ${actions.length} actions identified. View in Reports.`,
+    artifact: { type: "brand_audit_report", title: data.title, id: data.id },
+  };
+}
+
 // ─── MAIN ──────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -718,6 +805,20 @@ ${bizContext || "  (none configured)"}
 - For Quo texts: 'javier' = personal voice (his line). 'assistant' = formal/admin voice. Default to 'assistant' unless context calls for personal.
 - Honor the SOUL, STYLE GUIDE, and MEMORIES above. They represent how Javier and the Suarez Global team operate. Match the voice. Follow the rules. When in doubt, lean toward what the soul implies.
 
+═══ WEEKLY BRAND AUDIT PROTOCOL ═══
+When the user asks for a weekly brand audit (or similar — "brand check," "reputation audit," "run the Saturday audit"):
+1. Use the web_search tool to run ALL of these queries (one search each, do not skip):
+   • "Javier Suarez real estate"
+   • "Suarez Capital"
+   • "Suarez Global Ventures"
+   • "REAP AI"
+   • "Tampa multifamily syndication Javier Suarez"
+   • "Tampa real estate REAP AI"
+2. From SERPs, capture: Page 1 results, LinkedIn presence/duplicates, YouTube channel signals, press mentions, podcast features, event listings, and any negative or off-brand mentions.
+3. Score brand strength 1–10 using this rubric: 1-3 minimal/scattered, 4-5 some but inconsistent, 6-7 solid consistent narrative, 8-9 strong institutional multi-channel, 10 dominant/polished/undeniable. Use the same rubric every time so scores are comparable week-over-week.
+4. Identify exactly 3 wins, exactly 3 critical issues (tied to investor trust / capital conversion / institutional credibility), and 5 prioritized actions for the next 7 days.
+5. Call save_brand_audit with the structured report. Voice: institutional, direct, decisive, confidence-driven. No filler. Specific and quantified.
+
 You're not a generic AI. You're a member of this team. Act like it.`;
 
     const messages = [...history, { role: "user", content: message }];
@@ -729,10 +830,15 @@ You're not a generic AI. You're a member of this team. Act like it.`;
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
+      // Combine our custom tools + Anthropic's server-side web_search tool
+      const allTools = [
+        ...TOOLS,
+        { type: "web_search_20250305", name: "web_search", max_uses: 8, user_location: { type: "approximate", city: "Tampa", region: "Florida", country: "US", timezone: "America/New_York" } },
+      ];
       const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: robot.model || "claude-sonnet-4-5", max_tokens: 4096, system: systemPrompt, tools: TOOLS, messages }),
+        body: JSON.stringify({ model: robot.model || "claude-sonnet-4-5", max_tokens: 8192, system: systemPrompt, tools: allTools, messages }),
       });
       const apiData = await apiRes.json();
       if (!apiRes.ok) return new Response(JSON.stringify({ error: "Anthropic API error", details: apiData }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
