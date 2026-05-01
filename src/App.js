@@ -8538,6 +8538,698 @@ function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
 }
 
 
+/* — Knowledge Base View — Soul, Style Guide, Memories, Exemplars, Feedback Log — */
+function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabChange }) {
+  const tab = activeTab || "soul";
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+
+  const sections = [
+    { key: "soul", icon: "🌟", label: "Soul", desc: "Mission, voice, values" },
+    { key: "style", icon: "📐", label: "Style Guide", desc: "How we communicate" },
+    { key: "memories", icon: "🧠", label: "Memories", desc: "What we've learned" },
+    { key: "exemplars", icon: "💎", label: "Exemplars", desc: "Gold-standard examples" },
+    { key: "feedback", icon: "📊", label: "Feedback Log", desc: "Audit trail" },
+  ];
+
+  const KBSidebar = () => (
+    <div style={{ width: 240, height: "100%", background: "linear-gradient(180deg, #1C3820 0%, #0f2614 100%)", color: "#fff", display: "flex", flexDirection: "column", borderRight: "1px solid rgba(255,255,255,0.05)", flexShrink: 0, overflow: "auto" }}>
+      <div style={{ padding: "20px 16px 12px" }}>
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>🧠 Knowledge Base</h2>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Team Memory</div>
+      </div>
+      <div style={{ padding: "0 8px", flex: 1 }}>
+        {sections.map((s) => (
+          <button key={s.key} onClick={() => { onTabChange(s.key); if (isMobile) setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "none", background: tab === s.key ? "rgba(212,192,140,0.15)" : "transparent", color: tab === s.key ? "#D4C08C" : "rgba(255,255,255,0.5)", cursor: "pointer", marginBottom: 2, textAlign: "left", transition: "all 0.15s" }}>
+            <span style={{ fontSize: 16, width: 24, textAlign: "center" }}>{s.icon}</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: tab === s.key ? 700 : 500 }}>{s.label}</div>
+              <div style={{ fontSize: 9, opacity: 0.6 }}>{s.desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{ padding: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ fontSize: 10, color: "rgba(212,192,140,0.6)", fontWeight: 600, lineHeight: 1.5 }}>
+          💡 Everything here is loaded into your robots' system prompts. Edit it, and they update instantly.
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><KBSidebar /></div>
+        </>
+      )}
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+        <PageHeader title="Knowledge Base" subtitle={sections.find((s) => s.key === tab)?.desc || ""} icon="🧠" isMobile={isMobile} />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
+          {tab === "soul" && <SoulTab session={session} isMobile={isMobile} />}
+          {tab === "style" && <StyleGuideTab session={session} isMobile={isMobile} />}
+          {tab === "memories" && <MemoriesTab session={session} isMobile={isMobile} robots={robots} />}
+          {tab === "exemplars" && <ExemplarsTab session={session} isMobile={isMobile} />}
+          {tab === "feedback" && <FeedbackLogTab session={session} isMobile={isMobile} robots={robots} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Soul Tab — */
+function SoulTab({ session, isMobile }) {
+  const [soul, setSoul] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "vertical" };
+
+  React.useEffect(() => {
+    supabase.from("org_soul").select("*").eq("user_id", session.user.id).eq("active", true).maybeSingle().then(({ data }) => {
+      setSoul(data || { user_id: session.user.id, org_name: "Suarez Global", mission: "", vision: "", origin_story: "", values: [], voice_principles: [], things_we_dont_do: [], decision_precedents: [], active: true });
+      setLoading(false);
+    });
+  }, [session.user.id]);
+
+  const updateField = (field, value) => setSoul((s) => ({ ...s, [field]: value }));
+
+  // Generic array editors
+  const updateArray = (field, idx, key, value) => setSoul((s) => {
+    const arr = [...(s[field] || [])];
+    arr[idx] = { ...arr[idx], [key]: value };
+    return { ...s, [field]: arr };
+  });
+  const addArrayItem = (field, template) => setSoul((s) => ({ ...s, [field]: [...(s[field] || []), template] }));
+  const removeArrayItem = (field, idx) => setSoul((s) => ({ ...s, [field]: (s[field] || []).filter((_, i) => i !== idx) }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    const payload = {
+      org_name: soul.org_name, mission: soul.mission, vision: soul.vision, origin_story: soul.origin_story,
+      values: soul.values || [], voice_principles: soul.voice_principles || [],
+      things_we_dont_do: soul.things_we_dont_do || [], decision_precedents: soul.decision_precedents || [],
+      active: true, updated_at: new Date().toISOString(),
+    };
+    if (soul.id) {
+      const { data } = await supabase.from("org_soul").update(payload).eq("id", soul.id).select().single();
+      if (data) setSoul(data);
+    } else {
+      const { data } = await supabase.from("org_soul").insert({ ...payload, user_id: session.user.id }).select().single();
+      if (data) setSoul(data);
+    }
+    setSaving(false);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2200);
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* Save bar */}
+      <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#f8fafc", padding: "8px 0", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: savedFlash ? "1px solid #bbf7d0" : "1px solid transparent" }}>
+        <div style={{ fontSize: 11, color: savedFlash ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>{savedFlash ? "✓ Saved — robots will use this on the next message" : "Edits don't save automatically"}</div>
+        <GreenButton small onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "💾 Save Soul"}</GreenButton>
+      </div>
+
+      {/* Identity */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? 16 : 22 }}>
+        <SectionHeader text="🌟 Identity" />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Org Name</label>
+            <input value={soul.org_name || ""} onChange={(e) => updateField("org_name", e.target.value)} style={inputStyle} className="sz-input" />
+          </div>
+          <div></div>
+          <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Mission</label>
+            <textarea rows={2} value={soul.mission || ""} onChange={(e) => updateField("mission", e.target.value)} placeholder="What we exist to do." style={inputStyle} className="sz-input" />
+          </div>
+          <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Vision</label>
+            <textarea rows={3} value={soul.vision || ""} onChange={(e) => updateField("vision", e.target.value)} placeholder="Where we're going." style={inputStyle} className="sz-input" />
+          </div>
+          <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Origin Story</label>
+            <textarea rows={3} value={soul.origin_story || ""} onChange={(e) => updateField("origin_story", e.target.value)} placeholder="How we got here." style={inputStyle} className="sz-input" />
+          </div>
+        </div>
+      </div>
+
+      {/* Values */}
+      <SoulArraySection title="🪨 Core Values" subtitle="The principles we live by." items={soul.values || []} keys={[{ k: "name", label: "Name", placeholder: "e.g. Operator-first" }, { k: "description", label: "Description", placeholder: "What it means in practice", multiline: true }]} onChange={(idx, k, v) => updateArray("values", idx, k, v)} onAdd={() => addArrayItem("values", { name: "", description: "" })} onRemove={(idx) => removeArrayItem("values", idx)} isMobile={isMobile} />
+
+      {/* Voice */}
+      <SoulArraySection title="🗣️ Voice Principles" subtitle="How we sound, in writing and speech." items={soul.voice_principles || []} keys={[{ k: "name", label: "Principle", placeholder: "e.g. Executive concision" }, { k: "description", label: "How", placeholder: "What this looks like in practice", multiline: true }]} onChange={(idx, k, v) => updateArray("voice_principles", idx, k, v)} onAdd={() => addArrayItem("voice_principles", { name: "", description: "" })} onRemove={(idx) => removeArrayItem("voice_principles", idx)} isMobile={isMobile} />
+
+      {/* Don'ts */}
+      <SoulArraySection title="🚫 Things We Don't Do" subtitle="Hard rules. Robots will not violate these." items={soul.things_we_dont_do || []} keys={[{ k: "text", label: "Rule", placeholder: "e.g. We don't open emails with 'I hope you're doing well'", multiline: true, full: true }]} onChange={(idx, k, v) => updateArray("things_we_dont_do", idx, k, v)} onAdd={() => addArrayItem("things_we_dont_do", { text: "" })} onRemove={(idx) => removeArrayItem("things_we_dont_do", idx)} isMobile={isMobile} />
+
+      {/* Precedents */}
+      <SoulArraySection title="⚖️ Decision Precedents" subtitle="How we've decided in the past — robots reference these." items={soul.decision_precedents || []} keys={[{ k: "name", label: "Precedent name", placeholder: "e.g. REAP pricing floor" }, { k: "content", label: "What it says", placeholder: "Concrete rule or pattern", multiline: true }]} onChange={(idx, k, v) => updateArray("decision_precedents", idx, k, v)} onAdd={() => addArrayItem("decision_precedents", { name: "", content: "" })} onRemove={(idx) => removeArrayItem("decision_precedents", idx)} isMobile={isMobile} />
+
+      {/* Save bar bottom */}
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 0 24px" }}>
+        <GreenButton small onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "💾 Save Soul"}</GreenButton>
+      </div>
+    </div>
+  );
+}
+
+function SoulArraySection({ title, subtitle, items, keys, onChange, onAdd, onRemove, isMobile }) {
+  const inputStyle = { width: "100%", padding: "8px 12px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "vertical" };
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? 16 : 22 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <SectionHeader text={title} />
+      </div>
+      <p style={{ fontSize: 11, color: "#94a3b8", margin: "0 0 14px" }}>{subtitle}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {items.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic", padding: "8px 0" }}>None yet — add one below.</div>}
+        {items.map((item, idx) => (
+          <div key={idx} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", display: "grid", gridTemplateColumns: keys.length === 1 || isMobile ? "1fr auto" : (keys[0]?.full ? "1fr auto" : "1fr 2fr auto"), gap: 8, alignItems: "start" }}>
+            {keys.map((kspec, ki) => (
+              <div key={kspec.k} style={{ gridColumn: kspec.full ? `1 / -2` : (isMobile ? "1" : (ki === 0 ? "1" : "2")) }}>
+                <label style={{ display: "block", fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 2 }}>{kspec.label}</label>
+                {kspec.multiline ? (
+                  <textarea rows={2} value={item[kspec.k] || ""} onChange={(e) => onChange(idx, kspec.k, e.target.value)} placeholder={kspec.placeholder} style={inputStyle} className="sz-input" />
+                ) : (
+                  <input value={item[kspec.k] || ""} onChange={(e) => onChange(idx, kspec.k, e.target.value)} placeholder={kspec.placeholder} style={inputStyle} className="sz-input" />
+                )}
+              </div>
+            ))}
+            <button onClick={() => onRemove(idx)} title="Remove" style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", padding: 4, fontSize: 16, alignSelf: "start" }}>×</button>
+          </div>
+        ))}
+        <button onClick={onAdd} style={{ marginTop: 4, padding: "8px 14px", borderRadius: 8, border: "1px dashed #94a3b8", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 600, cursor: "pointer", alignSelf: "flex-start" }}>+ Add</button>
+      </div>
+    </div>
+  );
+}
+
+/* — Style Guide Tab — */
+const STYLE_CHANNELS = [
+  { key: "all", label: "All", icon: "📐" },
+  { key: "general", label: "General", icon: "🌐" },
+  { key: "email", label: "Email", icon: "✉️" },
+  { key: "sms", label: "SMS / Text", icon: "💬" },
+  { key: "cc_campaign", label: "CC Campaigns", icon: "📧" },
+];
+
+function StyleGuideTab({ session, isMobile }) {
+  const [rules, setRules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ channel: "general", rule_title: "", do_text: "", dont_text: "", example_good: "", example_bad: "", importance: 7 });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "vertical" };
+
+  React.useEffect(() => {
+    supabase.from("style_guide").select("*").eq("user_id", session.user.id).order("channel", { ascending: true }).order("importance", { ascending: false }).then(({ data }) => { setRules(data || []); setLoading(false); });
+  }, [session.user.id]);
+
+  const resetForm = () => { setForm({ channel: "general", rule_title: "", do_text: "", dont_text: "", example_good: "", example_bad: "", importance: 7 }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.rule_title.trim()) return;
+    const payload = { ...form, importance: Number(form.importance) || 5, updated_at: new Date().toISOString() };
+    if (editingId) {
+      const { data } = await supabase.from("style_guide").update(payload).eq("id", editingId).select().single();
+      if (data) setRules((p) => p.map((r) => r.id === editingId ? data : r));
+    } else {
+      const { data } = await supabase.from("style_guide").insert({ ...payload, user_id: session.user.id, active: true, source: "manual" }).select().single();
+      if (data) setRules((p) => [...p, data]);
+    }
+    resetForm();
+  };
+  const startEdit = (r) => { setForm({ channel: r.channel, rule_title: r.rule_title, do_text: r.do_text || "", dont_text: r.dont_text || "", example_good: r.example_good || "", example_bad: r.example_bad || "", importance: r.importance || 5 }); setEditingId(r.id); setShowForm(true); };
+  const deleteRule = async (id) => { if (!window.confirm("Delete this style rule?")) return; await supabase.from("style_guide").delete().eq("id", id); setRules((p) => p.filter((r) => r.id !== id)); };
+  const toggleActive = async (rule) => { const { data } = await supabase.from("style_guide").update({ active: !rule.active }).eq("id", rule.id).select().single(); if (data) setRules((p) => p.map((r) => r.id === rule.id ? data : r)); };
+
+  const filtered = filter === "all" ? rules : rules.filter((r) => r.channel === filter);
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {STYLE_CHANNELS.map((c) => {
+            const count = c.key === "all" ? rules.length : rules.filter((r) => r.channel === c.key).length;
+            return (
+              <button key={c.key} onClick={() => setFilter(c.key)} style={{ padding: "6px 12px", borderRadius: 8, border: filter === c.key ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filter === c.key ? "#1C3820" : "#fff", color: filter === c.key ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                <span>{c.icon}</span>{c.label} <span style={{ fontSize: 10, opacity: 0.7 }}>({count})</span>
+              </button>
+            );
+          })}
+        </div>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Rule</GreenButton>
+      </div>
+
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? 16 : 22, marginBottom: 16 }}>
+          <SectionHeader text={editingId ? "Edit Rule" : "New Style Rule"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Channel</label>
+              <select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}>
+                <option value="general">General (any channel)</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS / Text</option>
+                <option value="cc_campaign">CC Campaign</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Importance (1-10)</label>
+              <input type="number" min={1} max={10} value={form.importance} onChange={(e) => setForm({ ...form, importance: e.target.value })} style={inputStyle} className="sz-input" />
+            </div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Rule title *</label>
+              <input value={form.rule_title} onChange={(e) => setForm({ ...form, rule_title: e.target.value })} placeholder="e.g. Open with the point, not pleasantries" style={inputStyle} className="sz-input" />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>DO</label>
+              <textarea rows={2} value={form.do_text} onChange={(e) => setForm({ ...form, do_text: e.target.value })} placeholder="What we want robots to do" style={inputStyle} className="sz-input" />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>DON'T</label>
+              <textarea rows={2} value={form.dont_text} onChange={(e) => setForm({ ...form, dont_text: e.target.value })} placeholder="What we want robots to avoid" style={inputStyle} className="sz-input" />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Example ✓</label>
+              <textarea rows={2} value={form.example_good} onChange={(e) => setForm({ ...form, example_good: e.target.value })} placeholder="An example that follows the rule" style={inputStyle} className="sz-input" />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Example ✗</label>
+              <textarea rows={2} value={form.example_bad} onChange={(e) => setForm({ ...form, example_bad: e.target.value })} placeholder="An example that violates the rule" style={inputStyle} className="sz-input" />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={!form.rule_title.trim()}>{editingId ? "Update" : "Add Rule"}</GreenButton>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>📐</div>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>No rules in this channel yet.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map((r) => (
+            <div key={r.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", opacity: r.active ? 1 : 0.55 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#f0fdf4", color: "#16a34a", textTransform: "uppercase" }}>{r.channel}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef3c7", color: "#92400e" }}>★ {r.importance}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{r.rule_title}</span>
+                </div>
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <button onClick={() => toggleActive(r)} title={r.active ? "Disable" : "Enable"} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, fontSize: 14 }}>{r.active ? "🟢" : "⚪"}</button>
+                  <button onClick={() => startEdit(r)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                  <button onClick={() => deleteRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                </div>
+              </div>
+              {(r.do_text || r.dont_text) && (
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 6 }}>
+                  {r.do_text && <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#166534" }}><strong style={{ fontSize: 10, letterSpacing: "0.05em" }}>DO</strong><br />{r.do_text}</div>}
+                  {r.dont_text && <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#991b1b" }}><strong style={{ fontSize: 10, letterSpacing: "0.05em" }}>DON'T</strong><br />{r.dont_text}</div>}
+                </div>
+              )}
+              {(r.example_good || r.example_bad) && (
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+                  {r.example_good && <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#475569", fontStyle: "italic" }}>✓ {r.example_good}</div>}
+                  {r.example_bad && <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#475569", fontStyle: "italic" }}>✗ {r.example_bad}</div>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* — Memories Tab — */
+function MemoriesTab({ session, isMobile, robots }) {
+  const [memories, setMemories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ category: "general", title: "", content: "", importance: 7, tags: "" });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "vertical" };
+
+  React.useEffect(() => {
+    supabase.from("memories").select("*").eq("user_id", session.user.id).eq("active", true).order("importance", { ascending: false }).order("created_at", { ascending: false }).then(({ data }) => { setMemories(data || []); setLoading(false); });
+  }, [session.user.id]);
+
+  const categories = Array.from(new Set(memories.map((m) => m.category))).sort();
+  const filtered = memories.filter((m) => {
+    if (categoryFilter !== "all" && m.category !== categoryFilter) return false;
+    if (search) { const s = search.toLowerCase(); if (!m.title.toLowerCase().includes(s) && !m.content.toLowerCase().includes(s)) return false; }
+    return true;
+  });
+
+  const resetForm = () => { setForm({ category: "general", title: "", content: "", importance: 7, tags: "" }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.content.trim()) return;
+    const tagsArr = form.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    const payload = { category: form.category, title: form.title, content: form.content, importance: Number(form.importance) || 5, tags: tagsArr, updated_at: new Date().toISOString() };
+    if (editingId) {
+      const { data } = await supabase.from("memories").update(payload).eq("id", editingId).select().single();
+      if (data) setMemories((p) => p.map((m) => m.id === editingId ? data : m));
+    } else {
+      const { data } = await supabase.from("memories").insert({ ...payload, user_id: session.user.id, source: "manual", active: true }).select().single();
+      if (data) setMemories((p) => [data, ...p]);
+    }
+    resetForm();
+  };
+  const startEdit = (m) => { setForm({ category: m.category, title: m.title, content: m.content, importance: m.importance || 5, tags: (m.tags || []).join(", ") }); setEditingId(m.id); setShowForm(true); };
+  const deleteMemory = async (id) => { if (!window.confirm("Delete this memory?")) return; await supabase.from("memories").update({ active: false }).eq("id", id); setMemories((p) => p.filter((m) => m.id !== id)); };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Search memories..." style={{ ...inputStyle, flex: 1, minWidth: 220, maxWidth: 360 }} className="sz-input" />
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ ...inputStyle, width: "auto", cursor: "pointer" }}>
+          <option value="all">All categories ({memories.length})</option>
+          {categories.map((c) => <option key={c} value={c}>{c} ({memories.filter((m) => m.category === c).length})</option>)}
+        </select>
+        <GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Memory</GreenButton>
+      </div>
+
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? 16 : 22, marginBottom: 16 }}>
+          <SectionHeader text={editingId ? "Edit Memory" : "New Memory"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Category</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. pricing, client, decision" style={inputStyle} className="sz-input" /></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Importance (1-10)</label><input type="number" min={1} max={10} value={form.importance} onChange={(e) => setForm({ ...form, importance: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Short, descriptive — e.g. 'REAP pricing floor'" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Content *</label><textarea rows={4} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="The lesson, decision, or pattern. Be specific." style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Tags (comma-separated)</label><input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="e.g. reap, pricing, investor" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={!form.title.trim() || !form.content.trim()}>{editingId ? "Update" : "Save Memory"}</GreenButton>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🧠</div>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{memories.length === 0 ? "No memories yet — robots will accumulate them as you give feedback." : "No matches for your filter."}</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map((m) => (
+            <div key={m.id} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#eff6ff", color: "#3b82f6", textTransform: "uppercase" }}>{m.category}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef3c7", color: "#92400e" }}>★ {m.importance}</span>
+                  {m.source && m.source !== "manual" && <span style={{ fontSize: 9, fontWeight: 600, padding: "3px 8px", borderRadius: 5, background: "#f1f5f9", color: "#64748b" }}>via {m.source}</span>}
+                  {m.use_count > 0 && <span style={{ fontSize: 9, fontWeight: 600, padding: "3px 8px", borderRadius: 5, background: "#f0fdf4", color: "#16a34a" }}>used {m.use_count}×</span>}
+                </div>
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <button onClick={() => startEdit(m)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.edit}</button>
+                  <button onClick={() => deleteMemory(m.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2 }}>{Icons.trash}</button>
+                </div>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>{m.title}</div>
+              <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.content}</div>
+              {(m.tags || []).length > 0 && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 10 }}>
+                  {(m.tags || []).map((t, i) => <span key={i} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0" }}>#{t}</span>)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* — Exemplars Tab — */
+function ExemplarsTab({ session, isMobile }) {
+  const [exemplars, setExemplars] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [viewing, setViewing] = useState(null); // exemplar to view in modal
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ exemplar_type: "email", channel: "email", title: "", why_its_good: "", content: "", tags: "", importance: 7 });
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "vertical" };
+
+  React.useEffect(() => {
+    supabase.from("exemplars").select("*").eq("user_id", session.user.id).eq("active", true).order("importance", { ascending: false }).order("created_at", { ascending: false }).then(({ data }) => { setExemplars(data || []); setLoading(false); });
+  }, [session.user.id]);
+
+  const filtered = filter === "all" ? exemplars : exemplars.filter((e) => e.channel === filter);
+  const channels = Array.from(new Set(exemplars.map((e) => e.channel))).sort();
+
+  const resetForm = () => { setForm({ exemplar_type: "email", channel: "email", title: "", why_its_good: "", content: "", tags: "", importance: 7 }); setEditingId(null); setShowForm(false); };
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.content.trim()) return;
+    const tagsArr = form.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    const payload = { exemplar_type: form.exemplar_type, channel: form.channel, title: form.title, why_its_good: form.why_its_good, content: form.content, tags: tagsArr, importance: Number(form.importance) || 5, updated_at: new Date().toISOString() };
+    if (editingId) {
+      const { data } = await supabase.from("exemplars").update(payload).eq("id", editingId).select().single();
+      if (data) setExemplars((p) => p.map((e) => e.id === editingId ? data : e));
+    } else {
+      const { data } = await supabase.from("exemplars").insert({ ...payload, user_id: session.user.id, active: true }).select().single();
+      if (data) setExemplars((p) => [data, ...p]);
+    }
+    resetForm();
+  };
+  const startEdit = (e) => { setForm({ exemplar_type: e.exemplar_type, channel: e.channel, title: e.title, why_its_good: e.why_its_good || "", content: e.content || "", tags: (e.tags || []).join(", "), importance: e.importance || 5 }); setEditingId(e.id); setShowForm(true); setViewing(null); };
+  const deleteExemplar = async (id) => { if (!window.confirm("Delete this exemplar?")) return; await supabase.from("exemplars").update({ active: false }).eq("id", id); setExemplars((p) => p.filter((e) => e.id !== id)); setViewing(null); };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button onClick={() => setFilter("all")} style={{ padding: "6px 12px", borderRadius: 8, border: filter === "all" ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filter === "all" ? "#1C3820" : "#fff", color: filter === "all" ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>All ({exemplars.length})</button>
+          {channels.map((c) => (
+            <button key={c} onClick={() => setFilter(c)} style={{ padding: "6px 12px", borderRadius: 8, border: filter === c ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filter === c ? "#1C3820" : "#fff", color: filter === c ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{c} ({exemplars.filter((e) => e.channel === c).length})</button>
+          ))}
+        </div>
+        <div style={{ marginLeft: "auto" }}><GreenButton small onClick={() => { resetForm(); setShowForm(!showForm); }}>{Icons.plus} Add Exemplar</GreenButton></div>
+      </div>
+
+      {showForm && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #16a34a", padding: isMobile ? 16 : 22, marginBottom: 16 }}>
+          <SectionHeader text={editingId ? "Edit Exemplar" : "New Exemplar"} />
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Type</label><select value={form.exemplar_type} onChange={(e) => setForm({ ...form, exemplar_type: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="email">Email</option><option value="sms">SMS</option><option value="cc_campaign">CC Campaign</option><option value="other">Other</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Channel</label><select value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })} style={{ ...inputStyle, cursor: "pointer" }}><option value="email">Email</option><option value="sms">SMS</option><option value="cc_campaign">CC Campaign</option><option value="general">General</option></select></div>
+            <div><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Importance (1-10)</label><input type="number" min={1} max={10} value={form.importance} onChange={(e) => setForm({ ...form, importance: e.target.value })} style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Title *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Cold investor outreach — opens with value prop" style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Why it's good</label><textarea rows={2} value={form.why_its_good} onChange={(e) => setForm({ ...form, why_its_good: e.target.value })} placeholder="What makes this exemplary? Robots will read this." style={inputStyle} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Content *</label><textarea rows={6} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="The full exemplar (email body, text message, campaign HTML, etc.)" style={{ ...inputStyle, fontFamily: "'DM Mono', monospace" }} className="sz-input" /></div>
+            <div style={{ gridColumn: isMobile ? "1" : "1 / -1" }}><label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Tags (comma-separated)</label><input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="e.g. cold-outreach, investor, reap" style={inputStyle} className="sz-input" /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={resetForm} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+            <GreenButton small onClick={handleSubmit} disabled={!form.title.trim() || !form.content.trim()}>{editingId ? "Update" : "Save Exemplar"}</GreenButton>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>💎</div>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{exemplars.length === 0 ? "No exemplars yet — click 💾 Save as exemplar on any draft to start your library." : "No exemplars in this channel."}</p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
+          {filtered.map((e) => (
+            <div key={e.id} onClick={() => setViewing(e)} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", cursor: "pointer", transition: "all 0.15s" }} className="sz-hover-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef3c7", color: "#92400e", textTransform: "uppercase" }}>★ {e.importance}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#eff6ff", color: "#3b82f6", textTransform: "uppercase" }}>{e.channel}</span>
+                  {e.use_count > 0 && <span style={{ fontSize: 9, fontWeight: 600, padding: "3px 8px", borderRadius: 5, background: "#f0fdf4", color: "#16a34a" }}>used {e.use_count}×</span>}
+                </div>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>{e.title}</div>
+              {e.why_its_good && <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.5, marginBottom: 8, fontStyle: "italic" }}>{e.why_its_good.slice(0, 140)}{e.why_its_good.length > 140 ? "…" : ""}</div>}
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#475569", fontFamily: "'DM Mono', monospace", maxHeight: 80, overflow: "hidden", whiteSpace: "pre-wrap" }}>{(e.content || "").slice(0, 200)}{(e.content || "").length > 200 ? "…" : ""}</div>
+              {(e.tags || []).length > 0 && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+                  {(e.tags || []).slice(0, 4).map((t, i) => <span key={i} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0" }}>#{t}</span>)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* View modal */}
+      {viewing && (
+        <div onClick={() => setViewing(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+          <div onClick={(ev) => ev.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 720, maxHeight: isMobile ? "100dvh" : "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ background: "linear-gradient(135deg, #1C3820, #0f1f12)", padding: "18px 22px", color: "#fff", flexShrink: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.08em" }}>💎 Exemplar · {viewing.channel}</div>
+                <button onClick={() => setViewing(null)} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 28, height: 28, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{viewing.title}</div>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
+              {viewing.why_its_good && (
+                <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", marginBottom: 14, borderLeft: "3px solid #D4C08C" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Why it's good</div>
+                  <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>{viewing.why_its_good}</div>
+                </div>
+              )}
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Content</div>
+              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", fontSize: 13, fontFamily: "'DM Mono', monospace", color: "#0f172a", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{viewing.content}</div>
+              {(viewing.tags || []).length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14 }}>
+                  {(viewing.tags || []).map((t, i) => <span key={i} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0" }}>#{t}</span>)}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10, marginTop: 14, fontSize: 11, color: "#94a3b8" }}>
+                <span>★ Importance: {viewing.importance}</span>
+                {viewing.use_count > 0 && <span>· Used {viewing.use_count}×</span>}
+                <span>· Saved {new Date(viewing.created_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+            <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", gap: 8, justifyContent: "space-between", flexShrink: 0, background: "#f8fafc" }}>
+              <button onClick={() => deleteExemplar(viewing.id)} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setViewing(null)} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Close</button>
+                <GreenButton small onClick={() => startEdit(viewing)}>Edit</GreenButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* — Feedback Log Tab — */
+function FeedbackLogTab({ session, isMobile, robots }) {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [promotingId, setPromotingId] = useState(null);
+  const robotMap = Object.fromEntries((robots || []).map((r) => [r.id, r]));
+
+  React.useEffect(() => {
+    supabase.from("feedback_events").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }).limit(100).then(({ data }) => { setEvents(data || []); setLoading(false); });
+  }, [session.user.id]);
+
+  const filtered = filter === "all" ? events : events.filter((e) => e.event_type === filter);
+  const eventTypes = Array.from(new Set(events.map((e) => e.event_type))).sort();
+
+  const promoteToMemory = async (eventId) => {
+    setPromotingId(eventId);
+    try {
+      const { data } = await supabase.functions.invoke("extract-memory", { body: { user_id: session.user.id, feedback_event_id: eventId } });
+      if (data?.memory) {
+        setEvents((p) => p.map((e) => e.id === eventId ? { ...e, processed_into_memory: true, memory_id: data.memory.id } : e));
+      } else if (data?.skip) {
+        alert("The system decided not to extract a memory: " + (data.reason || "no clear lesson"));
+      }
+    } catch (err) {
+      alert("Extraction failed: " + (err.message || err));
+    }
+    setPromotingId(null);
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  const eventIcons = { thumbs_up: "👍", thumbs_down: "👎", edit: "✏️", artifact_edited: "✏️", artifact_approved: "📤", artifact_discarded: "🗑️" };
+  const verdictColors = { approved: { bg: "#f0fdf4", color: "#16a34a" }, rejected: { bg: "#fef2f2", color: "#dc2626" }, edited: { bg: "#fffbeb", color: "#f59e0b" } };
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+        <button onClick={() => setFilter("all")} style={{ padding: "6px 12px", borderRadius: 8, border: filter === "all" ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filter === "all" ? "#1C3820" : "#fff", color: filter === "all" ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>All ({events.length})</button>
+        {eventTypes.map((t) => (
+          <button key={t} onClick={() => setFilter(t)} style={{ padding: "6px 12px", borderRadius: 8, border: filter === t ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filter === t ? "#1C3820" : "#fff", color: filter === t ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <span>{eventIcons[t] || "•"}</span>{t.replace(/_/g, " ")} <span style={{ fontSize: 10, opacity: 0.7 }}>({events.filter((e) => e.event_type === t).length})</span>
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>No feedback yet — every 👍 / 👎 / edit logs here.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map((e) => {
+            const robot = robotMap[e.robot_id];
+            const vc = verdictColors[e.verdict] || { bg: "#f8fafc", color: "#64748b" };
+            return (
+              <div key={e.id} style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "12px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 16 }}>{eventIcons[e.event_type] || "•"}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#0f172a" }}>{e.event_type.replace(/_/g, " ")}</span>
+                    {e.verdict && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: vc.bg, color: vc.color, textTransform: "uppercase" }}>{e.verdict}</span>}
+                    {robot && <span style={{ fontSize: 10, color: "#64748b" }}>· {robot.name}</span>}
+                    {e.context_tool && <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "#f1f5f9", color: "#475569" }}>{e.context_tool}</span>}
+                    {e.processed_into_memory && <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>🧠 → memory</span>}
+                  </div>
+                  <span style={{ fontSize: 10, color: "#94a3b8", fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>{new Date(e.created_at).toLocaleString()}</span>
+                </div>
+
+                {e.user_note && (
+                  <div style={{ background: "#fef2f2", borderLeft: "3px solid #dc2626", padding: "8px 12px", borderRadius: 6, fontSize: 12, color: "#991b1b", marginBottom: 8 }}><strong style={{ fontSize: 9, letterSpacing: "0.05em" }}>YOUR NOTE</strong><br />{e.user_note}</div>
+                )}
+
+                {(e.original_content || e.edited_content) && (
+                  <div style={{ display: "grid", gridTemplateColumns: e.edited_content ? (isMobile ? "1fr" : "1fr 1fr") : "1fr", gap: 8 }}>
+                    {e.original_content && (
+                      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 10px", fontSize: 11, color: "#475569" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Original</div>
+                        <div style={{ whiteSpace: "pre-wrap", fontFamily: "'DM Sans', sans-serif" }}>{(e.original_content || "").slice(0, 280)}{(e.original_content || "").length > 280 ? "…" : ""}</div>
+                      </div>
+                    )}
+                    {e.edited_content && (
+                      <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "8px 10px", fontSize: 11, color: "#78350f" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Your edit</div>
+                        <div style={{ whiteSpace: "pre-wrap" }}>{(e.edited_content || "").slice(0, 280)}{(e.edited_content || "").length > 280 ? "…" : ""}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!e.processed_into_memory && (e.user_note || e.edited_content) && (
+                  <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={() => promoteToMemory(e.id)} disabled={promotingId === e.id} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #16a34a", background: "#fff", color: "#16a34a", fontSize: 10, fontWeight: 700, cursor: promotingId === e.id ? "not-allowed" : "pointer" }}>{promotingId === e.id ? "Extracting..." : "🧠 Promote to memory"}</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 /* — Sales Pipeline View — */
 const PIPELINE_STAGES = [
   { key: "lead", label: "Lead", color: "#94a3b8", bg: "#f1f5f9" },
