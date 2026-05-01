@@ -780,10 +780,38 @@ Deno.serve(async (req) => {
     const bizContext = (businesses || []).map((b: any) => `  - ${b.name} (id: ${b.id})`).join("\n");
     const today = new Date().toISOString().slice(0, 10);
 
-    // Load knowledge base context
-    const knowledgeBlock = await loadKnowledgeContext(supabase, user_id, message);
+    // Detect brand audit task — when present, skip heavy KB injection and slim tools
+    // to fit within rate-limit budgets (audit needs facts + web search, not soul/style)
+    const isBrandAudit = /\b(brand audit|reputation audit|saturday audit|brand check|brand sweep)\b/i.test(message);
 
-    const systemPrompt = `You are ${robot.name}, a ${robot.role || "assistant"} working at Suarez Global.
+    // Load knowledge base context (skipped for brand audits)
+    const knowledgeBlock = isBrandAudit ? "" : await loadKnowledgeContext(supabase, user_id, message);
+
+    const systemPrompt = isBrandAudit ? `You are ${robot.name}, ${robot.role || "the strategic operator"} at Suarez Global. Your task right now: run the weekly brand audit.
+
+═══ CONTEXT ═══
+Today's date: ${today}.
+The user (Javier Suarez) operates: Suarez Global, Suarez Capital Partners, Suarez Global Ventures, Tampa Development Group, Clear Capital Group. Flagship product: REAP (real estate analytics platform).
+
+═══ WEEKLY BRAND AUDIT PROTOCOL ═══
+1. Use web_search for these queries (one search per query — do not skip):
+   • "Javier Suarez real estate"
+   • "Suarez Capital"
+   • "Suarez Global Ventures"
+   • "REAP AI"
+   • "Tampa multifamily syndication Javier Suarez"
+   • "Tampa real estate REAP AI"
+2. From SERPs, capture: Page 1 results, LinkedIn presence/duplicates, YouTube channel signals, press/podcast mentions, event listings, any negative or off-brand mentions.
+3. Score brand strength 1–10 using this rubric (use the same rubric every time so scores are comparable week-over-week):
+   1-3: minimal/scattered presence
+   4-5: some presence but inconsistent
+   6-7: solid consistent narrative
+   8-9: strong institutional multi-channel
+   10: dominant, polished, undeniable
+4. Identify EXACTLY 3 wins, 3 critical issues (tied to investor trust / capital conversion / institutional credibility), and 5 prioritized actions for the next 7 days.
+5. Call save_brand_audit with the structured report.
+
+Voice: institutional, direct, decisive. Specific and quantified — no filler. After saving, give a one-line summary.` : `You are ${robot.name}, a ${robot.role || "assistant"} working at Suarez Global.
 
 ${robot.personality ? `═══ YOUR PERSONALITY ═══\n${robot.personality}\n` : ""}
 ${robot.description ? `Role: ${robot.description}\n` : ""}
@@ -805,20 +833,6 @@ ${bizContext || "  (none configured)"}
 - For Quo texts: 'javier' = personal voice (his line). 'assistant' = formal/admin voice. Default to 'assistant' unless context calls for personal.
 - Honor the SOUL, STYLE GUIDE, and MEMORIES above. They represent how Javier and the Suarez Global team operate. Match the voice. Follow the rules. When in doubt, lean toward what the soul implies.
 
-═══ WEEKLY BRAND AUDIT PROTOCOL ═══
-When the user asks for a weekly brand audit (or similar — "brand check," "reputation audit," "run the Saturday audit"):
-1. Use the web_search tool to run ALL of these queries (one search each, do not skip):
-   • "Javier Suarez real estate"
-   • "Suarez Capital"
-   • "Suarez Global Ventures"
-   • "REAP AI"
-   • "Tampa multifamily syndication Javier Suarez"
-   • "Tampa real estate REAP AI"
-2. From SERPs, capture: Page 1 results, LinkedIn presence/duplicates, YouTube channel signals, press mentions, podcast features, event listings, and any negative or off-brand mentions.
-3. Score brand strength 1–10 using this rubric: 1-3 minimal/scattered, 4-5 some but inconsistent, 6-7 solid consistent narrative, 8-9 strong institutional multi-channel, 10 dominant/polished/undeniable. Use the same rubric every time so scores are comparable week-over-week.
-4. Identify exactly 3 wins, exactly 3 critical issues (tied to investor trust / capital conversion / institutional credibility), and 5 prioritized actions for the next 7 days.
-5. Call save_brand_audit with the structured report. Voice: institutional, direct, decisive, confidence-driven. No filler. Specific and quantified.
-
 You're not a generic AI. You're a member of this team. Act like it.`;
 
     const messages = [...history, { role: "user", content: message }];
@@ -830,9 +844,12 @@ You're not a generic AI. You're a member of this team. Act like it.`;
 
     while (iterations < MAX_ITERATIONS) {
       iterations++;
-      // Combine our custom tools + Anthropic's server-side web_search tool
+      // For brand audit: send only the tools we need (web_search + save_brand_audit)
+      // For everything else: full custom tool set + web_search
+      const auditTools = TOOLS.filter((t: any) => t.name === "save_brand_audit");
+      const customTools = isBrandAudit ? auditTools : TOOLS;
       const allTools = [
-        ...TOOLS,
+        ...customTools,
         { type: "web_search_20250305", name: "web_search", max_uses: 8, user_location: { type: "approximate", city: "Tampa", region: "Florida", country: "US", timezone: "America/New_York" } },
       ];
       const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
