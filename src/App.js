@@ -79,6 +79,8 @@ const GlobalStyles = () => (
     @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
     @keyframes float1 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(30px,-20px) scale(1.05); } 66% { transform: translate(-20px,15px) scale(0.95); } }
     @keyframes float2 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-25px,20px) scale(1.08); } 66% { transform: translate(15px,-25px) scale(0.92); } }
+    @keyframes szPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+    .sz-pulse { animation: szPulse 1.4s ease-in-out infinite; color: #16a34a; font-size: 18px; }
   `}</style>
 );
 
@@ -7754,6 +7756,434 @@ function ProductsServicesView({ isMobile, session }) {
   );
 }
 
+/* — Robots Workspace View — chat with robots, see their tasks & artifacts — */
+function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabChange }) {
+  const activeRobots = robots.filter((r) => r.status !== "inactive" && r.status !== "archived");
+  const selectedId = activeTab || (activeRobots[0]?.id || "");
+  const selected = activeRobots.find((r) => r.id === selectedId) || activeRobots[0];
+
+  const [conversationLog, setConversationLog] = useState([]); // [{ user_message, assistant_response, tool_calls, artifacts, timestamp }]
+  const [pendingMessage, setPendingMessage] = useState(null); // { user_message } shown immediately while waiting
+  const [tasks, setTasks] = useState([]);
+  const [artifacts, setArtifacts] = useState([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [rightPaneTab, setRightPaneTab] = useState("tasks");
+  const messagesEndRef = React.useRef(null);
+
+  // Load conversation + tasks + artifacts whenever selected robot changes
+  React.useEffect(() => {
+    if (!selected) return;
+    setLoadingHistory(true);
+    setConversationLog([]);
+    setPendingMessage(null);
+
+    Promise.all([
+      supabase.from("robot_conversations").select("messages").eq("user_id", session.user.id).eq("robot_id", selected.id).eq("channel_type", "workspace").maybeSingle(),
+      supabase.from("cu_tasks").select("*").eq("user_id", session.user.id).eq("assigned_robot_id", selected.id).order("created_at", { ascending: false }),
+      supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("robot_id", selected.id).order("created_at", { ascending: false }).limit(50),
+    ]).then(([convRes, tasksRes, artRes]) => {
+      const msgs = Array.isArray(convRes?.data?.messages) ? convRes.data.messages : [];
+      setConversationLog(msgs);
+      setTasks(tasksRes?.data || []);
+      setArtifacts(artRes?.data || []);
+      setLoadingHistory(false);
+    });
+  }, [selected?.id, session.user.id]);
+
+  // Scroll to bottom on new messages
+  React.useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversationLog.length, pendingMessage, sending]);
+
+  const sendMessage = async () => {
+    if (!input.trim() || sending || !selected) return;
+    const userMsg = input.trim();
+    setInput("");
+    setPendingMessage({ user_message: userMsg });
+    setSending(true);
+
+    // Build history for API — convert log entries into Anthropic message format
+    // Each log entry has user_message and assistant_response. We send recent context.
+    const recentLog = conversationLog.slice(-10); // last 10 turns
+    const history = [];
+    for (const entry of recentLog) {
+      history.push({ role: "user", content: entry.user_message });
+      if (entry.assistant_response) {
+        history.push({ role: "assistant", content: entry.assistant_response });
+      }
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("robot-chat", {
+        body: {
+          robot_id: selected.id,
+          user_id: session.user.id,
+          message: userMsg,
+          history,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        const errEntry = {
+          user_message: userMsg,
+          assistant_response: `⚠️ Error: ${data.error}${data.details ? ` — ${typeof data.details === "string" ? data.details : JSON.stringify(data.details).slice(0, 200)}` : ""}`,
+          tool_calls: [],
+          artifacts: [],
+          timestamp: new Date().toISOString(),
+        };
+        setConversationLog((p) => [...p, errEntry]);
+      } else {
+        const newEntry = {
+          user_message: userMsg,
+          assistant_response: data.response || "",
+          tool_calls: data.tool_calls || [],
+          artifacts: data.artifacts || [],
+          timestamp: new Date().toISOString(),
+        };
+        setConversationLog((p) => [...p, newEntry]);
+
+        // If task was assigned, refresh tasks
+        if (data.tool_calls?.some((tc) => tc.tool === "assign_task")) {
+          const { data: t } = await supabase.from("cu_tasks").select("*").eq("user_id", session.user.id).eq("assigned_robot_id", selected.id).order("created_at", { ascending: false });
+          if (t) setTasks(t);
+        }
+        // If artifact created, refresh artifacts
+        if (data.artifacts?.length > 0) {
+          const { data: a } = await supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("robot_id", selected.id).order("created_at", { ascending: false }).limit(50);
+          if (a) setArtifacts(a);
+        }
+      }
+    } catch (err) {
+      const errEntry = {
+        user_message: userMsg,
+        assistant_response: `⚠️ Connection error: ${err.message || err}`,
+        tool_calls: [],
+        artifacts: [],
+        timestamp: new Date().toISOString(),
+      };
+      setConversationLog((p) => [...p, errEntry]);
+    } finally {
+      setPendingMessage(null);
+      setSending(false);
+    }
+  };
+
+  const clearConversation = async () => {
+    if (!selected) return;
+    if (!window.confirm(`Clear all conversation history with ${selected.name}?`)) return;
+    await supabase.from("robot_conversations").delete().eq("user_id", session.user.id).eq("robot_id", selected.id).eq("channel_type", "workspace");
+    setConversationLog([]);
+  };
+
+  const toggleTask = async (taskId, currentStatus) => {
+    const newStatus = currentStatus === "complete" ? "open" : "complete";
+    const newProgress = newStatus === "complete" ? 100 : 0;
+    const { data } = await supabase.from("cu_tasks").update({ status: newStatus, progress: newProgress }).eq("id", taskId).select().single();
+    if (data) setTasks((p) => p.map((t) => (t.id === taskId ? data : t)));
+  };
+
+  const deleteTask = async (taskId) => {
+    if (!window.confirm("Delete this task?")) return;
+    await supabase.from("cu_tasks").delete().eq("id", taskId);
+    setTasks((p) => p.filter((t) => t.id !== taskId));
+  };
+
+  const inputStyle = { width: "100%", padding: "12px 16px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 10, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box", resize: "none" };
+
+  // ─── Robot list sidebar ──
+  const RobotsList = () => (
+    <div style={{ width: 260, height: "100%", background: "linear-gradient(180deg, #1C3820 0%, #0f2614 100%)", color: "#fff", display: "flex", flexDirection: "column", borderRight: "1px solid rgba(255,255,255,0.05)", flexShrink: 0, overflow: "auto" }}>
+      <div style={{ padding: "20px 16px 12px" }}>
+        <h2 style={{ fontSize: 13, fontWeight: 800, color: "#D4C08C", margin: "0 0 4px", fontFamily: "'Playfair Display', serif", letterSpacing: "0.02em" }}>🤖 Robots</h2>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Your Team</div>
+      </div>
+      <div style={{ padding: "0 8px", flex: 1 }}>
+        {activeRobots.length === 0 && (
+          <div style={{ padding: "20px 12px", color: "rgba(255,255,255,0.5)", fontSize: 12, textAlign: "center" }}>No robots yet. Add one in Profile → Users.</div>
+        )}
+        {activeRobots.map((r) => {
+          const isActive = selected?.id === r.id;
+          const initials = r.name?.slice(0, 2).toUpperCase() || "🤖";
+          return (
+            <button key={r.id} onClick={() => { onTabChange(r.id); if (isMobile) setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 12px", borderRadius: 10, border: "none", background: isActive ? "rgba(212,192,140,0.15)" : "transparent", color: isActive ? "#D4C08C" : "rgba(255,255,255,0.6)", cursor: "pointer", marginBottom: 4, textAlign: "left", transition: "all 0.15s" }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: r.avatar_color || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#fff", flexShrink: 0, fontFamily: "'Playfair Display', serif", letterSpacing: "0.04em" }}>{initials}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: isActive ? 700 : 600, color: isActive ? "#D4C08C" : "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                <div style={{ fontSize: 10, opacity: 0.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.role || "Assistant"}</div>
+              </div>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", flexShrink: 0 }} />
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ padding: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ fontSize: 10, color: "rgba(212,192,140,0.6)", fontWeight: 600, lineHeight: 1.5 }}>
+          💡 Robots can draft Constant Contact emails, assign tasks, and look up your contacts and products.
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!selected) {
+    return (
+      <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+        {!isMobile && <RobotsList />}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", padding: 24 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🤖</div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>No Robots Available</h3>
+          <p style={{ fontSize: 13, color: "#94a3b8" }}>Create a robot in Profile → Users → Robots tab.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const openTasks = tasks.filter((t) => t.status !== "complete");
+  const completedTasks = tasks.filter((t) => t.status === "complete");
+
+  return (
+    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><RobotsList /></div>
+        </>
+      )}
+
+      {/* Main chat area */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#f8fafc", minWidth: 0 }}>
+        {/* Header */}
+        <div style={{ background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+          <div style={{ width: 42, height: 42, borderRadius: 10, background: selected.avatar_color || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif", letterSpacing: "0.04em" }}>{selected.name?.slice(0, 2).toUpperCase()}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif" }}>{selected.name}</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>{selected.role || "Assistant"} · {openTasks.length} open task{openTasks.length !== 1 ? "s" : ""}</div>
+          </div>
+          {conversationLog.length > 0 && (
+            <button onClick={clearConversation} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear chat</button>
+          )}
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 12px" : "24px 32px", WebkitOverflowScrolling: "touch" }}>
+          {loadingHistory ? (
+            <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>
+          ) : conversationLog.length === 0 && !pendingMessage ? (
+            <div style={{ textAlign: "center", padding: "40px 16px" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>👋</div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontFamily: "'Playfair Display', serif", margin: "0 0 6px" }}>Start a conversation with {selected.name}</h3>
+              <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 20px" }}>{selected.description || "Ready to help with whatever you need."}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480, margin: "0 auto" }}>
+                {[
+                  "Draft an HTML email in Constant Contact for the REAP analytics platform launch",
+                  "Create a task to follow up with Q3 prospects next Monday",
+                  "What products are in our catalog?",
+                  "Find contacts at companies in real estate",
+                ].map((suggestion) => (
+                  <button key={suggestion} onClick={() => setInput(suggestion)} style={{ padding: "10px 14px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 12, color: "#475569", textAlign: "left", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>💬 {suggestion}</button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+              {conversationLog.map((entry, i) => (
+                <ChatTurn key={i} entry={entry} robotName={selected.name} robotColor={selected.avatar_color} />
+              ))}
+              {pendingMessage && (
+                <>
+                  <UserBubble text={pendingMessage.user_message} />
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: selected.avatar_color || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{selected.name?.slice(0, 2).toUpperCase()}</div>
+                    <div style={{ background: "#fff", borderRadius: 12, padding: "12px 16px", border: "1px solid #e2e8f0", color: "#94a3b8", fontSize: 13 }}>
+                      <span className="sz-pulse">●</span> Thinking...
+                    </div>
+                  </div>
+                </>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Input */}
+        <div style={{ background: "#fff", borderTop: "1px solid #e2e8f0", padding: isMobile ? "12px" : "16px 32px", flexShrink: 0 }}>
+          <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder={`Message ${selected.name}...`}
+              rows={Math.min(input.split("\n").length, 4)}
+              style={{ ...inputStyle, flex: 1, minHeight: 44, maxHeight: 120 }}
+              className="sz-input"
+              disabled={sending}
+            />
+            <button onClick={sendMessage} disabled={!input.trim() || sending} style={{ padding: "12px 18px", borderRadius: 10, border: "none", background: input.trim() && !sending ? "#1C3820" : "#cbd5e1", color: "#fff", fontSize: 13, fontWeight: 700, cursor: input.trim() && !sending ? "pointer" : "not-allowed", flexShrink: 0, height: 44 }}>{sending ? "..." : "Send"}</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Right pane — tasks & artifacts */}
+      {!isMobile && (
+        <div style={{ width: 320, height: "100%", background: "#fff", borderLeft: "1px solid #e2e8f0", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #e2e8f0", padding: "0 12px", flexShrink: 0 }}>
+            {[
+              { key: "tasks", label: `Tasks (${openTasks.length})` },
+              { key: "drafts", label: `Drafts (${artifacts.length})` },
+            ].map((t) => (
+              <button key={t.key} onClick={() => setRightPaneTab(t.key)} style={{ flex: 1, padding: "14px 12px", background: "none", border: "none", borderBottom: rightPaneTab === t.key ? "2px solid #1C3820" : "2px solid transparent", color: rightPaneTab === t.key ? "#1C3820" : "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>{t.label}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+            {rightPaneTab === "tasks" ? (
+              <>
+                {openTasks.length === 0 && completedTasks.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 24, color: "#94a3b8", fontSize: 12 }}>
+                    No tasks yet. Ask {selected.name} to create one.
+                  </div>
+                ) : (
+                  <>
+                    {openTasks.length > 0 && <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Open</div>}
+                    {openTasks.map((task) => (
+                      <TaskCard key={task.id} task={task} onToggle={() => toggleTask(task.id, task.status)} onDelete={() => deleteTask(task.id)} />
+                    ))}
+                    {completedTasks.length > 0 && <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase", margin: "16px 0 8px" }}>Completed</div>}
+                    {completedTasks.map((task) => (
+                      <TaskCard key={task.id} task={task} onToggle={() => toggleTask(task.id, task.status)} onDelete={() => deleteTask(task.id)} />
+                    ))}
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {artifacts.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 24, color: "#94a3b8", fontSize: 12 }}>
+                    No drafts yet. Ask {selected.name} to draft a Constant Contact email.
+                  </div>
+                ) : (
+                  artifacts.map((art) => <ArtifactCard key={art.id} artifact={art} />)
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* — Chat turn renderer — */
+function ChatTurn({ entry, robotName, robotColor }) {
+  return (
+    <>
+      <UserBubble text={entry.user_message} />
+      {(entry.tool_calls || []).map((tc, i) => (
+        <ToolCallCard key={i} toolCall={tc} />
+      ))}
+      {entry.assistant_response && <AssistantBubble text={entry.assistant_response} robotName={robotName} robotColor={robotColor} artifacts={entry.artifacts || []} />}
+    </>
+  );
+}
+
+function UserBubble({ text }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ background: "#1C3820", color: "#fff", borderRadius: 12, padding: "10px 14px", maxWidth: "78%", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{text}</div>
+    </div>
+  );
+}
+
+function AssistantBubble({ text, robotName, robotColor, artifacts = [] }) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+      <div style={{ width: 30, height: 30, borderRadius: 8, background: robotColor || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0, fontFamily: "'Playfair Display', serif" }}>{robotName?.slice(0, 2).toUpperCase()}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ background: "#fff", borderRadius: 12, padding: "10px 14px", border: "1px solid #e2e8f0", color: "#0f172a", fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{text}</div>
+        {artifacts.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            {artifacts.map((a, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                <span style={{ fontSize: 16 }}>{a.type === "cc_email_draft" ? "📧" : a.type === "task" ? "✅" : "📎"}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>{a.type === "cc_email_draft" ? "CC Draft Created" : a.type === "task" ? "Task Created" : "Artifact"}</div>
+                  <div style={{ fontSize: 11, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>
+                </div>
+                {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none", padding: "4px 8px", border: "1px solid #16a34a", borderRadius: 6 }}>Open ↗</a>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallCard({ toolCall }) {
+  const labels = {
+    create_cc_email_draft: { icon: "📧", label: "Drafting Constant Contact email" },
+    assign_task: { icon: "✅", label: "Creating task" },
+    query_contacts: { icon: "🔍", label: "Searching contacts" },
+    list_products_services: { icon: "🛍️", label: "Looking up products" },
+  };
+  const meta = labels[toolCall.tool] || { icon: "🔧", label: toolCall.tool };
+  return (
+    <div style={{ marginLeft: 42, padding: "6px 12px", background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8, fontSize: 11, color: "#64748b", display: "flex", alignItems: "center", gap: 8 }}>
+      <span>{meta.icon}</span>
+      <span style={{ fontWeight: 600 }}>{meta.label}</span>
+      <span style={{ color: "#cbd5e1" }}>·</span>
+      <span style={{ fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toolCall.input?.name || toolCall.input?.search || toolCall.input?.subject || "executed"}</span>
+    </div>
+  );
+}
+
+function TaskCard({ task, onToggle, onDelete }) {
+  const isDone = task.status === "complete";
+  const priorityColors = { urgent: "#dc2626", high: "#f59e0b", normal: "#3b82f6", low: "#94a3b8" };
+  const pc = priorityColors[task.priority] || "#94a3b8";
+  return (
+    <div style={{ background: isDone ? "#f8fafc" : "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 12px", marginBottom: 8, opacity: isDone ? 0.6 : 1 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <input type="checkbox" checked={isDone} onChange={onToggle} style={{ marginTop: 3, cursor: "pointer", accentColor: "#1C3820" }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", textDecoration: isDone ? "line-through" : "none", lineHeight: 1.3 }}>{task.name}</div>
+          {task.description && <div style={{ fontSize: 11, color: "#64748b", marginTop: 3, lineHeight: 1.5 }}>{task.description.slice(0, 120)}{task.description.length > 120 ? "..." : ""}</div>}
+          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: `${pc}15`, color: pc, textTransform: "uppercase" }}>{task.priority || "normal"}</span>
+            {task.due_date && <span style={{ fontSize: 10, color: "#94a3b8" }}>📅 {new Date(task.due_date).toLocaleDateString()}</span>}
+          </div>
+        </div>
+        <button onClick={onDelete} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "#cbd5e1", fontSize: 14 }}>×</button>
+      </div>
+    </div>
+  );
+}
+
+function ArtifactCard({ artifact }) {
+  const icons = { cc_email_draft: "📧", task: "✅" };
+  return (
+    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0", padding: "10px 12px", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <span style={{ fontSize: 16 }}>{icons[artifact.artifact_type] || "📎"}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", lineHeight: 1.3 }}>{artifact.title}</div>
+          {artifact.summary && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{artifact.summary}</div>}
+          <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+            <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a", textTransform: "uppercase" }}>{artifact.status || "created"}</span>
+            <span style={{ fontSize: 10, color: "#94a3b8" }}>{new Date(artifact.created_at).toLocaleDateString()}</span>
+            {artifact.external_url && <a href={artifact.external_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 700, color: "#3b82f6", marginLeft: "auto", textDecoration: "none" }}>Open ↗</a>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* — Sales Pipeline View — */
 const PIPELINE_STAGES = [
   { key: "lead", label: "Lead", color: "#94a3b8", bg: "#f1f5f9" },
@@ -10772,6 +11202,7 @@ export default function SuarezApp() {
     { id: "portal", label: "Client Portal", icon: <span style={{ fontSize: 18 }}>🔐</span> },
     { id: "projects", label: "Special Projects", icon: <span style={{ fontSize: 18 }}>🎬</span> },
     { id: "pipeline", label: "Sales Pipeline", icon: <span style={{ fontSize: 18 }}>🎯</span> },
+    { id: "robots", label: "Robots", icon: <span style={{ fontSize: 18 }}>🤖</span> },
   ];
 
   const mobileNavItems = [
@@ -10806,6 +11237,7 @@ export default function SuarezApp() {
       case "research": return <ResearchView isMobile={isMobile} session={session} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "products": return <ProductsServicesView isMobile={isMobile} session={session} />;
       case "pipeline": return <SalesPipelineView isMobile={isMobile} session={session} businesses={businesses} activeTab={activeTab} onTabChange={handleTabChange} />;
+      case "robots": return <RobotsWorkspaceView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
       default: return null;
     }
   };
