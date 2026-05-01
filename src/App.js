@@ -8399,8 +8399,10 @@ function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
   const [body, setBody] = useState(payload.body || "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [lessonSaved, setLessonSaved] = useState(null); // { title, content } when memory extracted
   const charCount = body.length;
   const segments = Math.ceil(charCount / 160) || 1;
+  const wasEdited = body.trim() !== (payload.body || "").trim();
 
   const handleSend = async () => {
     if (!body.trim()) return;
@@ -8411,7 +8413,7 @@ function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
         body: {
           artifact_id: artifact.id,
           user_id: session.user.id,
-          body_override: body.trim() !== payload.body ? body.trim() : null,
+          body_override: wasEdited ? body.trim() : null,
         },
       });
       if (fnError) throw fnError;
@@ -8420,6 +8422,32 @@ function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
         setSending(false);
         return;
       }
+
+      // Log feedback event — edit or approval signal
+      try {
+        const { data: fbData } = await supabase.functions.invoke("feedback-capture", {
+          body: {
+            user_id: session.user.id,
+            robot_id: artifact.robot_id,
+            artifact_id: artifact.id,
+            event_type: wasEdited ? "artifact_edited" : "artifact_approved",
+            verdict: wasEdited ? "edited" : "approved",
+            original_content: payload.body || "",
+            edited_content: wasEdited ? body.trim() : null,
+            context_tool: "draft_quo_text",
+            extract_memory: wasEdited, // ask the system to extract a lesson if it was edited
+          },
+        });
+        if (fbData?.memory_extracted && fbData.extracted_memory) {
+          setLessonSaved(fbData.extracted_memory);
+          // brief delay so user sees the lesson notification before modal closes
+          setTimeout(() => { onSent?.(); onClose(); }, 2200);
+          return;
+        }
+      } catch (fbErr) {
+        console.error("feedback log failed (non-fatal)", fbErr);
+      }
+
       onSent?.();
       onClose();
     } catch (err) {
@@ -8431,6 +8459,21 @@ function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
   const handleCancel = async () => {
     if (!window.confirm("Discard this draft?")) return;
     await supabase.from("robot_artifacts").update({ status: "cancelled" }).eq("id", artifact.id);
+    // Log discard as a soft-negative signal
+    try {
+      await supabase.functions.invoke("feedback-capture", {
+        body: {
+          user_id: session.user.id,
+          robot_id: artifact.robot_id,
+          artifact_id: artifact.id,
+          event_type: "artifact_discarded",
+          verdict: "rejected",
+          original_content: payload.body || "",
+          context_tool: "draft_quo_text",
+          extract_memory: false,
+        },
+      });
+    } catch (e) { /* non-fatal */ }
     onSent?.();
     onClose();
   };
@@ -8467,10 +8510,17 @@ function QuoDraftModal({ artifact, onClose, onSent, session, isMobile }) {
           />
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 10, color: "#94a3b8" }}>
             <span>{charCount} chars · {segments} segment{segments !== 1 ? "s" : ""}</span>
-            {body.trim() !== (payload.body || "").trim() && <span style={{ color: "#f59e0b", fontWeight: 700 }}>● edited</span>}
+            {wasEdited && <span style={{ color: "#f59e0b", fontWeight: 700 }}>● edited — change will be captured as a lesson</span>}
           </div>
           {error && (
             <div style={{ marginTop: 12, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#dc2626", fontSize: 12 }}>⚠️ {error}</div>
+          )}
+          {lessonSaved && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", marginBottom: 4 }}>✓ Sent. 🧠 Lesson saved to team knowledge:</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{lessonSaved.title}</div>
+              {lessonSaved.content && <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{lessonSaved.content}</div>}
+            </div>
           )}
         </div>
 
