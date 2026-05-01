@@ -9245,7 +9245,7 @@ function ReportsView({ isMobile, session, robots = [] }) {
       .from("robot_artifacts")
       .select("*")
       .eq("user_id", session.user.id)
-      .eq("artifact_type", "brand_audit_report")
+      .in("artifact_type", ["brand_audit_report", "brand_audit_failure"])
       .order("created_at", { ascending: false })
       .limit(50);
     setReports(data || []);
@@ -9289,12 +9289,29 @@ function ReportsView({ isMobile, session, robots = [] }) {
     setViewing(null);
   };
 
-  // Score trend data — chronological, oldest to newest
-  const trendData = reports
+  const successfulReports = reports.filter((r) => r.artifact_type === "brand_audit_report");
+  const latestScore = successfulReports[0]?.payload?.overall_score;
+  const previousScore = successfulReports[1]?.payload?.overall_score;
+  const scoreDelta = latestScore != null && previousScore != null ? Number(latestScore) - Number(previousScore) : null;
+
+  // Score trend data — chronological, oldest to newest, only successful audits
+  const trendData = successfulReports
     .slice()
     .reverse()
     .map((r) => ({ date: r.payload?.audit_date || r.created_at?.slice(0, 10), score: Number(r.payload?.overall_score || 0) }))
     .filter((d) => d.score > 0);
+
+  // Compute next Saturday 5 AM ET (cron fires 0 9 UTC Saturday)
+  const nextRunLabel = (() => {
+    const now = new Date();
+    const day = now.getUTCDay(); // 0=Sun..6=Sat
+    let daysUntilSat = (6 - day + 7) % 7;
+    const nextSat = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysUntilSat, 9, 0, 0));
+    if (daysUntilSat === 0 && now.getUTCHours() >= 9) {
+      nextSat.setUTCDate(nextSat.getUTCDate() + 7);
+    }
+    return nextSat.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }) + " ET";
+  })();
 
   if (loading) {
     return (
@@ -9304,10 +9321,6 @@ function ReportsView({ isMobile, session, robots = [] }) {
       </div>
     );
   }
-
-  const latestScore = reports[0]?.payload?.overall_score;
-  const previousScore = reports[1]?.payload?.overall_score;
-  const scoreDelta = latestScore != null && previousScore != null ? Number(latestScore) - Number(previousScore) : null;
 
   return (
     <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
@@ -9363,6 +9376,7 @@ function ReportsView({ isMobile, session, robots = [] }) {
                 {running ? "🔍 Running audit..." : "🔎 Run audit now"}
               </button>
               {atlas && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Powered by {atlas.name}</div>}
+              <div style={{ fontSize: 10, color: "rgba(212,192,140,0.7)", textAlign: isMobile ? "left" : "right", marginTop: 4 }}>🗓️ Next scheduled run: <span style={{ fontFamily: "'DM Mono', monospace", color: "#D4C08C" }}>{nextRunLabel}</span></div>
             </div>
           </div>
 
@@ -9390,7 +9404,10 @@ function ReportsView({ isMobile, session, robots = [] }) {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {reports.map((r) => <BrandAuditListCard key={r.id} report={r} onClick={() => setViewing(r)} />)}
+            {reports.map((r) => r.artifact_type === "brand_audit_failure"
+              ? <BrandAuditFailureCard key={r.id} report={r} onDelete={async () => { await supabase.from("robot_artifacts").delete().eq("id", r.id); setReports((p) => p.filter((x) => x.id !== r.id)); }} />
+              : <BrandAuditListCard key={r.id} report={r} onClick={() => setViewing(r)} />
+            )}
           </div>
         )}
 
@@ -9473,6 +9490,32 @@ function BrandAuditListCard({ report, onClick }) {
         <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef2f2", color: "#dc2626" }}>⚠️ {(p.top_issues || []).length} issues</span>
         <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#eff6ff", color: "#3b82f6" }}>🎯 {(p.immediate_actions || []).length} actions</span>
       </div>
+    </div>
+  );
+}
+
+function BrandAuditFailureCard({ report, onDelete }) {
+  const p = report.payload || {};
+  const isRateLimit = (p.error || p.details || "").toString().toLowerCase().includes("rate_limit");
+  return (
+    <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #fca5a5", borderLeft: "4px solid #dc2626", padding: "14px 18px", display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 50, fontSize: 28, lineHeight: 1, paddingTop: 2 }}>{isRateLimit ? "⏱️" : "⚠️"}</div>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>
+          {report.created_at ? new Date(report.created_at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : ""}
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#991b1b", marginBottom: 4 }}>{report.title}</div>
+        <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>
+          {isRateLimit ? "Anthropic rate limit was hit. The cron will retry next Saturday automatically. To run manually now, see Profile → Notepad for the rate-limit notes." : (report.summary || "Run failed")}
+        </div>
+        {p.details && !isRateLimit && (
+          <details style={{ marginTop: 6 }}>
+            <summary style={{ fontSize: 10, color: "#94a3b8", cursor: "pointer" }}>Technical details</summary>
+            <pre style={{ marginTop: 4, fontSize: 10, color: "#475569", background: "#f8fafc", padding: "8px 10px", borderRadius: 6, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{(typeof p.details === "string" ? p.details : JSON.stringify(p.details, null, 2)).slice(0, 800)}</pre>
+          </details>
+        )}
+      </div>
+      <button onClick={onDelete} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: "#64748b", fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer" }}>Dismiss</button>
     </div>
   );
 }
