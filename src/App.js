@@ -9896,7 +9896,7 @@ function StudioView({ isMobile, session, robots = [] }) {
 
   const handleFile = async (file) => {
     if (!file) return;
-    if (file.size > 50 * 1024 * 1024) { setError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB on current plan. For longer videos, paste a YouTube URL or upgrade Supabase storage.`); return; }
+    if (file.size > 5 * 1024 * 1024 * 1024) { setError(`File too large (${(file.size / 1024 / 1024 / 1024).toFixed(2)} GB). Max 5 GB. For longer videos, paste a YouTube URL.`); return; }
     setError("");
     setUploading(true);
     setUploadProgress(0);
@@ -10019,7 +10019,7 @@ function StudioView({ isMobile, session, robots = [] }) {
               ) : (
                 <>
                   <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Drop a video file or click to browse</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>MP4, MOV, WebM, MKV — up to 50 MB</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>MP4, MOV, WebM, MKV — up to 5 GB</div>
                 </>
               )}
             </div>
