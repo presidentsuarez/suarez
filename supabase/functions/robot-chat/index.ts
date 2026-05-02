@@ -863,6 +863,18 @@ You're not a generic AI. You're a member of this team. Act like it.`;
         body: JSON.stringify({ model: modelToUse, max_tokens: maxTokens, system: systemPrompt, tools: allTools, messages }),
       });
       const apiData = await apiRes.json();
+      // Log API usage (success or failure — both consume tokens or are billable signals)
+      await logApiUsage(supabase, {
+        user_id,
+        robot_id,
+        service: "anthropic",
+        action: isBrandAudit ? "brand_audit" : "robot_chat",
+        model: modelToUse,
+        usage: apiData?.usage,
+        success: apiRes.ok,
+        error_type: apiData?.error?.type,
+        iteration: iterations,
+      });
       if (!apiRes.ok) {
         // Persist the failed turn so it survives a page refresh
         const errMsg = `⚠️ ${apiData?.error?.type === "rate_limit_error" ? "Rate limit hit — try again in a minute, or add Anthropic API credit to bump your tier." : `Anthropic API error: ${apiData?.error?.message || "unknown"}`}`;
@@ -918,5 +930,71 @@ async function persistConversation(supabase: any, user_id: string, robot_id: str
   } catch (e) {
     console.error("persistConversation failed:", e);
     return undefined;
+  }
+}
+
+// Log a single Anthropic API call to api_usage_log.
+// Pricing in $ per 1M tokens — keep in sync with anthropic.com/pricing.
+const MODEL_PRICING: Record<string, { in: number; out: number }> = {
+  "claude-opus-4-7": { in: 15, out: 75 },
+  "claude-opus-4-6": { in: 15, out: 75 },
+  "claude-sonnet-4-7": { in: 3, out: 15 },
+  "claude-sonnet-4-6": { in: 3, out: 15 },
+  "claude-sonnet-4-5": { in: 3, out: 15 },
+  "claude-haiku-4-5": { in: 1, out: 5 },
+};
+
+function modelPricing(model: string): { in: number; out: number } {
+  // Match by prefix so dated variants like "claude-haiku-4-5-20251001" still resolve
+  for (const key of Object.keys(MODEL_PRICING)) {
+    if (model && model.startsWith(key)) return MODEL_PRICING[key];
+  }
+  // Conservative default
+  return { in: 3, out: 15 };
+}
+
+// Detect which workspace the active key belongs to so usage can be partitioned in reports.
+// (We don't have a way to introspect this from the key itself; we rely on a marker in the env.)
+function workspaceLabel(): string {
+  return Deno.env.get("ANTHROPIC_WORKSPACE_LABEL") || "default";
+}
+
+async function logApiUsage(supabase: any, opts: {
+  user_id: string;
+  robot_id?: string;
+  service: string;
+  action: string;
+  model: string;
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  success: boolean;
+  error_type?: string;
+  iteration?: number;
+}): Promise<void> {
+  try {
+    const u = opts.usage || {};
+    const tokens_in = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    const tokens_out = u.output_tokens || 0;
+    const pricing = modelPricing(opts.model);
+    // Cache reads are typically 10% of base cost; we approximate by using base price (slight overestimate, fine for tracking)
+    const cost_estimate = (tokens_in / 1_000_000) * pricing.in + (tokens_out / 1_000_000) * pricing.out;
+
+    await supabase.from("api_usage_log").insert({
+      user_id: opts.user_id,
+      service: opts.service,
+      action: opts.action,
+      tokens_in,
+      tokens_out,
+      cost_estimate,
+      metadata: {
+        model: opts.model,
+        robot_id: opts.robot_id || null,
+        success: opts.success,
+        error_type: opts.error_type || null,
+        iteration: opts.iteration || null,
+        workspace: workspaceLabel(),
+      },
+    });
+  } catch (e) {
+    console.error("logApiUsage failed (non-fatal):", e);
   }
 }

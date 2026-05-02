@@ -5313,7 +5313,7 @@ function APIUsageView({ isMobile, session }) {
     const load = async () => {
       setLoading(true);
       const [{ data: logs }, { data: gmail }] = await Promise.all([
-        supabase.from("api_usage_log").select("*").order("created_at", { ascending: false }).limit(200),
+        supabase.from("api_usage_log").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }).limit(1000),
         supabase.from("gmail_tokens").select("email, expires_at, scopes").eq("user_id", session.user.id).maybeSingle(),
       ]);
       setUsageLogs(logs || []);
@@ -5367,6 +5367,10 @@ function APIUsageView({ isMobile, session }) {
   const byService = {};
   usageLogs.forEach((l) => { byService[l.service] = (byService[l.service] || 0) + 1; });
 
+  // Total Anthropic cost & tokens (this is what actually matters for billing)
+  const anthCostTotal = usageLogs.filter((l) => l.service === "anthropic").reduce((s, l) => s + (Number(l.cost_estimate) || 0), 0);
+  const anthTokensTotal = usageLogs.filter((l) => l.service === "anthropic").reduce((s, l) => s + (Number(l.tokens_in) || 0) + (Number(l.tokens_out) || 0), 0);
+
   // Aggregate by day for the last 7 days
   const last7 = {};
   const now = new Date();
@@ -5390,14 +5394,14 @@ function APIUsageView({ isMobile, session }) {
           {/* Overview cards */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
             {[
-              { label: "Anthropic Calls", value: byService["anthropic"] || 0, color: "#8b5cf6", desc: "AI robot requests" },
+              { label: "Anthropic Cost", value: `$${anthCostTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`, color: "#8b5cf6", desc: `${byService["anthropic"] || 0} calls · ${anthTokensTotal.toLocaleString()} tok` },
               { label: "Google Calls", value: byService["google"] || 0, color: "#4285f4", desc: "Gmail/Calendar/Drive" },
               { label: "OpenPhone", value: byService["openphone"] || 0, color: "#16a34a", desc: "Webhook events" },
               { label: "Total API Calls", value: usageLogs.length, color: "#0f172a", desc: "All services" },
             ].map((c) => (
               <div key={c.label} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px" }}>
                 <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.label}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'Playfair Display', serif", marginTop: 4 }}>{c.value}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: c.color, fontFamily: "'Playfair Display', serif", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{c.value}</div>
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{c.desc}</div>
               </div>
             ))}
@@ -5494,32 +5498,135 @@ function APIUsageView({ isMobile, session }) {
               </div>
             )}
 
-            {apiTab === "anthropic" && (
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
-                <SectionHeader text="Cost Breakdown" />
-                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
-                  <p style={{ margin: "0 0 10px" }}>Each text thread you open fires 2 API calls (Alfred + Atlas). Typical cost per suggestion pair:</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
-                      <span style={{ fontSize: 12 }}>~500 input tokens (conversation context)</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>$0.0015</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
-                      <span style={{ fontSize: 12 }}>~100 output tokens (draft reply)</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>$0.0015</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#faf5ff", borderRadius: 8, border: "1px solid #e9d5ff" }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>Per suggestion pair (Alfred + Atlas)</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#7c3aed" }}>~$0.006</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#faf5ff", borderRadius: 8, border: "1px solid #e9d5ff" }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>100 thread opens / day</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono', monospace", color: "#7c3aed" }}>~$0.60/day</span>
-                    </div>
+            {apiTab === "anthropic" && (() => {
+              const anthLogs = usageLogs.filter((l) => l.service === "anthropic");
+              const totalIn = anthLogs.reduce((s, l) => s + (Number(l.tokens_in) || 0), 0);
+              const totalOut = anthLogs.reduce((s, l) => s + (Number(l.tokens_out) || 0), 0);
+              const totalCost = anthLogs.reduce((s, l) => s + (Number(l.cost_estimate) || 0), 0);
+              // Last 7 days
+              const sevenDaysAgo = Date.now() - 7 * 86400000;
+              const last7 = anthLogs.filter((l) => new Date(l.created_at).getTime() > sevenDaysAgo);
+              const cost7 = last7.reduce((s, l) => s + (Number(l.cost_estimate) || 0), 0);
+              // Today
+              const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+              const today = anthLogs.filter((l) => new Date(l.created_at).getTime() > todayStart.getTime());
+              const costToday = today.reduce((s, l) => s + (Number(l.cost_estimate) || 0), 0);
+
+              // Group by workspace
+              const byWorkspace = {};
+              anthLogs.forEach((l) => {
+                const ws = l.metadata?.workspace || "unknown";
+                if (!byWorkspace[ws]) byWorkspace[ws] = { calls: 0, cost: 0, tokens: 0 };
+                byWorkspace[ws].calls += 1;
+                byWorkspace[ws].cost += Number(l.cost_estimate) || 0;
+                byWorkspace[ws].tokens += (Number(l.tokens_in) || 0) + (Number(l.tokens_out) || 0);
+              });
+
+              // Group by model
+              const byModel = {};
+              anthLogs.forEach((l) => {
+                const m = l.metadata?.model || "unknown";
+                if (!byModel[m]) byModel[m] = { calls: 0, cost: 0, in: 0, out: 0 };
+                byModel[m].calls += 1;
+                byModel[m].cost += Number(l.cost_estimate) || 0;
+                byModel[m].in += Number(l.tokens_in) || 0;
+                byModel[m].out += Number(l.tokens_out) || 0;
+              });
+
+              // Group by action
+              const byAction = {};
+              anthLogs.forEach((l) => {
+                const a = l.action || "unknown";
+                if (!byAction[a]) byAction[a] = { calls: 0, cost: 0 };
+                byAction[a].calls += 1;
+                byAction[a].cost += Number(l.cost_estimate) || 0;
+              });
+
+              const fmtCost = (c) => `$${Number(c).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+              const fmtTokens = (t) => Number(t).toLocaleString();
+
+              return (
+                <>
+                  {/* Headline cost cards */}
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
+                    {[
+                      { label: "Today", value: fmtCost(costToday), sub: `${today.length} call${today.length !== 1 ? "s" : ""}`, color: "#7c3aed" },
+                      { label: "Last 7 days", value: fmtCost(cost7), sub: `${last7.length} call${last7.length !== 1 ? "s" : ""}`, color: "#3b82f6" },
+                      { label: "All time", value: fmtCost(totalCost), sub: `${anthLogs.length} call${anthLogs.length !== 1 ? "s" : ""}`, color: "#0f172a" },
+                      { label: "Total tokens", value: fmtTokens(totalIn + totalOut), sub: `in ${fmtTokens(totalIn)} / out ${fmtTokens(totalOut)}`, color: "#16a34a" },
+                    ].map((c) => (
+                      <div key={c.label} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px" }}>
+                        <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.label}</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: c.color, fontFamily: "'Playfair Display', serif", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{c.value}</div>
+                        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{c.sub}</div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              </div>
-            )}
+
+                  {/* By workspace */}
+                  {Object.keys(byWorkspace).length > 0 && (
+                    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                      <SectionHeader text="By Workspace" />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {Object.entries(byWorkspace).sort((a, b) => b[1].cost - a[1].cost).map(([ws, stats]) => (
+                          <div key={ws} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr 1fr 1fr", gap: 8, padding: "10px 12px", background: "#f8fafc", borderRadius: 8, alignItems: "center" }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{ws}</div>
+                            <div style={{ fontSize: 11, color: "#64748b" }}>{stats.calls} call{stats.calls !== 1 ? "s" : ""}</div>
+                            <div style={{ fontSize: 11, color: "#64748b" }}>{fmtTokens(stats.tokens)} tok</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", fontFamily: "'DM Mono', monospace", textAlign: isMobile ? "left" : "right" }}>{fmtCost(stats.cost)}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ margin: "10px 0 0", fontSize: 10, color: "#94a3b8" }}>Workspace label set in Supabase secret <code>ANTHROPIC_WORKSPACE_LABEL</code>. Update it whenever you rotate API keys to a different workspace.</p>
+                    </div>
+                  )}
+
+                  {/* By model */}
+                  {Object.keys(byModel).length > 0 && (
+                    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                      <SectionHeader text="By Model" />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {Object.entries(byModel).sort((a, b) => b[1].cost - a[1].cost).map(([m, stats]) => (
+                          <div key={m} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr 1fr 1fr 1fr", gap: 8, padding: "10px 12px", background: "#f8fafc", borderRadius: 8, alignItems: "center" }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", fontFamily: "'DM Mono', monospace" }}>{m}</div>
+                            <div style={{ fontSize: 11, color: "#64748b" }}>{stats.calls}×</div>
+                            <div style={{ fontSize: 11, color: "#64748b" }}>in {fmtTokens(stats.in)}</div>
+                            <div style={{ fontSize: 11, color: "#64748b" }}>out {fmtTokens(stats.out)}</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", fontFamily: "'DM Mono', monospace", textAlign: isMobile ? "left" : "right" }}>{fmtCost(stats.cost)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* By action */}
+                  {Object.keys(byAction).length > 0 && (
+                    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                      <SectionHeader text="By Action" />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {Object.entries(byAction).sort((a, b) => b[1].cost - a[1].cost).map(([a, stats]) => (
+                          <div key={a} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
+                            <span style={{ fontSize: 12, color: "#475569", fontFamily: "'DM Mono', monospace" }}>{a}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", fontFamily: "'DM Mono', monospace" }}>{stats.calls}× · {fmtCost(stats.cost)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pricing reference */}
+                  <div style={{ background: "#faf5ff", borderRadius: 14, border: "1px solid #e9d5ff", padding: "14px 18px", marginBottom: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Pricing reference</div>
+                    <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.6 }}>
+                      <div>Sonnet 4.x: $3 input / $15 output per 1M tokens</div>
+                      <div>Haiku 4.5: $1 input / $5 output per 1M tokens</div>
+                      <div>Opus 4.x: $15 input / $75 output per 1M tokens</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>Cost estimates exclude prompt caching discounts. For billing truth, see Anthropic Console → Usage.</div>
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Recent logs */}
             {serviceLogs.length > 0 && (
