@@ -848,14 +848,19 @@ You're not a generic AI. You're a member of this team. Act like it.`;
       // For everything else: full custom tool set + web_search
       const auditTools = TOOLS.filter((t: any) => t.name === "save_brand_audit");
       const customTools = isBrandAudit ? auditTools : TOOLS;
-      const allTools = [
-        ...customTools,
-        { type: "web_search_20250305", name: "web_search", max_uses: 8, user_location: { type: "approximate", city: "Tampa", region: "Florida", country: "US", timezone: "America/New_York" } },
-      ];
+      // Brand audits cap web_search at 6 (one per planned query) and use truncated results to fit tier-1 token budget
+      const webSearchTool = isBrandAudit
+        ? { type: "web_search_20250305", name: "web_search", max_uses: 6, user_location: { type: "approximate", city: "Tampa", region: "Florida", country: "US", timezone: "America/New_York" } }
+        : { type: "web_search_20250305", name: "web_search", max_uses: 8, user_location: { type: "approximate", city: "Tampa", region: "Florida", country: "US", timezone: "America/New_York" } };
+      const allTools = [...customTools, webSearchTool];
+      // Brand audits use Haiku (cheaper input tokens, fast enough for structured output).
+      // Other conversations use whatever model is configured on the robot.
+      const modelToUse = isBrandAudit ? "claude-haiku-4-5" : (robot.model || "claude-sonnet-4-5");
+      const maxTokens = isBrandAudit ? 4096 : 8192;
       const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: robot.model || "claude-sonnet-4-5", max_tokens: 8192, system: systemPrompt, tools: allTools, messages }),
+        body: JSON.stringify({ model: modelToUse, max_tokens: maxTokens, system: systemPrompt, tools: allTools, messages }),
       });
       const apiData = await apiRes.json();
       if (!apiRes.ok) {
