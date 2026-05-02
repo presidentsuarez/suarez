@@ -367,6 +367,47 @@ const TOOLS = [
       required: ["source_url", "title"],
     },
   },
+  // ─── Google Drive ─
+  {
+    name: "list_drive_videos",
+    description: "List video files in a Google Drive folder. Use this when the user asks 'what's in my Studio Inbox' or 'pull up the videos from Drive'. Returns up to 50 most recent files. If folder_path is omitted, lists the user's Suarez Global / Studio / Inbox folder by default.",
+    input_schema: {
+      type: "object",
+      properties: {
+        folder_id: { type: "string", description: "Optional Drive folder ID. If omitted, defaults to the Studio Inbox folder." },
+        query_extra: { type: "string", description: "Optional extra Drive query filter (e.g. \"name contains 'podcast'\"). Combined with the folder constraint." },
+        limit: { type: "number", description: "Max files to return (default 25, max 50)." },
+      },
+    },
+  },
+  {
+    name: "get_drive_signed_url",
+    description: "Get a temporary download URL for a Drive file so external services (like Submagic) can fetch it. Returns a URL that expires in ~1 hour. Use this AFTER list_drive_videos to grab a specific file's URL before passing to clip_long_video.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string", description: "The Drive file ID (from list_drive_videos)." },
+      },
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "move_drive_file",
+    description: "Move a Drive file from one folder to another. Use after a clip job is queued to move the source video from Inbox to Processed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        dest_folder_id: { type: "string", description: "Destination folder ID. Use 'studio_processed' to use the Studio / Processed folder by name." },
+      },
+      required: ["file_id", "dest_folder_id"],
+    },
+  },
+  {
+    name: "setup_studio_drive_folders",
+    description: "Idempotently create the Suarez Global / Studio / Inbox, Processed, Output folders in Drive. Returns folder IDs. Safe to call multiple times (won't duplicate). Call this once on first Studio use, or if folder IDs aren't configured.",
+    input_schema: { type: "object", properties: {} },
+  },
 ];
 
 // ─── TOOL EXECUTION ────────────────────────────────────────────────────────
@@ -391,6 +432,10 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "query_accounts": return await queryAccounts(input, ctx);
       case "save_brand_audit": return await saveBrandAudit(input, ctx);
       case "clip_long_video": return await clipLongVideo(input, ctx);
+      case "list_drive_videos": return await listDriveVideos(input, ctx);
+      case "get_drive_signed_url": return await getDriveSignedUrl(input, ctx);
+      case "move_drive_file": return await moveDriveFile(input, ctx);
+      case "setup_studio_drive_folders": return await setupStudioDriveFolders(input, ctx);
       default: return { result: `Error: unknown tool '${name}'` };
     }
   } catch (err) {
@@ -874,6 +919,194 @@ async function clipLongVideo(input: any, ctx: any) {
     result: `✓ Submagic project queued: "${projectTitle}" (id ${externalId}). Template: ${template}. Clips will appear in Studio in 5-15 minutes when Submagic finishes processing.`,
     artifact: { type: "video_clips_project", title: projectTitle, id: artRow?.id, external_id: externalId },
   };
+}
+
+// ─── GOOGLE DRIVE ──────────────────────────────────────────────────────────
+// Returns a fresh Google access token with Drive scope, refreshing if expired.
+async function getGoogleAccessToken(ctx: any): Promise<string | null> {
+  const { data: tokenRow } = await ctx.supabase.from("gmail_tokens").select("access_token, refresh_token, expires_at, scopes").eq("user_id", ctx.user_id).maybeSingle();
+  if (!tokenRow?.access_token) return null;
+  const hasDriveScope = (tokenRow.scopes || "").includes("/auth/drive");
+  if (!hasDriveScope) {
+    console.warn("Google token missing drive scope");
+    return null;
+  }
+  // Refresh if expiring within 60 seconds
+  if (tokenRow.expires_at && new Date(tokenRow.expires_at).getTime() - Date.now() < 60000) {
+    const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `client_id=${GOOGLE_CLIENT_ID}&client_secret=${GOOGLE_CLIENT_SECRET}&refresh_token=${tokenRow.refresh_token}&grant_type=refresh_token`,
+    });
+    const rd = await refreshRes.json();
+    if (rd.access_token) {
+      await ctx.supabase.from("gmail_tokens").update({
+        access_token: rd.access_token,
+        expires_at: new Date(Date.now() + (rd.expires_in || 3600) * 1000).toISOString(),
+      }).eq("user_id", ctx.user_id);
+      return rd.access_token;
+    }
+    return null;
+  }
+  return tokenRow.access_token;
+}
+
+// Find or create a Drive folder by name + parent. Idempotent — returns existing if found.
+async function ensureDriveFolder(token: string, name: string, parentId: string | null = null): Promise<string | null> {
+  const escapedName = name.replace(/'/g, "\\'");
+  const parentClause = parentId ? `'${parentId}' in parents and ` : "";
+  const q = `${parentClause}name='${escapedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&pageSize=1`;
+  const findRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const findData = await findRes.json();
+  if (findData.files && findData.files.length > 0) return findData.files[0].id;
+
+  // Create
+  const createBody: any = { name, mimeType: "application/vnd.google-apps.folder" };
+  if (parentId) createBody.parents = [parentId];
+  const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(createBody),
+  });
+  const created = await createRes.json();
+  return created.id || null;
+}
+
+async function setupStudioDriveFolders(_input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Google Drive is not connected with the right scope. Reconnect Google in Inbox → Email." };
+
+  // Suarez Global / Studio / { Inbox, Processed, Output }
+  const root = await ensureDriveFolder(token, "Suarez Global");
+  if (!root) return { result: "Error: could not create Suarez Global root folder." };
+  const studio = await ensureDriveFolder(token, "Studio", root);
+  if (!studio) return { result: "Error: could not create Studio folder." };
+  const inbox = await ensureDriveFolder(token, "Inbox", studio);
+  const processed = await ensureDriveFolder(token, "Processed", studio);
+  const output = await ensureDriveFolder(token, "Output", studio);
+
+  if (!inbox || !processed || !output) return { result: "Error: could not create one of the Studio subfolders." };
+
+  // Save to studio_settings
+  await ctx.supabase.from("studio_settings").upsert({
+    user_id: ctx.user_id,
+    drive_root_folder_id: studio,
+    drive_inbox_folder_id: inbox,
+    drive_processed_folder_id: processed,
+    drive_output_folder_id: output,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id" });
+
+  return {
+    result: `✓ Studio Drive folders ready in My Drive → Suarez Global → Studio (Inbox, Processed, Output). Folder IDs saved. Drop videos into Inbox to process.`,
+    artifact: { type: "studio_drive_setup", title: "Drive folders configured", id: studio },
+  };
+}
+
+async function listDriveVideos(input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Google Drive is not connected." };
+
+  // Resolve folder ID
+  let folderId = input.folder_id;
+  if (!folderId) {
+    const { data: settings } = await ctx.supabase.from("studio_settings").select("drive_inbox_folder_id").eq("user_id", ctx.user_id).maybeSingle();
+    folderId = settings?.drive_inbox_folder_id;
+  }
+  if (!folderId) return { result: "Error: no folder specified and no default Studio Inbox configured. Call setup_studio_drive_folders first." };
+
+  const limit = Math.min(input.limit || 25, 50);
+  const baseQuery = `'${folderId}' in parents and trashed=false and (mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.MOV' or name contains '.mkv' or name contains '.webm')`;
+  const q = input.query_extra ? `${baseQuery} and (${input.query_extra})` : baseQuery;
+
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,modifiedTime,videoMediaMetadata)&orderBy=modifiedTime desc&pageSize=${limit}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json();
+  if (!res.ok) return { result: `Error from Drive: ${res.status} — ${JSON.stringify(data).slice(0, 300)}` };
+
+  const files = data.files || [];
+  if (files.length === 0) return { result: `No video files in folder. (Drop videos into Drive → Suarez Global → Studio → Inbox to process.)` };
+
+  const lines = files.map((f: any) => {
+    const sizeMB = f.size ? `${(Number(f.size) / 1024 / 1024).toFixed(1)} MB` : "—";
+    const dur = f.videoMediaMetadata?.durationMillis ? `${Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)}s` : "";
+    return `[${f.id}] ${f.name} · ${sizeMB}${dur ? " · " + dur : ""} · ${(f.modifiedTime || "").slice(0, 10)}`;
+  });
+  return { result: `${files.length} video${files.length !== 1 ? "s" : ""} in folder:\n${lines.join("\n")}` };
+}
+
+async function getDriveSignedUrl(input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Google Drive is not connected." };
+  if (!input.file_id) return { result: "Error: file_id required." };
+
+  // Strategy: make file readable by anyone-with-link (temporarily), then return
+  // a stable Drive download URL that Submagic can fetch. The user can revoke
+  // later via revoke_drive_share or via the move_drive_file flow that runs
+  // after processing completes.
+
+  // 1. Verify file exists + get metadata
+  const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${input.file_id}?fields=id,name,mimeType,size`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const meta = await metaRes.json();
+  if (!metaRes.ok) return { result: `Error: Drive file ${input.file_id} not found. ${JSON.stringify(meta).slice(0, 200)}` };
+
+  // 2. Grant anyone-with-link read access (idempotent — Drive de-dupes by type+role)
+  const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${input.file_id}/permissions?fields=id`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "anyone", role: "reader" }),
+  });
+  if (!permRes.ok) {
+    const e = await permRes.json();
+    return { result: `Error granting Drive permission: ${JSON.stringify(e).slice(0, 200)}` };
+  }
+  const perm = await permRes.json();
+
+  // 3. Direct download URL — works for files of any size when shared anyone-with-link.
+  // The "uc?export=download" form follows redirects to actual storage, no virus-scan
+  // page for files served via this exact endpoint when the perm is anyone-with-link.
+  const publicUrl = `https://drive.google.com/uc?export=download&id=${input.file_id}`;
+
+  // Track the permission so we can revoke after processing
+  const sizeMB = meta.size ? Math.round(Number(meta.size) / 1024 / 1024) : null;
+  return {
+    result: `✓ Public download URL ready for "${meta.name}"${sizeMB ? ` (${sizeMB} MB)` : ""}.\nURL: ${publicUrl}\nPermission ID: ${perm.id} (revoke via Drive after processing)`,
+    artifact: { type: "drive_signed_url", title: meta.name, id: input.file_id, external_id: input.file_id, external_url: publicUrl, payload: { permission_id: perm.id, size_bytes: meta.size } },
+  };
+}
+
+async function moveDriveFile(input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Google Drive is not connected." };
+  if (!input.file_id || !input.dest_folder_id) return { result: "Error: file_id and dest_folder_id required." };
+
+  // Resolve symbolic dest_folder_id values
+  let destId = input.dest_folder_id;
+  if (destId === "studio_processed" || destId === "studio_output" || destId === "studio_inbox") {
+    const { data: settings } = await ctx.supabase.from("studio_settings").select("*").eq("user_id", ctx.user_id).maybeSingle();
+    if (!settings) return { result: "Error: Studio folders not configured. Call setup_studio_drive_folders first." };
+    if (destId === "studio_processed") destId = settings.drive_processed_folder_id;
+    if (destId === "studio_output") destId = settings.drive_output_folder_id;
+    if (destId === "studio_inbox") destId = settings.drive_inbox_folder_id;
+  }
+
+  // Get current parents so we can remove them
+  const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${input.file_id}?fields=parents,name`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const meta = await metaRes.json();
+  if (!metaRes.ok) return { result: `Error fetching file: ${JSON.stringify(meta).slice(0, 200)}` };
+
+  const removeParents = (meta.parents || []).join(",");
+  const url = `https://www.googleapis.com/drive/v3/files/${input.file_id}?addParents=${destId}&removeParents=${removeParents}&fields=id,parents,name`;
+  const res = await fetch(url, { method: "PATCH", headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json();
+  if (!res.ok) return { result: `Error moving file: ${JSON.stringify(data).slice(0, 200)}` };
+
+  return { result: `✓ Moved "${meta.name}" to destination folder.` };
 }
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────

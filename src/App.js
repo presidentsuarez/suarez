@@ -9857,6 +9857,25 @@ function BrandAuditDetailModal({ report, isMobile, onClose, onDelete }) {
 
 
 /* — Studio View — Upload long video → AI clips, by Michelangelo — */
+// Parse the text output of list_drive_videos tool into structured rows.
+// Tool output format per row: "[file_id] file_name · 12.3 MB · 45s · 2026-05-02"
+function parseDriveListResult(text) {
+  if (!text || typeof text !== "string") return [];
+  const rows = [];
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const match = line.match(/^\[([^\]]+)\]\s+(.+?)(?:\s+·\s+(.+))?$/);
+    if (!match) continue;
+    const [, id, name, rest] = match;
+    const parts = rest ? rest.split("·").map((s) => s.trim()) : [];
+    const size = parts.find((p) => /\d+(?:\.\d+)?\s*(MB|KB|GB)/.test(p)) || "";
+    const duration = parts.find((p) => /^\d+s$/.test(p)) || "";
+    const date = parts.find((p) => /^\d{4}-\d{2}-\d{2}$/.test(p)) || "";
+    rows.push({ id, name, size, duration, date });
+  }
+  return rows;
+}
+
 function StudioView({ isMobile, session, robots = [] }) {
   const [projects, setProjects] = useState([]);
   const [clips, setClips] = useState([]);
@@ -9865,7 +9884,11 @@ function StudioView({ isMobile, session, robots = [] }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState("");
   const [viewing, setViewing] = useState(null); // project to view in modal
-  const [submitMode, setSubmitMode] = useState("file"); // 'file' | 'youtube'
+  const [submitMode, setSubmitMode] = useState("drive"); // 'drive' | 'file' | 'youtube'
+  const [driveVideos, setDriveVideos] = useState([]);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveSettings, setDriveSettings] = useState(null);
+  const [driveSubmitting, setDriveSubmitting] = useState(null); // file_id currently being submitted
   const [ytForm, setYtForm] = useState({ url: "", title: "", template: "Sara", min: 15, max: 60 });
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = React.useRef(null);
@@ -9873,16 +9896,61 @@ function StudioView({ isMobile, session, robots = [] }) {
   const michelangelo = robots.find((r) => r.name === "Michelangelo") || robots.find((r) => r.role && r.role.toLowerCase().includes("producer")) || robots[0];
 
   const loadAll = React.useCallback(async () => {
-    const [{ data: parents }, { data: clipRows }] = await Promise.all([
+    const [{ data: parents }, { data: clipRows }, { data: settings }] = await Promise.all([
       supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clips_project").order("created_at", { ascending: false }).limit(50),
       supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clip").order("created_at", { ascending: false }).limit(200),
+      supabase.from("studio_settings").select("*").eq("user_id", session.user.id).maybeSingle(),
     ]);
     setProjects(parents || []);
     setClips(clipRows || []);
+    setDriveSettings(settings);
     setLoading(false);
   }, [session.user.id]);
 
   React.useEffect(() => { loadAll(); }, [loadAll]);
+
+  const loadDriveVideos = React.useCallback(async () => {
+    if (!michelangelo) return;
+    setDriveLoading(true);
+    setError("");
+    try {
+      // If folders not configured yet, set them up first
+      if (!driveSettings?.drive_inbox_folder_id) {
+        const { data: setupData, error: setupErr } = await supabase.functions.invoke("robot-chat", {
+          body: { robot_id: michelangelo.id, user_id: session.user.id, message: "Set up the Studio Drive folders. One line confirmation only.", history: [] },
+        });
+        if (setupErr) throw setupErr;
+        if (setupData?.error) throw new Error(setupData.error);
+        await loadAll(); // refresh settings
+      }
+
+      // Now ask Michelangelo to list videos
+      const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+        body: { robot_id: michelangelo.id, user_id: session.user.id, message: "List the videos in the Studio Inbox folder. Don't take any other action — just call list_drive_videos and respond with the raw tool output. No commentary.", history: [] },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+
+      // Parse the tool result manually — extract file IDs and names from the result string
+      const listToolCall = (data.tool_calls || []).find((tc) => tc.tool === "list_drive_videos");
+      if (listToolCall?.result) {
+        const parsed = parseDriveListResult(listToolCall.result);
+        setDriveVideos(parsed);
+      } else {
+        setDriveVideos([]);
+      }
+    } catch (err) {
+      setError(`Drive load failed: ${err.message || String(err)}`);
+    } finally {
+      setDriveLoading(false);
+    }
+  }, [michelangelo, session.user.id, driveSettings, loadAll]);
+
+  React.useEffect(() => {
+    if (submitMode === "drive" && michelangelo) {
+      loadDriveVideos();
+    }
+  }, [submitMode, michelangelo?.id, loadDriveVideos]);
 
   // Auto-refresh while any project is queued/processing — every 20s
   React.useEffect(() => {
@@ -9893,6 +9961,30 @@ function StudioView({ isMobile, session, robots = [] }) {
   }, [projects, loadAll]);
 
   const clipsForProject = (projectId) => clips.filter((c) => c.payload?.parent_artifact_id === projectId);
+
+  const submitDriveFile = async (driveFile) => {
+    if (!michelangelo) return;
+    setDriveSubmitting(driveFile.id);
+    setError("");
+    try {
+      const msg = `Process this Drive file through clip_long_video:\n\n1. Call get_drive_signed_url with file_id "${driveFile.id}" to get a public download URL.\n2. Call clip_long_video with that URL, title "${driveFile.name.replace(/\.[^.]+$/, "")}", template "Sara".\n3. Call move_drive_file with file_id "${driveFile.id}" and dest_folder_id "studio_processed" to clean up the Inbox.\n4. Confirm in one line.`;
+      const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+        body: { robot_id: michelangelo.id, user_id: session.user.id, message: msg, history: [] },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) {
+        const detail = typeof data.details === "string" ? data.details : JSON.stringify(data.details || "").slice(0, 200);
+        throw new Error(`${data.error}${detail ? " — " + detail : ""}`);
+      }
+      // Refresh both project list and Drive list
+      await loadAll();
+      await loadDriveVideos();
+    } catch (err) {
+      setError(`Submit failed: ${err.message || String(err)}`);
+    } finally {
+      setDriveSubmitting(null);
+    }
+  };
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -9988,13 +10080,13 @@ function StudioView({ isMobile, session, robots = [] }) {
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em" }}>🎬 STUDIO · POWERED BY MICHELANGELO</div>
               <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif", margin: "4px 0 6px" }}>Long video → vertical shorts</h2>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Drop a video or paste a YouTube link. AI finds the best moments, captions, and formats for Reels/Shorts/TikTok.</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Drop a video into your Drive Studio Inbox from any device, or upload directly. AI finds the best moments, captions, and formats for Reels/Shorts/TikTok.</div>
             </div>
           </div>
 
           {/* Submit mode toggle */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-            {[{ k: "file", l: "📁 Upload file" }, { k: "youtube", l: "📺 YouTube URL" }].map((m) => (
+          <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+            {[{ k: "drive", l: "📁 Google Drive" }, { k: "file", l: "📤 Upload file" }, { k: "youtube", l: "📺 YouTube URL" }].map((m) => (
               <button key={m.k} onClick={() => setSubmitMode(m.k)} style={{
                 padding: "8px 16px", borderRadius: 10,
                 border: submitMode === m.k ? "1px solid #D4C08C" : "1px solid rgba(255,255,255,0.15)",
@@ -10005,7 +10097,54 @@ function StudioView({ isMobile, session, robots = [] }) {
             ))}
           </div>
 
-          {submitMode === "file" ? (
+          {submitMode === "drive" ? (
+            <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 14, padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#D4C08C" }}>Studio Inbox</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>Drop videos into <strong>My Drive → Suarez Global → Studio → Inbox</strong> from any device. They show up here.</div>
+                </div>
+                <button onClick={loadDriveVideos} disabled={driveLoading} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.8)", fontSize: 11, fontWeight: 600, cursor: driveLoading ? "default" : "pointer" }}>{driveLoading ? "↻ Loading..." : "↻ Refresh"}</button>
+              </div>
+
+              {driveLoading && driveVideos.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 20, color: "rgba(255,255,255,0.5)" }}><Spinner /></div>
+              ) : driveVideos.length === 0 ? (
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: 10, padding: 24, textAlign: "center" }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>📭</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", fontWeight: 700 }}>Inbox is empty</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Drop a video into your Suarez Global / Studio / Inbox folder in Drive, then click Refresh.</div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {driveVideos.map((v) => {
+                    const submitting = driveSubmitting === v.id;
+                    return (
+                      <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)" }}>
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>🎬</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</div>
+                          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+                            {v.size}{v.duration ? ` · ${v.duration}` : ""}{v.date ? ` · ${v.date}` : ""}
+                          </div>
+                        </div>
+                        <button onClick={() => submitDriveFile(v)} disabled={submitting || driveSubmitting} style={{
+                          padding: "8px 16px", borderRadius: 8, border: "none",
+                          background: submitting ? "rgba(212,192,140,0.3)" : "#D4C08C",
+                          color: "#1C3820", fontSize: 11, fontWeight: 700,
+                          cursor: submitting || driveSubmitting ? "not-allowed" : "pointer", flexShrink: 0,
+                        }}>{submitting ? "Submitting…" : driveSubmitting ? "wait" : "🎬 Clip"}</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {driveSettings?.drive_inbox_folder_id && (
+                <a href={`https://drive.google.com/drive/folders/${driveSettings.drive_inbox_folder_id}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", marginTop: 10, fontSize: 10, color: "rgba(212,192,140,0.7)", textDecoration: "none" }}>↗ Open Inbox folder in Drive</a>
+              )}
+            </div>
+          ) : submitMode === "file" ? (
             <div style={{
               border: "2px dashed rgba(212,192,140,0.4)", borderRadius: 14, padding: isMobile ? 20 : 32,
               textAlign: "center", background: "rgba(0,0,0,0.15)", cursor: uploading ? "default" : "pointer",
