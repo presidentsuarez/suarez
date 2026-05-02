@@ -84,6 +84,27 @@ Deno.serve(async (req) => {
 
     const today = new Date().toISOString().slice(0, 10);
 
+    // Belt-and-suspenders: if any successful audit was saved in the last 5 minutes
+    // for this user (e.g. by a retry that landed after the caller timed out),
+    // don't log a failure card on top of it.
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: recentSuccess } = await supabase
+      .from("robot_artifacts")
+      .select("id, title")
+      .eq("user_id", user_id)
+      .eq("artifact_type", "brand_audit_report")
+      .gt("created_at", fiveMinAgo)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (recentSuccess) {
+      return new Response(
+        JSON.stringify({ success: true, audit_artifact_id: recentSuccess.id, title: recentSuccess.title, note: "Successful audit found in recent window" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (!robotChatRes || !robotChatRes.ok || result?.error) {
       // Log failure as a special artifact so the user can see what went wrong
       const errMessage = result?.error || `HTTP ${robotChatRes?.status || "?"}`;
