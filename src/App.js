@@ -5447,6 +5447,31 @@ function APIUsageView({ isMobile, session }) {
               ))}
             </div>
           </div>
+
+          {/* Provider Consoles — links out for billing-truth */}
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginTop: 16 }}>
+            <SectionHeader text="Provider Consoles (billing truth)" />
+            <p style={{ fontSize: 11, color: "#94a3b8", margin: "0 0 12px" }}>The dashboards above are based on what the app logs internally. For authoritative billing and full account-level data, go to each provider directly.</p>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+              {[
+                { icon: "🤖", name: "Anthropic", desc: "Usage, billing, limits, keys", url: "https://console.anthropic.com/settings/usage", color: "#8b5cf6" },
+                { icon: "🔵", name: "Google Cloud", desc: "All API call counts & quotas", url: "https://console.cloud.google.com/apis/dashboard", color: "#4285f4" },
+                { icon: "📱", name: "OpenPhone", desc: "Account usage & numbers", url: "https://my.openphone.com/settings", color: "#16a34a" },
+                { icon: "📧", name: "Constant Contact", desc: "Account, contacts, sends", url: "https://app.constantcontact.com", color: "#1e40af" },
+                { icon: "📘", name: "Facebook Business", desc: "Ad spend & permissions", url: "https://business.facebook.com", color: "#1877f2" },
+                { icon: "⚡", name: "Supabase", desc: "DB, edge functions, secrets", url: "https://supabase.com/dashboard/project/bkezvsjhaepgvsvfywhk", color: "#3ecf8e" },
+              ].map((p) => (
+                <a key={p.name} href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #f1f5f9", textDecoration: "none", color: "inherit", transition: "all 0.15s" }} className="sz-hover-card">
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: `${p.color}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{p.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{p.name}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{p.desc}</div>
+                  </div>
+                  <span style={{ fontSize: 11, color: p.color, fontWeight: 700 }}>↗</span>
+                </a>
+              ))}
+            </div>
+          </div>
         </>
       )}
 
@@ -5474,26 +5499,81 @@ function APIUsageView({ isMobile, session }) {
               </div>
             </div>
 
-            {apiTab === "google" && (
-              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
-                <SectionHeader text="Why Google Usage Spiked" />
-                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
-                  <p style={{ margin: "0 0 10px" }}>When you connected Gmail, the app started making API calls every time you visit the Inbox. Here's what happens:</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(apiTab === "google" || apiTab === "openphone") && (() => {
+              const svcLogs = usageLogs.filter((l) => l.service === apiTab);
+              if (svcLogs.length === 0) {
+                return (
+                  <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 32, textAlign: "center" }}>
+                    <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 8px" }}>No robot-driven {svc.name} actions logged yet.</p>
+                    <p style={{ fontSize: 11, color: "#94a3b8", margin: 0 }}>Calls show up here when robots draft / send via this service. For full provider usage, see {apiTab === "google" ? "Google Cloud Console → APIs Dashboard" : "OpenPhone → Account → Usage"}.</p>
+                  </div>
+                );
+              }
+              const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+              const sevenDaysAgo = Date.now() - 7 * 86400000;
+              const today = svcLogs.filter((l) => new Date(l.created_at).getTime() > todayStart.getTime()).length;
+              const last7 = svcLogs.filter((l) => new Date(l.created_at).getTime() > sevenDaysAgo).length;
+
+              const byAction = {};
+              svcLogs.forEach((l) => {
+                const a = l.action || "unknown";
+                if (!byAction[a]) byAction[a] = { calls: 0, success: 0, failed: 0 };
+                byAction[a].calls += 1;
+                if (l.metadata?.success === false || l.metadata?.success === "false") byAction[a].failed += 1;
+                else byAction[a].success += 1;
+              });
+
+              const ACTION_LABELS = {
+                create_gmail_draft: { icon: "✉️", label: "Gmail draft created" },
+                send_quo_text: { icon: "📤", label: "Quo text sent" },
+                draft_quo_text: { icon: "💬", label: "Quo text drafted" },
+                create_cc_email_draft: { icon: "📧", label: "CC email drafted" },
+              };
+
+              return (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginBottom: 16 }}>
                     {[
-                      { action: "Open Inbox", calls: "0 calls (loads from cache)", freq: "Uses cached data if less than 10 min old" },
-                      { action: "Read an email", calls: "1 get call + 1 modify call (mark read) = 2 calls", freq: "Every email you click" },
-                      { action: "Switch filter", calls: "16 calls (1 list + 15 metadata)", freq: "Only if no cache for that filter" },
-                      { action: "Manual Refresh", calls: "16 calls", freq: "Only when you click ↻" },
-                    ].map((row, i) => (
-                      <div key={i} style={{ padding: "8px 12px", background: "#f8fafc", borderRadius: 8 }}>
-                        <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 12 }}>{row.action}</div>
-                        <div style={{ fontSize: 11, color: "#64748b" }}>{row.calls}</div>
-                        <div style={{ fontSize: 10, color: "#94a3b8" }}>{row.freq}</div>
+                      { label: "Today", value: today, color: svc.color },
+                      { label: "Last 7 days", value: last7, color: svc.color },
+                      { label: "All time", value: svcLogs.length, color: "#0f172a" },
+                    ].map((c) => (
+                      <div key={c.label} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 16px" }}>
+                        <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.label}</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'Playfair Display', serif", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{c.value}</div>
                       </div>
                     ))}
                   </div>
-                  <p style={{ margin: "12px 0 0", fontSize: 12, color: "#94a3b8" }}>Gmail API is free but quota-limited. The current usage is well within limits. To reduce calls, we could cache email headers locally and only refresh on demand.</p>
+
+                  <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                    <SectionHeader text="Robot Actions" />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {Object.entries(byAction).sort((a, b) => b[1].calls - a[1].calls).map(([a, stats]) => {
+                        const meta = ACTION_LABELS[a] || { icon: "🔧", label: a };
+                        return (
+                          <div key={a} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#f8fafc", borderRadius: 8 }}>
+                            <span style={{ fontSize: 18, flexShrink: 0 }}>{meta.icon}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{meta.label}</div>
+                              <div style={{ fontSize: 10, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>{a}</div>
+                            </div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: svc.color, fontFamily: "'DM Mono', monospace" }}>{stats.calls}×</div>
+                            {stats.failed > 0 && <div style={{ fontSize: 10, color: "#dc2626", fontWeight: 700 }}>({stats.failed} failed)</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+            {apiTab === "google" && (
+              <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: "18px 22px", marginBottom: 16 }}>
+                <SectionHeader text="Notes" />
+                <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.6 }}>
+                  <p style={{ margin: "0 0 8px" }}>Google APIs (Gmail, Calendar, Drive) are <strong>free up to high quotas</strong>. The dashboard above tracks robot-driven actions (e.g. Gmail drafts created by Atlas/Walkert) for behavior visibility — not for billing.</p>
+                  <p style={{ margin: 0 }}>For full per-API call counts and quota status across the entire app (inbox loading, calendar reads, etc.), use <a href="https://console.cloud.google.com/apis/dashboard" target="_blank" rel="noopener noreferrer" style={{ color: "#4285f4", fontWeight: 600 }}>Google Cloud Console → APIs Dashboard ↗</a>.</p>
                 </div>
               </div>
             )}

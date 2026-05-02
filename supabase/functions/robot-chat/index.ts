@@ -480,7 +480,10 @@ async function createCCDraft(input: any, ctx: any) {
     }),
   });
   const data = await res.json();
-  if (!res.ok) return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 500)}` };
+  if (!res.ok) {
+    await logRobotAction(ctx.supabase, { user_id: ctx.user_id, robot_id: ctx.robot_id, service: "constant_contact", action: "create_cc_email_draft", success: false, error_type: `http_${res.status}`, meta: { subject: input.subject } });
+    return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 500)}` };
+  }
   const campaignId = data.campaign_id || data.id;
   const adminUrl = `https://app.constantcontact.com/pages/campaigns/email-details/${campaignId}`;
   const { data: artRow } = await ctx.supabase.from("robot_artifacts").insert({
@@ -488,6 +491,7 @@ async function createCCDraft(input: any, ctx: any) {
     title: input.name, summary: `Subject: ${input.subject}`, external_id: campaignId, external_url: adminUrl,
     payload: { subject: input.subject, from_name: fromName, from_email: fromEmail, preview_text: input.preview_text || "", html_content: input.html_content }, status: "draft",
   }).select("id").single();
+  await logRobotAction(ctx.supabase, { user_id: ctx.user_id, robot_id: ctx.robot_id, service: "constant_contact", action: "create_cc_email_draft", success: true, meta: { campaign_id: campaignId, subject: input.subject, name: input.name } });
   return { result: `✓ CC draft "${input.name}" created. Review at ${adminUrl}`, artifact: { type: "cc_email_draft", title: input.name, url: adminUrl, id: artRow?.id, external_id: campaignId } };
 }
 
@@ -526,7 +530,10 @@ async function createGmailDraft(input: any, ctx: any) {
     body: JSON.stringify({ message: { raw: encoded } }),
   });
   const data = await res.json();
-  if (!res.ok) return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 500)}` };
+  if (!res.ok) {
+    await logRobotAction(ctx.supabase, { user_id: ctx.user_id, robot_id: ctx.robot_id, service: "google", action: "create_gmail_draft", success: false, error_type: `http_${res.status}`, meta: { to: input.to, subject: input.subject } });
+    return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 500)}` };
+  }
 
   const draftId = data.id;
   const draftsUrl = `https://mail.google.com/mail/u/0/#drafts`;
@@ -535,6 +542,7 @@ async function createGmailDraft(input: any, ctx: any) {
     title: input.subject, summary: `To: ${input.to}`, external_id: draftId, external_url: draftsUrl,
     payload: { to: input.to, cc: input.cc || null, subject: input.subject, body: input.body, is_html: !!input.is_html }, status: "draft",
   }).select("id").single();
+  await logRobotAction(ctx.supabase, { user_id: ctx.user_id, robot_id: ctx.robot_id, service: "google", action: "create_gmail_draft", success: true, meta: { draft_id: draftId, to: input.to, subject: input.subject } });
   return { result: `✓ Gmail draft saved. Review at ${draftsUrl}`, artifact: { type: "gmail_draft", title: input.subject, url: draftsUrl, id: artRow?.id, external_id: draftId } };
 }
 
@@ -562,6 +570,7 @@ async function draftQuoText(input: any, ctx: any) {
       to_number: toNumber, body: input.body, persona, context: input.context || null,
     }, status: "draft",
   }).select().single();
+  await logRobotAction(ctx.supabase, { user_id: ctx.user_id, robot_id: ctx.robot_id, service: "openphone", action: "draft_quo_text", success: true, meta: { persona, from_label: line.label, to: toNumber, body_chars: input.body.length } });
   return { result: `✓ Quo text draft saved (from ${line.label} → ${toNumber}). User must click Send in Drafts pane.`, artifact: { type: "quo_text_draft", title: `Text to ${toNumber}`, id: art?.id } };
 }
 
@@ -996,5 +1005,36 @@ async function logApiUsage(supabase: any, opts: {
     });
   } catch (e) {
     console.error("logApiUsage failed (non-fatal):", e);
+  }
+}
+
+// Log a robot-driven action against an external service (Gmail, OpenPhone, Constant Contact, etc.)
+// where there's no token-based cost model — just a count + metadata about what was done.
+async function logRobotAction(supabase: any, opts: {
+  user_id: string;
+  robot_id?: string;
+  service: string;          // 'google', 'openphone', 'constant_contact', etc.
+  action: string;           // 'create_gmail_draft', 'draft_quo_text', 'create_cc_email_draft'
+  success: boolean;
+  error_type?: string;
+  meta?: Record<string, any>; // anything else worth keeping (recipient, subject snippet, persona, etc.)
+}): Promise<void> {
+  try {
+    await supabase.from("api_usage_log").insert({
+      user_id: opts.user_id,
+      service: opts.service,
+      action: opts.action,
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_estimate: 0,
+      metadata: {
+        robot_id: opts.robot_id || null,
+        success: opts.success,
+        error_type: opts.error_type || null,
+        ...(opts.meta || {}),
+      },
+    });
+  } catch (e) {
+    console.error("logRobotAction failed (non-fatal):", e);
   }
 }

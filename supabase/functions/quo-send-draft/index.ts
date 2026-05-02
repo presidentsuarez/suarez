@@ -48,6 +48,25 @@ Deno.serve(async (req) => {
       payload: { ...updatedPayload, sent_at: new Date().toISOString(), openphone_message_id: opData.data?.id || null },
     }).eq("id", artifact_id);
 
+    // Log usage event
+    try {
+      await supabase.from("api_usage_log").insert({
+        user_id,
+        service: "openphone",
+        action: "send_quo_text",
+        tokens_in: 0, tokens_out: 0, cost_estimate: 0,
+        metadata: {
+          robot_id: artifact.robot_id || null,
+          success: true,
+          openphone_message_id: opData.data?.id || null,
+          from_label: payload.from_label || null,
+          to: toNumber,
+          body_chars: finalBody.length,
+          was_edited: wasEdited,
+        },
+      });
+    } catch (e) { console.error("usage log failed (non-fatal):", e); }
+
     // Capture feedback event
     await supabase.from("feedback_events").insert({
       user_id,
