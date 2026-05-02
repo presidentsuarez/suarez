@@ -9856,6 +9856,362 @@ function BrandAuditDetailModal({ report, isMobile, onClose, onDelete }) {
 }
 
 
+/* — Studio View — Upload long video → AI clips, by Michelangelo — */
+function StudioView({ isMobile, session, robots = [] }) {
+  const [projects, setProjects] = useState([]);
+  const [clips, setClips] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState("");
+  const [viewing, setViewing] = useState(null); // project to view in modal
+  const [submitMode, setSubmitMode] = useState("file"); // 'file' | 'youtube'
+  const [ytForm, setYtForm] = useState({ url: "", title: "", template: "Sara", min: 15, max: 60 });
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  const michelangelo = robots.find((r) => r.name === "Michelangelo") || robots.find((r) => r.role && r.role.toLowerCase().includes("producer")) || robots[0];
+
+  const loadAll = React.useCallback(async () => {
+    const [{ data: parents }, { data: clipRows }] = await Promise.all([
+      supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clips_project").order("created_at", { ascending: false }).limit(50),
+      supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clip").order("created_at", { ascending: false }).limit(200),
+    ]);
+    setProjects(parents || []);
+    setClips(clipRows || []);
+    setLoading(false);
+  }, [session.user.id]);
+
+  React.useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Auto-refresh while any project is queued/processing — every 20s
+  React.useEffect(() => {
+    const anyQueued = projects.some((p) => p.status === "queued" || p.status === "processing");
+    if (!anyQueued) return;
+    const t = setInterval(() => { loadAll(); }, 20000);
+    return () => clearInterval(t);
+  }, [projects, loadAll]);
+
+  const clipsForProject = (projectId) => clips.filter((c) => c.payload?.parent_artifact_id === projectId);
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) { setError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 50 MB on current plan. For longer videos, paste a YouTube URL or upgrade Supabase storage.`); return; }
+    setError("");
+    setUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${session.user.id}/${Date.now()}-${cleanName}`;
+      const { error: upErr } = await supabase.storage.from("videos-source").upload(path, file, { contentType: file.type, upsert: false });
+      if (upErr) throw upErr;
+      setUploadProgress(80);
+
+      // Generate a 2-hour signed URL Submagic can fetch from
+      const { data: signed, error: sErr } = await supabase.storage.from("videos-source").createSignedUrl(path, 60 * 60 * 2);
+      if (sErr || !signed?.signedUrl) throw new Error("Could not create signed URL");
+      setUploadProgress(100);
+
+      // Hand off to Michelangelo via robot-chat — let him drive the clip request
+      const projectTitle = file.name.replace(/\.[^.]+$/, "").slice(0, 80);
+      await sendToMichelangelo(`I just uploaded a video file called "${projectTitle}" — please run clip_long_video on this URL to generate vertical shorts: ${signed.signedUrl}\n\nUse template "Sara" (matches our polished, executive Suarez Global brand). Min 15s, max 60s clips. Title the project "${projectTitle}".`);
+    } catch (err) {
+      setError(`Upload failed: ${err.message || String(err)}`);
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const submitYouTube = async () => {
+    if (!ytForm.url.trim()) { setError("YouTube URL required"); return; }
+    setSubmitting(true);
+    setError("");
+    try {
+      await sendToMichelangelo(`Please run clip_long_video on this YouTube URL: ${ytForm.url}\n\nProject title: "${ytForm.title || "YouTube clipping"}". Template: "${ytForm.template}". Min ${ytForm.min}s, max ${ytForm.max}s.`);
+      setYtForm({ url: "", title: "", template: "Sara", min: 15, max: 60 });
+    } catch (err) {
+      setError(`Submit failed: ${err.message || String(err)}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sendToMichelangelo = async (message) => {
+    if (!michelangelo) { setError("Michelangelo robot not found. Create him in Profile → Robots."); return; }
+    const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+      body: { robot_id: michelangelo.id, user_id: session.user.id, message, history: [] },
+    });
+    if (invErr) throw invErr;
+    if (data?.error) {
+      const detail = typeof data.details === "string" ? data.details : JSON.stringify(data.details || "").slice(0, 200);
+      throw new Error(`${data.error}${detail ? " — " + detail : ""}`);
+    }
+    await loadAll();
+  };
+
+  const deleteProject = async (projectId) => {
+    if (!window.confirm("Delete this project and its clips?")) return;
+    const childClips = clipsForProject(projectId).map((c) => c.id);
+    if (childClips.length > 0) await supabase.from("robot_artifacts").delete().in("id", childClips);
+    await supabase.from("robot_artifacts").delete().eq("id", projectId);
+    setViewing(null);
+    await loadAll();
+  };
+
+  if (loading) {
+    return (
+      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+        <PageHeader title="Studio" subtitle="AI-clipped shorts, by Michelangelo" icon="🎬" isMobile={isMobile} />
+        <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>
+      </div>
+    );
+  }
+
+  const queuedProjects = projects.filter((p) => p.status === "queued" || p.status === "processing");
+  const completedProjects = projects.filter((p) => p.status === "completed");
+  const failedProjects = projects.filter((p) => p.status === "failed");
+  const totalClips = clips.length;
+
+  return (
+    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
+      <PageHeader title="Studio" subtitle="AI-clipped shorts, by Michelangelo" icon="🎬" isMobile={isMobile} />
+      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: 60, maxWidth: 1200, margin: "0 auto" }}>
+
+        {/* Hero card with upload zone */}
+        <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f2614 100%)", borderRadius: 16, padding: isMobile ? 20 : 28, marginBottom: 18, color: "#fff", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: -40, right: -40, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(168,85,247,0.18) 0%, transparent 70%)", pointerEvents: "none" }} />
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: "#a855f7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif" }}>MI</div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em" }}>🎬 STUDIO · POWERED BY MICHELANGELO</div>
+              <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif", margin: "4px 0 6px" }}>Long video → vertical shorts</h2>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Drop a video or paste a YouTube link. AI finds the best moments, captions, and formats for Reels/Shorts/TikTok.</div>
+            </div>
+          </div>
+
+          {/* Submit mode toggle */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {[{ k: "file", l: "📁 Upload file" }, { k: "youtube", l: "📺 YouTube URL" }].map((m) => (
+              <button key={m.k} onClick={() => setSubmitMode(m.k)} style={{
+                padding: "8px 16px", borderRadius: 10,
+                border: submitMode === m.k ? "1px solid #D4C08C" : "1px solid rgba(255,255,255,0.15)",
+                background: submitMode === m.k ? "rgba(212,192,140,0.15)" : "transparent",
+                color: submitMode === m.k ? "#D4C08C" : "rgba(255,255,255,0.7)",
+                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+              }}>{m.l}</button>
+            ))}
+          </div>
+
+          {submitMode === "file" ? (
+            <div style={{
+              border: "2px dashed rgba(212,192,140,0.4)", borderRadius: 14, padding: isMobile ? 20 : 32,
+              textAlign: "center", background: "rgba(0,0,0,0.15)", cursor: uploading ? "default" : "pointer",
+            }} onClick={() => !uploading && fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); }}
+            onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0]); }}>
+              <input ref={fileInputRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" style={{ display: "none" }} onChange={(e) => handleFile(e.target.files?.[0])} disabled={uploading} />
+              <div style={{ fontSize: 32, marginBottom: 8 }}>{uploading ? "⏳" : "📤"}</div>
+              {uploading ? (
+                <div style={{ fontSize: 13, color: "#D4C08C", fontWeight: 700 }}>Uploading… {uploadProgress}%</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Drop a video file or click to browse</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>MP4, MOV, WebM, MKV — up to 50 MB</div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 14, padding: 18 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 10, marginBottom: 10 }}>
+                <input value={ytForm.url} onChange={(e) => setYtForm({ ...ytForm, url: e.target.value })} placeholder="https://youtube.com/watch?v=..." style={{ padding: "10px 14px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, outline: "none", background: "rgba(255,255,255,0.05)", color: "#fff", boxSizing: "border-box" }} />
+                <input value={ytForm.title} onChange={(e) => setYtForm({ ...ytForm, title: e.target.value })} placeholder="Project title" style={{ padding: "10px 14px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, outline: "none", background: "rgba(255,255,255,0.05)", color: "#fff", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <select value={ytForm.template} onChange={(e) => setYtForm({ ...ytForm, template: e.target.value })} style={{ padding: "8px 12px", fontSize: 11, fontFamily: "'DM Sans', sans-serif", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, background: "#1C3820", color: "#D4C08C", cursor: "pointer" }}>
+                  <option>Sara</option><option>Hormozi 2</option><option>Beast</option><option>Devin</option>
+                </select>
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>Min</span>
+                <input type="number" value={ytForm.min} onChange={(e) => setYtForm({ ...ytForm, min: Number(e.target.value) })} style={{ width: 50, padding: "6px 8px", fontSize: 11, border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, background: "rgba(255,255,255,0.05)", color: "#fff" }} />
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>Max</span>
+                <input type="number" value={ytForm.max} onChange={(e) => setYtForm({ ...ytForm, max: Number(e.target.value) })} style={{ width: 50, padding: "6px 8px", fontSize: 11, border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, background: "rgba(255,255,255,0.05)", color: "#fff" }} />
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>sec</span>
+                <button onClick={submitYouTube} disabled={submitting || !ytForm.url.trim()} style={{
+                  marginLeft: "auto", padding: "10px 20px", borderRadius: 10, border: "none",
+                  background: submitting || !ytForm.url.trim() ? "rgba(212,192,140,0.3)" : "#D4C08C",
+                  color: "#1C3820", fontSize: 12, fontWeight: 700, cursor: submitting || !ytForm.url.trim() ? "not-allowed" : "pointer",
+                }}>{submitting ? "Submitting…" : "🎬 Generate clips"}</button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", borderRadius: 8, fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>⚠️ {error}</div>
+          )}
+
+          <div style={{ marginTop: 14, display: "flex", gap: 16, fontSize: 11, color: "rgba(255,255,255,0.5)", flexWrap: "wrap" }}>
+            <span>📂 {projects.length} project{projects.length !== 1 ? "s" : ""}</span>
+            <span>🎞️ {totalClips} clip{totalClips !== 1 ? "s" : ""} ready</span>
+            {queuedProjects.length > 0 && <span style={{ color: "#fbbf24" }}>⏳ {queuedProjects.length} processing</span>}
+          </div>
+        </div>
+
+        {/* Queued / processing */}
+        {queuedProjects.length > 0 && (
+          <>
+            <SectionHeader text="⏳ Processing" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+              {queuedProjects.map((p) => <ProjectCard key={p.id} project={p} clipCount={0} onClick={() => setViewing(p)} />)}
+            </div>
+          </>
+        )}
+
+        {/* Completed */}
+        <SectionHeader text={`Past Projects (${completedProjects.length})`} />
+        {completedProjects.length === 0 && queuedProjects.length === 0 && failedProjects.length === 0 ? (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>🎬</div>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>No clipping projects yet. Drop a file or paste a YouTube URL to begin.</p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {completedProjects.map((p) => <ProjectCard key={p.id} project={p} clipCount={clipsForProject(p.id).length} onClick={() => setViewing(p)} />)}
+          </div>
+        )}
+
+        {/* Failed */}
+        {failedProjects.length > 0 && (
+          <>
+            <div style={{ marginTop: 18 }}><SectionHeader text="Failed" /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {failedProjects.map((p) => <ProjectCard key={p.id} project={p} clipCount={0} onClick={() => setViewing(p)} />)}
+            </div>
+          </>
+        )}
+
+        {viewing && <StudioProjectModal project={viewing} clips={clipsForProject(viewing.id)} isMobile={isMobile} onClose={() => setViewing(null)} onDelete={() => deleteProject(viewing.id)} />}
+      </div>
+    </div>
+  );
+}
+
+function ProjectCard({ project, clipCount, onClick }) {
+  const p = project.payload || {};
+  const statusMeta = {
+    queued:     { color: "#f59e0b", bg: "#fef3c7", icon: "⏳", label: "Queued" },
+    processing: { color: "#f59e0b", bg: "#fef3c7", icon: "⏳", label: "Processing" },
+    completed:  { color: "#16a34a", bg: "#f0fdf4", icon: "✓",  label: "Ready" },
+    failed:     { color: "#dc2626", bg: "#fef2f2", icon: "✗",  label: "Failed" },
+  }[project.status] || { color: "#64748b", bg: "#f8fafc", icon: "•", label: project.status };
+
+  return (
+    <div onClick={onClick} className="sz-hover-card" style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ width: 50, height: 50, borderRadius: 10, background: statusMeta.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: statusMeta.color, flexShrink: 0 }}>{statusMeta.icon}</div>
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace", marginBottom: 2 }}>{project.created_at ? new Date(project.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>{project.title}</div>
+        <div style={{ fontSize: 12, color: "#475569" }}>{project.summary || ""}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 5, background: statusMeta.bg, color: statusMeta.color, textTransform: "uppercase" }}>{statusMeta.label}</span>
+        {p.template && <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 5, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0" }}>{p.template}</span>}
+        {clipCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 5, background: "#a855f720", color: "#a855f7" }}>🎞️ {clipCount} clip{clipCount !== 1 ? "s" : ""}</span>}
+      </div>
+    </div>
+  );
+}
+
+function StudioProjectModal({ project, clips, isMobile, onClose, onDelete }) {
+  const p = project.payload || {};
+  const isProcessing = project.status === "queued" || project.status === "processing";
+  const isFailed = project.status === "failed";
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 880, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+
+        {/* Header */}
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "22px 26px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>🎬 Clipping Project</div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{project.title}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: "'DM Mono', monospace", marginTop: 4 }}>
+            {project.created_at ? new Date(project.created_at).toLocaleString() : ""}
+            {p.template && ` · ${p.template}`}
+            {p.source_type && ` · ${p.source_type}`}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 18px" : "24px 28px" }}>
+          {isProcessing && (
+            <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "14px 18px", marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>⏳ Submagic is processing this video</div>
+              <div style={{ fontSize: 12, color: "#78350f", lineHeight: 1.5 }}>This typically takes 5–15 minutes for a long video. Clips will appear here when ready. The page auto-refreshes every 20 seconds.</div>
+            </div>
+          )}
+          {isFailed && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "14px 18px", marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b", marginBottom: 4 }}>✗ Render failed</div>
+              <div style={{ fontSize: 12, color: "#7f1d1d", lineHeight: 1.5 }}>{project.summary || "Submagic returned an error. Check the source URL or try a shorter clip."}</div>
+              {p.error && <pre style={{ fontSize: 10, color: "#7f1d1d", background: "#fff", padding: 8, borderRadius: 6, marginTop: 8, overflowX: "auto", whiteSpace: "pre-wrap" }}>{typeof p.error === "string" ? p.error : JSON.stringify(p.error, null, 2)}</pre>}
+            </div>
+          )}
+
+          {clips.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>🎞️ Clips ({clips.length})</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 22 }}>
+                {clips.map((c, i) => {
+                  const cp = c.payload || {};
+                  const dl = cp.downloadUrl || c.external_url;
+                  return (
+                    <div key={c.id} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 6, background: "#a855f720", color: "#a855f7", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif" }}>{i + 1}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</div>
+                          <div style={{ fontSize: 10, color: "#94a3b8" }}>
+                            {cp.duration ? `${Math.round(cp.duration)}s` : ""}{cp.score ? ` · score ${Math.round(cp.score * 100)}%` : ""}
+                          </div>
+                        </div>
+                      </div>
+                      {dl && <a href={dl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "5px 12px", borderRadius: 6, background: "#1C3820", color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none" }}>⬇️ Download</a>}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Project metadata */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Details</div>
+          <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 16px", fontSize: 12, color: "#475569", lineHeight: 1.7 }}>
+            {p.template && <div><strong style={{ color: "#1C3820" }}>Template:</strong> {p.template}</div>}
+            {(p.min_clip_length || p.max_clip_length) && <div><strong style={{ color: "#1C3820" }}>Clip length:</strong> {p.min_clip_length}–{p.max_clip_length}s</div>}
+            {p.language && <div><strong style={{ color: "#1C3820" }}>Language:</strong> {p.language}</div>}
+            {p.submagic_project_id && <div><strong style={{ color: "#1C3820" }}>Submagic ID:</strong> <code style={{ fontSize: 10 }}>{p.submagic_project_id}</code></div>}
+            {p.source_url && (
+              <div style={{ marginTop: 6, overflowWrap: "break-word", wordBreak: "break-all" }}>
+                <strong style={{ color: "#1C3820" }}>Source:</strong> <a href={p.source_url} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", fontSize: 11 }}>{p.source_url.length > 80 ? p.source_url.slice(0, 80) + "…" : p.source_url}</a>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
+          <button onClick={onDelete} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+          <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* — Sales Pipeline View — */
 const PIPELINE_STAGES = [
   { key: "lead", label: "Lead", color: "#94a3b8", bg: "#f1f5f9" },
@@ -12877,6 +13233,7 @@ export default function SuarezApp() {
     { id: "robots", label: "Robots", icon: <span style={{ fontSize: 18 }}>🤖</span> },
     { id: "knowledge", label: "Knowledge Base", icon: <span style={{ fontSize: 18 }}>🧠</span> },
     { id: "reports", label: "Reports", icon: <span style={{ fontSize: 18 }}>📊</span> },
+    { id: "studio", label: "Studio", icon: <span style={{ fontSize: 18 }}>🎬</span> },
   ];
 
   const mobileNavItems = [
@@ -12914,6 +13271,7 @@ export default function SuarezApp() {
       case "robots": return <RobotsWorkspaceView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "knowledge": return <KnowledgeBaseView isMobile={isMobile} session={session} robots={robots} activeTab={activeTab} onTabChange={handleTabChange} />;
       case "reports": return <ReportsView isMobile={isMobile} session={session} robots={robots} />;
+      case "studio": return <StudioView isMobile={isMobile} session={session} robots={robots} />;
       default: return null;
     }
   };

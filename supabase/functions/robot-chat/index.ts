@@ -351,6 +351,22 @@ const TOOLS = [
       required: ["overall_score", "score_rationale", "top_wins", "top_issues", "immediate_actions"],
     },
   },
+  {
+    name: "clip_long_video",
+    description: "Generate multiple short-form vertical clips from a longer video. Uses Submagic's Magic Clips: AI finds the most engaging moments, applies captions, formats vertical (9:16). Async — returns immediately with a 'queued' artifact; real clips arrive via webhook in 5-15 minutes and appear in Studio. Use this when the user uploads a long video and wants social shorts, podcast pulls, highlight reels.",
+    input_schema: {
+      type: "object",
+      properties: {
+        source_url: { type: "string", description: "Public URL to the source video. Either a YouTube URL or a Supabase Storage signed URL from an uploaded file." },
+        title: { type: "string", description: "Project title (1-100 chars). Visible to user in Studio." },
+        template: { type: "string", description: "Caption template style. Common options: 'Hormozi 2' (bold yellow), 'Sara' (soft modern, default), 'Beast' (MrBeast-style), 'Devin' (clean minimal). Pick based on the brand vibe — Suarez Global = polished/executive, lean toward Sara or Devin." },
+        min_clip_length: { type: "number", description: "Minimum seconds per clip. Default 15." },
+        max_clip_length: { type: "number", description: "Maximum seconds per clip. Default 60." },
+        language: { type: "string", description: "Language code for captions. Default 'en'." },
+      },
+      required: ["source_url", "title"],
+    },
+  },
 ];
 
 // ─── TOOL EXECUTION ────────────────────────────────────────────────────────
@@ -374,6 +390,7 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "get_financial_summary": return await getFinancialSummary(input, ctx);
       case "query_accounts": return await queryAccounts(input, ctx);
       case "save_brand_audit": return await saveBrandAudit(input, ctx);
+      case "clip_long_video": return await clipLongVideo(input, ctx);
       default: return { result: `Error: unknown tool '${name}'` };
     }
   } catch (err) {
@@ -769,6 +786,93 @@ async function saveBrandAudit(input: any, ctx: any) {
   return {
     result: `✓ Brand audit saved (score ${score}/10). ${wins.length} wins, ${issues.length} issues, ${actions.length} actions identified. View in Reports.`,
     artifact: { type: "brand_audit_report", title: data.title, id: data.id },
+  };
+}
+
+// ─── VIDEO (Submagic Magic Clips) ──────────────────────────────────────────
+async function clipLongVideo(input: any, ctx: any) {
+  const submagicKey = Deno.env.get("SUBMAGIC_API_KEY");
+  if (!submagicKey) {
+    return { result: "Error: Submagic is not configured. Set SUBMAGIC_API_KEY in Supabase secrets." };
+  }
+
+  const sourceUrl = input.source_url;
+  if (!sourceUrl) return { result: "Error: source_url is required." };
+
+  // Detect YouTube vs direct file URL
+  const isYouTube = /youtube\.com\/watch|youtu\.be\//.test(sourceUrl);
+  const projectTitle = (input.title || "Untitled clipping").slice(0, 100);
+  const template = input.template || "Sara";
+  const minLen = Number(input.min_clip_length) || 15;
+  const maxLen = Number(input.max_clip_length) || 60;
+  const language = input.language || "en";
+
+  const webhookUrl = "https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/video-webhook";
+
+  const requestBody: any = {
+    title: projectTitle,
+    language,
+    templateName: template,
+    webhookUrl,
+    minClipLength: minLen,
+    maxClipLength: maxLen,
+  };
+  if (isYouTube) {
+    requestBody.youtubeUrl = sourceUrl;
+  } else {
+    requestBody.videoUrl = sourceUrl;
+  }
+
+  const res = await fetch("https://api.submagic.co/v1/projects/magic-clips", {
+    method: "POST",
+    headers: {
+      "x-api-key": submagicKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    await logRobotAction(ctx.supabase, {
+      user_id: ctx.user_id, robot_id: ctx.robot_id, service: "submagic", action: "magic_clips_request",
+      success: false, error_type: `http_${res.status}`, meta: { title: projectTitle, error: JSON.stringify(data).slice(0, 300) },
+    });
+    return { result: `Error from Submagic: ${res.status} — ${JSON.stringify(data).slice(0, 400)}` };
+  }
+
+  const externalId = data.id;
+  // Save the parent project as a queued artifact. Webhook will fill in clips on completion.
+  const { data: artRow } = await ctx.supabase.from("robot_artifacts").insert({
+    user_id: ctx.user_id,
+    robot_id: ctx.robot_id,
+    artifact_type: "video_clips_project",
+    title: projectTitle,
+    summary: "Processing — clips arrive in 5-15 min",
+    external_id: externalId,
+    external_url: null,
+    payload: {
+      provider: "submagic",
+      source_url: sourceUrl,
+      source_type: isYouTube ? "youtube" : "file",
+      template,
+      min_clip_length: minLen,
+      max_clip_length: maxLen,
+      language,
+      submagic_project_id: externalId,
+      requested_at: new Date().toISOString(),
+    },
+    status: "queued",
+  }).select("id").single();
+
+  await logRobotAction(ctx.supabase, {
+    user_id: ctx.user_id, robot_id: ctx.robot_id, service: "submagic", action: "magic_clips_request",
+    success: true, meta: { submagic_project_id: externalId, title: projectTitle, template, source_type: isYouTube ? "youtube" : "file" },
+  });
+
+  return {
+    result: `✓ Submagic project queued: "${projectTitle}" (id ${externalId}). Template: ${template}. Clips will appear in Studio in 5-15 minutes when Submagic finishes processing.`,
+    artifact: { type: "video_clips_project", title: projectTitle, id: artRow?.id, external_id: externalId },
   };
 }
 
