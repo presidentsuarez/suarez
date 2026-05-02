@@ -7946,7 +7946,7 @@ function RobotsWorkspaceView({ isMobile, session, robots = [], activeTab, onTabC
   const completedTasks = tasks.filter((t) => t.status === "complete");
 
   return (
-    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+    <div style={{ flex: 1, display: "flex", height: isMobile ? "calc(100dvh - 56px - 70px - env(safe-area-inset-bottom, 0px))" : "100%", overflow: "hidden", background: "#f8fafc" }}>
       {isMobile && !sidebarOpen && (
         <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
       )}
