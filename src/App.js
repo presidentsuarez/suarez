@@ -9946,11 +9946,18 @@ function StudioView({ isMobile, session, robots = [] }) {
     }
   }, [michelangelo, session.user.id, driveSettings, loadAll]);
 
+  // Load Drive videos once when entering drive mode; user can manually refresh after.
+  const driveLoadedRef = React.useRef(false);
   React.useEffect(() => {
-    if (submitMode === "drive" && michelangelo) {
-      loadDriveVideos();
-    }
-  }, [submitMode, michelangelo?.id, loadDriveVideos]);
+    if (submitMode !== "drive") { driveLoadedRef.current = false; return; }
+    if (!michelangelo) return;
+    if (driveLoadedRef.current) return;
+    driveLoadedRef.current = true;
+    loadDriveVideos();
+    // Intentionally exclude loadDriveVideos — it changes identity when settings refresh,
+    // which would cause an infinite loop. The ref + manual Refresh button covers re-load needs.
+    // eslint-disable-next-line
+  }, [submitMode, michelangelo?.id]);
 
   // Auto-refresh while any project is queued/processing — every 20s
   React.useEffect(() => {
