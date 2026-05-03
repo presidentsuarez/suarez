@@ -6633,6 +6633,29 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   };
 
   // 👍 — Atlas got it right. Logs feedback as positive signal. No friction.
+  // Helper: after extracting a memory from feedback, force-add the 'inbox' tag
+  // (the extract-memory edge function generates semantic tags but doesn't honor
+  // our channel-scoping tag, so we patch it post-hoc).
+  const tagMemoryAsInbox = async (memoryId) => {
+    if (!memoryId) return;
+    try {
+      const { data: mem } = await supabase.from("memories").select("tags").eq("id", memoryId).maybeSingle();
+      const existing = Array.isArray(mem?.tags) ? mem.tags : [];
+      if (!existing.includes("inbox")) {
+        await supabase.from("memories").update({ tags: [...existing, "inbox"] }).eq("id", memoryId);
+      }
+    } catch (e) { console.error("tag patch failed (non-fatal):", e); }
+  };
+
+  // After any feedback (👍 / 👎 / ✏️), auto-mark the row as handled so it slides
+  // off the active list. User can show handled via the "Show handled" toggle.
+  const autoMarkHandled = async (rowId) => {
+    await supabase.from("inbox_triage").update({
+      user_marked_handled: true,
+      user_handled_at: new Date().toISOString(),
+    }).eq("id", rowId);
+  };
+
   const submitThumbsUp = async (row) => {
     try {
       await supabase.functions.invoke("feedback-capture", {
@@ -6647,11 +6670,14 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
         },
       });
     } catch (e) { console.error("feedback log failed:", e); }
+    await autoMarkHandled(row.id);
+    await loadAll();
   };
 
   // 👎 with required reason. Logs feedback + extracts a memory tagged 'inbox'.
   const submitThumbsDown = async (row, reason) => {
     if (!reason || !reason.trim()) return;
+    let memoryId = null;
     try {
       const effectiveCat = catMap[row.user_override_category_id || row.category_id];
       const effectivePrio = row.user_override_priority || row.priority;
@@ -6671,10 +6697,12 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
           memory_tags: ["inbox"],
         },
       });
-      // If feedback-capture didn't auto-extract (older deploy), call extract-memory directly with the feedback id
+      memoryId = fbResp?.extracted_memory?.id || fbResp?.memory_id || null;
+
+      // If feedback-capture didn't auto-extract (older deploy), call extract-memory directly
       if (fbResp?.feedback_event_id && !fbResp?.memory_extracted) {
         try {
-          await supabase.functions.invoke("extract-memory", {
+          const { data: extResp } = await supabase.functions.invoke("extract-memory", {
             body: {
               user_id: session.user.id,
               feedback_event_id: fbResp.feedback_event_id,
@@ -6682,14 +6710,19 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
               hint: correctedNote,
             },
           });
+          memoryId = memoryId || extResp?.memory?.id;
         } catch (e) { /* non-fatal */ }
       }
     } catch (e) { console.error("feedback log failed:", e); }
+    if (memoryId) await tagMemoryAsInbox(memoryId);
+    await autoMarkHandled(row.id);
+    await loadAll();
   };
 
   // ✏️ free-text rule note → tagged 'inbox' memory
   const submitNote = async (row, note) => {
     if (!note || !note.trim()) return;
+    let memoryId = null;
     try {
       const { data: fbResp } = await supabase.functions.invoke("feedback-capture", {
         body: {
@@ -6704,9 +6737,11 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
           memory_tags: ["inbox"],
         },
       });
+      memoryId = fbResp?.extracted_memory?.id || fbResp?.memory_id || null;
+
       if (fbResp?.feedback_event_id && !fbResp?.memory_extracted) {
         try {
-          await supabase.functions.invoke("extract-memory", {
+          const { data: extResp } = await supabase.functions.invoke("extract-memory", {
             body: {
               user_id: session.user.id,
               feedback_event_id: fbResp.feedback_event_id,
@@ -6714,9 +6749,13 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
               hint: note.trim(),
             },
           });
+          memoryId = memoryId || extResp?.memory?.id;
         } catch (e) { /* non-fatal */ }
       }
     } catch (e) { console.error("note submit failed:", e); }
+    if (memoryId) await tagMemoryAsInbox(memoryId);
+    await autoMarkHandled(row.id);
+    await loadAll();
   };
 
   const catMap = {};
@@ -6939,9 +6978,9 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
           </div>
         )}
         {feedbackState === "submitting" && <span style={{ fontSize: 11, color: "#64748b", fontStyle: "italic" }}>Saving…</span>}
-        {feedbackState === "submitted-up" && <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>✓ Confirmed</span>}
-        {feedbackState === "submitted-down" && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>✓ Saved — Atlas will learn from this</span>}
-        {feedbackState === "submitted-note" && <span style={{ fontSize: 11, color: "#1C3820", fontWeight: 700 }}>✓ Rule saved to inbox memory</span>}
+        {feedbackState === "submitted-up" && <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>✓ Confirmed — clearing…</span>}
+        {feedbackState === "submitted-down" && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>✓ Saved — Atlas will learn. Clearing…</span>}
+        {feedbackState === "submitted-note" && <span style={{ fontSize: 11, color: "#1C3820", fontWeight: 700 }}>✓ Rule saved. Clearing…</span>}
       </div>
     </div>
   );
