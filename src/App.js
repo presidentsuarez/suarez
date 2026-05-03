@@ -10357,6 +10357,8 @@ function StudioView({ isMobile, session, robots = [] }) {
   const [driveLoading, setDriveLoading] = useState(false);
   const [driveSettings, setDriveSettings] = useState(null);
   const [driveSubmitting, setDriveSubmitting] = useState(null); // file_id currently being submitted
+  const [optionsModal, setOptionsModal] = useState(null); // { source, payload } where payload describes what to clip when confirmed
+  const [studioDefaults, setStudioDefaults] = useState(null);
   const [ytForm, setYtForm] = useState({ url: "", title: "", template: "Sara", min: 15, max: 60 });
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = React.useRef(null);
@@ -10372,6 +10374,7 @@ function StudioView({ isMobile, session, robots = [] }) {
     setProjects(parents || []);
     setClips(clipRows || []);
     setDriveSettings(settings);
+    setStudioDefaults(settings); // same row, used by quick-options modal
     setLoading(false);
   }, [session.user.id]);
 
@@ -10453,28 +10456,59 @@ function StudioView({ isMobile, session, robots = [] }) {
 
   const clipsForProject = (projectId) => clips.filter((c) => c.payload?.parent_artifact_id === projectId);
 
-  const submitDriveFile = async (driveFile) => {
-    if (!michelangelo) return;
-    setDriveSubmitting(driveFile.id);
+  // Wraps the message Michelangelo gets so he uses the right tools per source.
+  // Overrides is an object the user picked in the quick-options modal.
+  const doClipSubmit = async ({ source, sourceUrl, projectTitle, driveFileId, overrides }) => {
+    if (!michelangelo) { setError("Michelangelo robot not found."); return; }
     setError("");
-    try {
-      const msg = `Process this Drive file through clip_long_video:\n\n1. Call get_drive_signed_url with file_id "${driveFile.id}" to get a public download URL.\n2. Call clip_long_video with that URL, title "${driveFile.name.replace(/\.[^.]+$/, "")}", template "Sara".\n3. Call move_drive_file with file_id "${driveFile.id}" and dest_folder_id "studio_processed" to clean up the Inbox.\n4. Confirm in one line.`;
-      const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
-        body: { robot_id: michelangelo.id, user_id: session.user.id, message: msg, history: [] },
-      });
-      if (invErr) throw invErr;
-      if (data?.error) {
-        const detail = typeof data.details === "string" ? data.details : JSON.stringify(data.details || "").slice(0, 200);
-        throw new Error(`${data.error}${detail ? " — " + detail : ""}`);
-      }
-      // Refresh both project list and Drive list
-      await loadAll();
-      await loadDriveVideos();
-    } catch (err) {
-      setError(`Submit failed: ${err.message || String(err)}`);
-    } finally {
-      setDriveSubmitting(null);
+
+    // Build override clauses to embed in Michelangelo's instructions.
+    // Each override translates to a parameter on clip_long_video.
+    const o = overrides || {};
+    const overrideLines = [];
+    if (o.template) overrideLines.push(`template: "${o.template}"`);
+    if (o.min_clip_length) overrideLines.push(`min_clip_length: ${o.min_clip_length}`);
+    if (o.max_clip_length) overrideLines.push(`max_clip_length: ${o.max_clip_length}`);
+    if (o.language) overrideLines.push(`language: "${o.language}"`);
+    if (o.magic_zooms !== undefined) overrideLines.push(`magic_zooms: ${o.magic_zooms}`);
+    if (o.magic_brolls !== undefined) overrideLines.push(`magic_brolls: ${o.magic_brolls}`);
+    if (o.magic_zooms_percentage !== undefined) overrideLines.push(`magic_zooms_percentage: ${o.magic_zooms_percentage}`);
+    if (o.magic_brolls_percentage !== undefined) overrideLines.push(`magic_brolls_percentage: ${o.magic_brolls_percentage}`);
+    if (o.remove_bad_takes !== undefined) overrideLines.push(`remove_bad_takes: ${o.remove_bad_takes}`);
+    if (o.clean_audio !== undefined) overrideLines.push(`clean_audio: ${o.clean_audio}`);
+    if (o.disable_captions !== undefined) overrideLines.push(`disable_captions: ${o.disable_captions}`);
+    if (Array.isArray(o.dictionary) && o.dictionary.length) overrideLines.push(`dictionary: ${JSON.stringify(o.dictionary)}`);
+    const overrideBlock = overrideLines.length ? `\n\nOverride parameters (pass these to clip_long_video):\n  ${overrideLines.join(",\n  ")}` : "\n\n(Use Studio defaults — no overrides needed.)";
+
+    let msg;
+    if (source === "drive") {
+      msg = `Process this Drive file through clip_long_video:\n1. Call get_drive_signed_url with file_id "${driveFileId}".\n2. Call clip_long_video with that URL, title "${projectTitle}".${overrideBlock}\n3. Call move_drive_file with file_id "${driveFileId}" and dest_folder_id "studio_processed".\n4. Confirm in one line.`;
+    } else if (source === "upload") {
+      msg = `I just uploaded a video. Run clip_long_video on this URL with title "${projectTitle}": ${sourceUrl}${overrideBlock}\nConfirm in one line.`;
+    } else {
+      // youtube
+      msg = `Run clip_long_video on this YouTube URL with title "${projectTitle}": ${sourceUrl}${overrideBlock}\nConfirm in one line.`;
     }
+
+    const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+      body: { robot_id: michelangelo.id, user_id: session.user.id, message: msg, history: [] },
+    });
+    if (invErr) throw invErr;
+    if (data?.error) {
+      const detail = typeof data.details === "string" ? data.details : JSON.stringify(data.details || "").slice(0, 200);
+      throw new Error(`${data.error}${detail ? " — " + detail : ""}`);
+    }
+    await loadAll();
+    if (source === "drive") await loadDriveVideos();
+  };
+
+  const submitDriveFile = (driveFile) => {
+    // Open the quick-options modal with this Drive file as the target.
+    setOptionsModal({
+      kind: "drive",
+      driveFile,
+      projectTitle: driveFile.name.replace(/\.[^.]+$/, ""),
+    });
   };
 
   const handleFile = async (file) => {
@@ -10496,9 +10530,13 @@ function StudioView({ isMobile, session, robots = [] }) {
       if (sErr || !signed?.signedUrl) throw new Error("Could not create signed URL");
       setUploadProgress(100);
 
-      // Hand off to Michelangelo via robot-chat — let him drive the clip request
+      // Open the quick-options modal so user can override defaults before submitting
       const projectTitle = file.name.replace(/\.[^.]+$/, "").slice(0, 80);
-      await sendToMichelangelo(`I just uploaded a video file called "${projectTitle}" — please run clip_long_video on this URL to generate vertical shorts: ${signed.signedUrl}\n\nUse template "Sara" (matches our polished, executive Suarez Global brand). Min 15s, max 60s clips. Title the project "${projectTitle}".`);
+      setOptionsModal({
+        kind: "upload",
+        sourceUrl: signed.signedUrl,
+        projectTitle,
+      });
     } catch (err) {
       setError(`Upload failed: ${err.message || String(err)}`);
     } finally {
@@ -10508,16 +10546,45 @@ function StudioView({ isMobile, session, robots = [] }) {
     }
   };
 
-  const submitYouTube = async () => {
+  const submitYouTube = () => {
     if (!ytForm.url.trim()) { setError("YouTube URL required"); return; }
-    setSubmitting(true);
     setError("");
+    // Open quick-options modal with YouTube source
+    setOptionsModal({
+      kind: "youtube",
+      sourceUrl: ytForm.url,
+      projectTitle: ytForm.title || "YouTube clipping",
+      // Pre-seed YouTube-specific overrides from the form
+      ytFormOverrides: {
+        template: ytForm.template,
+        min_clip_length: ytForm.min,
+        max_clip_length: ytForm.max,
+      },
+    });
+  };
+
+  // Called when the modal confirms — fires the actual clip job.
+  const handleOptionsConfirm = async (overrides) => {
+    if (!optionsModal) return;
+    const target = optionsModal;
+    if (target.kind === "drive") setDriveSubmitting(target.driveFile.id);
+    else setSubmitting(true);
+    setOptionsModal(null);
     try {
-      await sendToMichelangelo(`Please run clip_long_video on this YouTube URL: ${ytForm.url}\n\nProject title: "${ytForm.title || "YouTube clipping"}". Template: "${ytForm.template}". Min ${ytForm.min}s, max ${ytForm.max}s.`);
-      setYtForm({ url: "", title: "", template: "Sara", min: 15, max: 60 });
+      await doClipSubmit({
+        source: target.kind,
+        sourceUrl: target.sourceUrl,
+        projectTitle: target.projectTitle,
+        driveFileId: target.driveFile?.id,
+        overrides,
+      });
+      if (target.kind === "youtube") {
+        setYtForm({ url: "", title: "", template: "Sara", min: 15, max: 60 });
+      }
     } catch (err) {
       setError(`Submit failed: ${err.message || String(err)}`);
     } finally {
+      setDriveSubmitting(null);
       setSubmitting(false);
     }
   };
@@ -10726,6 +10793,7 @@ function StudioView({ isMobile, session, robots = [] }) {
         )}
 
         {viewing && <StudioProjectModal project={viewing} clips={clipsForProject(viewing.id)} isMobile={isMobile} session={session} onClose={() => setViewing(null)} onDelete={() => deleteProject(viewing.id)} onRefresh={async () => { await loadAll(); const updated = projects.find((p) => p.id === viewing.id); if (updated) setViewing(updated); }} />}
+        {optionsModal && <QuickOptionsModal target={optionsModal} defaults={studioDefaults} isMobile={isMobile} onCancel={() => setOptionsModal(null)} onConfirm={handleOptionsConfirm} />}
       </div>
     </div>
   );
@@ -10935,6 +11003,172 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
   );
 }
 
+
+/* — Quick Options Modal — appears when user clicks Clip on a Drive file / uploads / submits YouTube — */
+function QuickOptionsModal({ target, defaults, isMobile, onCancel, onConfirm }) {
+  const isYouTube = target.kind === "youtube";
+
+  // Initialize from saved defaults; per-source overrides win for YouTube form
+  const init = {
+    template: target.ytFormOverrides?.template || defaults?.default_template || "Sara",
+    min_clip_length: target.ytFormOverrides?.min_clip_length || defaults?.default_min_clip_length || 15,
+    max_clip_length: target.ytFormOverrides?.max_clip_length || defaults?.default_max_clip_length || 60,
+    language: defaults?.default_language || "en",
+    magic_zooms: defaults?.default_magic_zooms ?? true,
+    magic_brolls: defaults?.default_magic_brolls ?? true,
+    magic_zooms_percentage: defaults?.default_magic_zooms_percentage ?? 50,
+    magic_brolls_percentage: defaults?.default_magic_brolls_percentage ?? 50,
+    remove_bad_takes: defaults?.default_remove_bad_takes ?? false,
+    clean_audio: defaults?.default_clean_audio ?? false,
+    disable_captions: defaults?.default_disable_captions ?? false,
+    extra_dictionary: "", // comma-separated, merged with saved brand dict
+  };
+
+  const [form, setForm] = useState(init);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const update = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  // Build the overrides object — only include fields that DIFFER from saved defaults
+  // (so we don't pollute the message with redundant data, and Studio defaults are still the source of truth)
+  const buildOverrides = (useDefaults) => {
+    if (useDefaults) return {};
+    const overrides = {};
+    if (form.template !== (defaults?.default_template || "Sara")) overrides.template = form.template;
+    if (isYouTube) {
+      if (Number(form.min_clip_length) !== (defaults?.default_min_clip_length || 15)) overrides.min_clip_length = Number(form.min_clip_length);
+      if (Number(form.max_clip_length) !== (defaults?.default_max_clip_length || 60)) overrides.max_clip_length = Number(form.max_clip_length);
+    }
+    if (form.language !== (defaults?.default_language || "en")) overrides.language = form.language;
+    if (form.magic_zooms !== (defaults?.default_magic_zooms ?? true)) overrides.magic_zooms = form.magic_zooms;
+    if (form.magic_brolls !== (defaults?.default_magic_brolls ?? true)) overrides.magic_brolls = form.magic_brolls;
+    if (Number(form.magic_zooms_percentage) !== (defaults?.default_magic_zooms_percentage ?? 50)) overrides.magic_zooms_percentage = Number(form.magic_zooms_percentage);
+    if (Number(form.magic_brolls_percentage) !== (defaults?.default_magic_brolls_percentage ?? 50)) overrides.magic_brolls_percentage = Number(form.magic_brolls_percentage);
+    if (form.remove_bad_takes !== (defaults?.default_remove_bad_takes ?? false)) overrides.remove_bad_takes = form.remove_bad_takes;
+    if (form.clean_audio !== (defaults?.default_clean_audio ?? false)) overrides.clean_audio = form.clean_audio;
+    if (form.disable_captions !== (defaults?.default_disable_captions ?? false)) overrides.disable_captions = form.disable_captions;
+
+    const extra = form.extra_dictionary
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (extra.length) overrides.dictionary = extra;
+    return overrides;
+  };
+
+  const sourceLabel = target.kind === "drive" ? `${target.driveFile.name}` : target.kind === "upload" ? `${target.projectTitle}.mp4 (uploaded)` : `YouTube: ${(target.sourceUrl || "").slice(0, 60)}…`;
+
+  const Toggle = ({ label, value, onChange, helper }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f8fafc", borderRadius: 8, marginBottom: 6 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{label}</div>
+        {helper && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{helper}</div>}
+      </div>
+      <button onClick={() => onChange(!value)} style={{ width: 40, height: 22, borderRadius: 11, border: "none", background: value ? "#1C3820" : "#e2e8f0", position: "relative", cursor: "pointer", flexShrink: 0, transition: "background 0.15s" }}>
+        <span style={{ position: "absolute", top: 3, left: value ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+      </button>
+    </div>
+  );
+
+  return (
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2100, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 620, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "22px 26px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onCancel} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>🎬 Render Settings</div>
+          <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 4 }}>{target.projectTitle}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: "'DM Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📁 {sourceLabel}</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 18px" : "20px 24px" }}>
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 11, color: "#166534", lineHeight: 1.5 }}>
+            ✓ Currently using your saved Studio Defaults. Click <strong>Use Defaults & Submit</strong> to render with them, or change anything below to override for this video only.
+          </div>
+
+          {/* Caption template */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Caption Template</label>
+            <select value={form.template} onChange={(e) => update("template", e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+              {SUBMAGIC_TEMPLATES.map((t) => <option key={t.name} value={t.name}>{t.name} — {t.desc}</option>)}
+            </select>
+          </div>
+
+          {/* YouTube-specific clip length */}
+          {isYouTube && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Min clip length (s)</label>
+                <input type="number" min={1} max={300} value={form.min_clip_length} onChange={(e) => update("min_clip_length", Number(e.target.value))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Max clip length (s)</label>
+                <input type="number" min={1} max={600} value={form.max_clip_length} onChange={(e) => update("max_clip_length", Number(e.target.value))} style={inputStyle} />
+              </div>
+            </div>
+          )}
+
+          {/* Polish toggles */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Polish</div>
+            <Toggle label="Magic Zooms" value={form.magic_zooms} onChange={(v) => update("magic_zooms", v)} helper="Auto-zoom on speech emphasis" />
+            <Toggle label="Magic B-Rolls" value={form.magic_brolls} onChange={(v) => update("magic_brolls", v)} helper="Auto-insert B-roll" />
+            <Toggle label="Remove Bad Takes" value={form.remove_bad_takes} onChange={(v) => update("remove_bad_takes", v)} helper="Trim ums, false starts, dead air" />
+            <Toggle label="Clean Audio" value={form.clean_audio} onChange={(v) => update("clean_audio", v)} helper="Remove background noise" />
+          </div>
+
+          {/* Advanced disclosure */}
+          <button onClick={() => setShowAdvanced(!showAdvanced)} style={{ background: "none", border: "none", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: "8px 0", textAlign: "left" }}>
+            {showAdvanced ? "▼" : "▶"} Advanced options
+          </button>
+
+          {showAdvanced && (
+            <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", marginTop: 8 }}>
+              {form.magic_zooms && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: "#64748b" }}>Zoom intensity: {form.magic_zooms_percentage}%</label>
+                  <input type="range" min="0" max="100" value={form.magic_zooms_percentage} onChange={(e) => update("magic_zooms_percentage", Number(e.target.value))} style={{ width: "100%", marginTop: 4 }} />
+                </div>
+              )}
+              {form.magic_brolls && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: "#64748b" }}>B-roll density: {form.magic_brolls_percentage}%</label>
+                  <input type="range" min="0" max="100" value={form.magic_brolls_percentage} onChange={(e) => update("magic_brolls_percentage", Number(e.target.value))} style={{ width: "100%", marginTop: 4 }} />
+                </div>
+              )}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Language</label>
+                <select value={form.language} onChange={(e) => update("language", e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                  <option value="pt">Portuguese</option>
+                  <option value="fr">French</option>
+                  <option value="de">German</option>
+                  <option value="it">Italian</option>
+                </select>
+              </div>
+              <Toggle label="Disable Captions" value={form.disable_captions} onChange={(v) => update("disable_captions", v)} helper="Skip burning captions for this render" />
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>Extra dictionary terms (comma-separated)</label>
+                <input value={form.extra_dictionary} onChange={(e) => update("extra_dictionary", e.target.value)} placeholder="e.g. ROAS, underwriting, NOI" style={inputStyle} />
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>One-off proper nouns/jargon for this video. Merged with your saved brand dictionary ({(defaults?.brand_dictionary || []).length} terms saved).</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", flexShrink: 0, background: "#f8fafc", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={onCancel} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => onConfirm(buildOverrides(true))} style={{ padding: "10px 18px", borderRadius: 8, border: "1px solid #1C3820", background: "#fff", color: "#1C3820", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Use Defaults &amp; Submit</button>
+            <button onClick={() => onConfirm(buildOverrides(false))} style={{ padding: "10px 18px", borderRadius: 8, border: "none", background: "#D4C08C", color: "#1C3820", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🎬 Submit with overrides</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* — Sales Pipeline View — */
 const PIPELINE_STAGES = [
