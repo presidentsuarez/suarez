@@ -6549,18 +6549,22 @@ function OutreachDashboard({ isMobile }) {
 /* — Inbox Triage View — Atlas's read of your inbox (Phase 3A: read-only) — */
 function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onConnect }) {
   const [triageRows, setTriageRows] = useState([]);
+  const [gmailThreads, setGmailThreads] = useState([]); // raw threads from Gmail metadata
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingThreads, setLoadingThreads] = useState(false);
   const [running, setRunning] = useState(false);
   const [runStatus, setRunStatus] = useState("");
   const [error, setError] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
-  const [showHandled, setShowHandled] = useState(false);
+  const [filterStatus, setFilterStatus] = useState("active"); // active | untriaged | handled | all
   const [viewing, setViewing] = useState(null);
+  const [singleTriagingId, setSingleTriagingId] = useState(null);
 
   const atlas = robots.find((r) => r.name === "Atlas") || robots[0];
 
+  // Load triage rows + categories + Gmail threads (last ~60 inbox messages)
   const loadAll = React.useCallback(async () => {
     const [{ data: tRows }, { data: cats }] = await Promise.all([
       supabase.from("inbox_triage").select("*").eq("user_id", session.user.id).order("thread_received_at", { ascending: false }).limit(200),
@@ -6571,14 +6575,55 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
     setLoading(false);
   }, [session.user.id]);
 
-  React.useEffect(() => { loadAll(); }, [loadAll]);
+  // Pull raw Gmail inbox via gmail-proxy (not robot-chat, no LLM cost).
+  // gmail-proxy "list" returns messages each with: { id, threadId, snippet, from, subject, date, ... }
+  const loadGmailThreads = React.useCallback(async () => {
+    if (!gmailConnected) return;
+    setLoadingThreads(true);
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("gmail-proxy", {
+        body: { user_id: session.user.id, action: "list", params: { maxResults: 60, query: "in:inbox" } },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+      const messages = data?.messages || [];
+      // Collapse to one entry per thread (Gmail returns messages, but our triage is per-thread)
+      const byThread = {};
+      for (const m of messages) {
+        const tid = m.threadId || m.thread_id || m.id;
+        if (!byThread[tid] || new Date(m.date || 0) > new Date(byThread[tid].date || 0)) {
+          byThread[tid] = m;
+        }
+      }
+      setGmailThreads(Object.values(byThread));
+    } catch (err) {
+      console.error("loadGmailThreads failed:", err);
+    } finally {
+      setLoadingThreads(false);
+    }
+  }, [gmailConnected, session.user.id]);
 
-  const runTriageSweep = async () => {
+  React.useEffect(() => { loadAll(); }, [loadAll]);
+  React.useEffect(() => { if (gmailConnected) loadGmailThreads(); }, [gmailConnected, loadGmailThreads]);
+
+  const runTriageSweep = async (scope = "new") => {
     if (!atlas) { setError("No Atlas robot configured."); return; }
     if (!gmailConnected) { setError("Gmail not connected."); return; }
     setRunning(true);
-    setRunStatus("Asking Atlas to scan recent untriaged threads…");
     setError("");
+
+    let sweepInstructions = "";
+    if (scope === "new") {
+      setRunStatus("Atlas is scanning new untriaged threads…");
+      sweepInstructions = `Call list_inbox_threads with only_untriaged=true and limit=15.`;
+    } else if (scope === "unread") {
+      setRunStatus("Atlas is scanning all unread threads…");
+      sweepInstructions = `Call list_inbox_threads with query="is:unread" and limit=25. Triage every result, even if some have been triaged before — re-read them with current memory in case categorization should change.`;
+    } else if (scope === "today") {
+      setRunStatus("Atlas is re-reading today's threads with current memory…");
+      sweepInstructions = `Call list_inbox_threads with query="newer_than:1d" and limit=30. Re-triage every result so categorizations reflect current inbox memories. This is intentional; existing triage rows will be updated.`;
+    }
+
     try {
       const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
         body: {
@@ -6586,7 +6631,7 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
           user_id: session.user.id,
           message: `Run a triage sweep on my inbox. Specifically:
 1. Call list_inbox_categories so you know what buckets exist.
-2. Call list_inbox_threads with only_untriaged=true and limit=15 to get the most recent untriaged threads.
+2. ${sweepInstructions}
 3. For each thread, call get_inbox_thread to read the actual content (do NOT skip this — judging by subject and sender alone misses important context).
 4. For each thread, call triage_inbox_thread with category, priority, needs_response, is_actionable, suggested_action (if any), and 1-2 sentence reasoning.
 
@@ -6618,11 +6663,54 @@ ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's
       }
       setRunStatus(data?.response || "Triage sweep complete.");
       await loadAll();
+      await loadGmailThreads();
     } catch (err) {
       setError(`Triage failed: ${err.message || String(err)}`);
       setRunStatus("");
     } finally {
       setRunning(false);
+    }
+  };
+
+  // Triage a single thread (per-card button). Tells Atlas to read just this one and categorize.
+  const triageSingle = async (item) => {
+    if (!atlas || !gmailConnected) return;
+    setSingleTriagingId(item.thread_id);
+    setError("");
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+        body: {
+          robot_id: atlas.id,
+          user_id: session.user.id,
+          message: `Triage just this one Gmail thread: thread_id=${item.thread_id}.
+
+1. Call list_inbox_categories first if you don't already know the available buckets.
+2. Call get_inbox_thread with thread_id="${item.thread_id}" to read it.
+3. Call triage_inbox_thread on it.
+
+Apply these rules carefully:
+
+PRIORITY vs ACTIONABILITY are independent — don't conflate them:
+  - "high priority" can still mean is_actionable=false. Credit alerts, statements, security notifications are urgent-to-know but don't need action.
+  - Use is_actionable=true ONLY when Javier must DO something specific (sign, schedule, decide, respond).
+  - Use needs_response=true ONLY when a human is awaiting his reply.
+
+NOTIFICATION vs PROMOTIONAL vs NEWSLETTER:
+  - Notification = automated info alerts (statements, credit alerts, receipts).
+  - Promotional = selling or driving action (even if newsletter-style).
+  - Newsletter = informational digests (industry news, updates).
+
+Honor any inbox memories about this sender. Don't write a long reply — just triage and confirm in one line.`,
+          history: [],
+        },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+      await loadAll();
+    } catch (err) {
+      setError(`Triage failed: ${err.message || String(err)}`);
+    } finally {
+      setSingleTriagingId(null);
     }
   };
 
@@ -6778,23 +6866,79 @@ ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's
   const catMap = {};
   categories.forEach((c) => { catMap[c.id] = c; });
 
-  const filtered = triageRows.filter((r) => {
-    if (!showHandled && r.user_marked_handled) return false;
+  // Build unified item list: every Gmail thread + any triage rows for threads not in Gmail (archived).
+  // Each item has: { thread_id, subject, sender_email, sender_name, snippet, received_at, triage (or null) }
+  const triageByThread = {};
+  triageRows.forEach((r) => { triageByThread[r.gmail_thread_id] = r; });
+  const gmailItems = gmailThreads.map((m) => {
+    const fromRaw = m.from || "";
+    const senderMatch = fromRaw.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/);
+    const sender_name = senderMatch ? senderMatch[1].trim() : "";
+    const sender_email = senderMatch ? senderMatch[2].trim() : fromRaw.trim();
+    const tid = m.threadId || m.thread_id || m.id;
+    return {
+      thread_id: tid,
+      subject: m.subject || "(no subject)",
+      sender_name,
+      sender_email,
+      snippet: m.snippet || "",
+      received_at: m.date || null,
+      triage: triageByThread[tid] || null,
+      _source: "gmail",
+    };
+  });
+  // Add any triage rows whose threads don't show in Gmail (archived but still tracked)
+  const gmailIds = new Set(gmailItems.map((g) => g.thread_id));
+  const archivedItems = triageRows
+    .filter((r) => !gmailIds.has(r.gmail_thread_id))
+    .map((r) => ({
+      thread_id: r.gmail_thread_id,
+      subject: r.subject || "(no subject)",
+      sender_name: r.sender_name || "",
+      sender_email: r.sender_email || "",
+      snippet: r.snippet || "",
+      received_at: r.thread_received_at,
+      triage: r,
+      _source: "triage_only",
+    }));
+  const allItems = [...gmailItems, ...archivedItems].sort((a, b) => new Date(b.received_at || 0) - new Date(a.received_at || 0));
+
+  // Status filter: active = untriaged + triaged-but-not-handled; untriaged = no triage yet;
+  //                handled = user_marked_handled=true; all = everything
+  const statusFilter = (item) => {
+    const t = item.triage;
+    if (filterStatus === "all") return true;
+    if (filterStatus === "untriaged") return !t;
+    if (filterStatus === "handled") return t?.user_marked_handled;
+    // 'active' = needs my attention: untriaged OR triaged-but-not-handled
+    return !t || !t.user_marked_handled;
+  };
+
+  const filtered = allItems.filter((item) => {
+    if (!statusFilter(item)) return false;
     if (filterCategory !== "all") {
-      const effectiveCat = r.user_override_category_id || r.category_id;
+      if (!item.triage) return false; // can't filter untriaged by category
+      const effectiveCat = item.triage.user_override_category_id || item.triage.category_id;
       if (effectiveCat !== filterCategory) return false;
     }
     if (filterPriority !== "all") {
-      const effectivePrio = r.user_override_priority || r.priority;
+      if (!item.triage) return false;
+      const effectivePrio = item.triage.user_override_priority || item.triage.priority;
       if (effectivePrio !== filterPriority) return false;
     }
     return true;
   });
 
-  const counts = {};
-  triageRows.filter((r) => !r.user_marked_handled).forEach((r) => {
-    const cid = r.user_override_category_id || r.category_id;
-    counts[cid] = (counts[cid] || 0) + 1;
+  const counts = {
+    untriaged: allItems.filter((i) => !i.triage).length,
+    active: allItems.filter((i) => !i.triage || !i.triage.user_marked_handled).length,
+    handled: allItems.filter((i) => i.triage?.user_marked_handled).length,
+    total: allItems.length,
+  };
+  const categoryCounts = {};
+  allItems.filter((i) => i.triage && !i.triage.user_marked_handled).forEach((i) => {
+    const cid = i.triage.user_override_category_id || i.triage.category_id;
+    categoryCounts[cid] = (categoryCounts[cid] || 0) + 1;
   });
 
   if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>;
@@ -6815,10 +6959,17 @@ ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's
         {!gmailConnected ? (
           <button onClick={onConnect} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)", background: "#D4C08C", color: "#1C3820", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📧 Connect Gmail to start</button>
         ) : (
-          <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={runTriageSweep} disabled={running} style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)", background: running ? "rgba(212,192,140,0.2)" : "#D4C08C", color: running ? "#D4C08C" : "#1C3820", fontSize: 13, fontWeight: 700, cursor: running ? "not-allowed" : "pointer" }}>{running ? "🎯 Atlas is reading…" : "🎯 Run triage sweep"}</button>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{triageRows.length} threads triaged · {triageRows.filter((r) => r.needs_response && !r.user_marked_handled).length} need response</span>
+          <>
+          <div style={{ marginTop: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => runTriageSweep("new")} disabled={running} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)", background: running ? "rgba(212,192,140,0.2)" : "#D4C08C", color: running ? "#D4C08C" : "#1C3820", fontSize: 13, fontWeight: 700, cursor: running ? "not-allowed" : "pointer" }}>{running ? "🎯 Atlas is reading…" : "🎯 Triage new"}</button>
+            <button onClick={() => runTriageSweep("unread")} disabled={running} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: running ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: 600, cursor: running ? "not-allowed" : "pointer" }} title="Re-read every unread thread, even already-triaged ones">All unread</button>
+            <button onClick={() => runTriageSweep("today")} disabled={running} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: running ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: 600, cursor: running ? "not-allowed" : "pointer" }} title="Re-triage everything from the last 24h with current memory">Re-triage today</button>
+            <button onClick={loadGmailThreads} disabled={loadingThreads} title="Refresh inbox from Gmail (no AI cost)" style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 600, cursor: loadingThreads ? "default" : "pointer" }}>{loadingThreads ? "↻..." : "↻"}</button>
           </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+            <strong style={{ color: "#fff" }}>{counts.total}</strong> in inbox · <strong style={{ color: "#fbbf24" }}>{counts.untriaged}</strong> untriaged · <strong style={{ color: "#86efac" }}>{counts.handled}</strong> handled
+          </div>
+          </>
         )}
 
         {runStatus && (
@@ -6829,12 +6980,28 @@ ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's
         )}
       </div>
 
-      {/* Filters */}
-      {triageRows.length > 0 && (
+      {/* Status filter row — Active / Untriaged / Handled / All */}
+      {allItems.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+          {[
+            { key: "active",    label: "Active",    count: counts.active,    color: "#1C3820" },
+            { key: "untriaged", label: "Untriaged", count: counts.untriaged, color: "#f59e0b" },
+            { key: "handled",   label: "Handled",   count: counts.handled,   color: "#16a34a" },
+            { key: "all",       label: "All",       count: counts.total,     color: "#64748b" },
+          ].map((f) => (
+            <button key={f.key} onClick={() => setFilterStatus(f.key)} style={{ padding: "6px 14px", borderRadius: 8, border: filterStatus === f.key ? `1px solid ${f.color}` : "1px solid #e2e8f0", background: filterStatus === f.key ? f.color : "#fff", color: filterStatus === f.key ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              {f.label} ({f.count})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Category + priority filter row */}
+      {allItems.length > 0 && (
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={() => setFilterCategory("all")} style={{ padding: "6px 12px", borderRadius: 8, border: filterCategory === "all" ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filterCategory === "all" ? "#1C3820" : "#fff", color: filterCategory === "all" ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>All ({Object.values(counts).reduce((s, n) => s + n, 0)})</button>
-          {categories.filter((c) => counts[c.id]).map((c) => (
-            <button key={c.id} onClick={() => setFilterCategory(c.id)} style={{ padding: "6px 12px", borderRadius: 8, border: filterCategory === c.id ? `1px solid ${c.color}` : "1px solid #e2e8f0", background: filterCategory === c.id ? c.color : "#fff", color: filterCategory === c.id ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{c.icon} {c.name} ({counts[c.id]})</button>
+          <button onClick={() => setFilterCategory("all")} style={{ padding: "6px 12px", borderRadius: 8, border: filterCategory === "all" ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filterCategory === "all" ? "#1C3820" : "#fff", color: filterCategory === "all" ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>All categories</button>
+          {categories.filter((c) => categoryCounts[c.id]).map((c) => (
+            <button key={c.id} onClick={() => setFilterCategory(c.id)} style={{ padding: "6px 12px", borderRadius: 8, border: filterCategory === c.id ? `1px solid ${c.color}` : "1px solid #e2e8f0", background: filterCategory === c.id ? c.color : "#fff", color: filterCategory === c.id ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{c.icon} {c.name} ({categoryCounts[c.id]})</button>
           ))}
           <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
             <option value="all">All priorities</option>
@@ -6843,17 +7010,14 @@ ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's
             <option value="normal">Normal</option>
             <option value="low">Low</option>
           </select>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#64748b", cursor: "pointer" }}>
-            <input type="checkbox" checked={showHandled} onChange={(e) => setShowHandled(e.target.checked)} style={{ accentColor: "#1C3820" }} /> Show handled
-          </label>
         </div>
       )}
 
       {/* List */}
-      {triageRows.length === 0 ? (
+      {allItems.length === 0 ? (
         <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
-          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{gmailConnected ? "No triage yet. Hit \"Run triage sweep\" to have Atlas categorize your most recent threads." : "Connect Gmail to begin."}</p>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{gmailConnected ? "Inbox is empty or still loading. Hit ↻ to refresh from Gmail." : "Connect Gmail to begin."}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 24, textAlign: "center" }}>
@@ -6861,25 +7025,54 @@ ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filtered.map((r) => (
-            <TriageCard
-              key={r.id}
-              row={r}
-              category={catMap[r.user_override_category_id || r.category_id]}
-              categories={categories}
-              onMarkHandled={() => markHandled(r.id, r.user_marked_handled)}
-              onChangeCategory={(catId) => overrideCategory(r, catId)}
-              onChangePriority={(prio) => overridePriority(r, prio)}
-              onThumbsUp={() => submitThumbsUp(r)}
-              onThumbsDown={(reason) => submitThumbsDown(r, reason)}
-              onNote={(note) => submitNote(r, note)}
-              onView={() => setViewing(r)}
-            />
+          {filtered.map((item) => (
+            item.triage ? (
+              <TriageCard
+                key={item.thread_id}
+                row={item.triage}
+                category={catMap[item.triage.user_override_category_id || item.triage.category_id]}
+                categories={categories}
+                onMarkHandled={() => markHandled(item.triage.id, item.triage.user_marked_handled)}
+                onChangeCategory={(catId) => overrideCategory(item.triage, catId)}
+                onChangePriority={(prio) => overridePriority(item.triage, prio)}
+                onThumbsUp={() => submitThumbsUp(item.triage)}
+                onThumbsDown={(reason) => submitThumbsDown(item.triage, reason)}
+                onNote={(note) => submitNote(item.triage, note)}
+                onView={() => setViewing(item.triage)}
+              />
+            ) : (
+              <UntriagedCard
+                key={item.thread_id}
+                item={item}
+                triaging={singleTriagingId === item.thread_id}
+                onTriage={() => triageSingle(item)}
+              />
+            )
           ))}
         </div>
       )}
 
       {viewing && <TriageDetailModal row={viewing} category={catMap[viewing.user_override_category_id || viewing.category_id]} isMobile={isMobile} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+/* — Card for an inbox thread that hasn't been triaged yet — */
+function UntriagedCard({ item, triaging, onTriage }) {
+  return (
+    <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 12, padding: "14px 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: "#fef3c7", color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>UNTRIAGED</span>
+          <span style={{ fontSize: 10, color: "#94a3b8" }}>{item.received_at ? new Date(item.received_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</span>
+        </div>
+        <button onClick={onTriage} disabled={triaging} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #1C3820", background: triaging ? "#f8fafc" : "#1C3820", color: triaging ? "#64748b" : "#fff", fontSize: 11, fontWeight: 700, cursor: triaging ? "default" : "pointer" }}>
+          {triaging ? "🎯 Atlas reading…" : "🎯 Triage this"}
+        </button>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>{item.subject || "(no subject)"}</div>
+      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{item.sender_name || item.sender_email || "(unknown)"}</div>
+      {item.snippet && <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5, fontStyle: "italic" }}>"{item.snippet.slice(0, 200)}"</div>}
     </div>
   );
 }
