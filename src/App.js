@@ -6557,8 +6557,68 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   const [filterPriority, setFilterPriority] = useState("all");
   const [showHandled, setShowHandled] = useState(false);
   const [viewing, setViewing] = useState(null);
+  const [draftingForId, setDraftingForId] = useState(null);
+  const [draftPickedId, setDraftPickedId] = useState(null);
 
   const atlas = robots.find((r) => r.name === "Atlas") || robots[0];
+
+  const generateDrafts = async (row) => {
+    setDraftingForId(row.id);
+    setError("");
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("draft-inbox-replies", {
+        body: { user_id: session.user.id, thread_id: row.gmail_thread_id },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(`${data.error}${data.details ? " — " + (typeof data.details === "string" ? data.details : JSON.stringify(data.details).slice(0, 200)) : ""}`);
+      await loadTriageData();
+    } catch (err) {
+      setError(`Draft generation failed: ${err.message || String(err)}`);
+    } finally {
+      setDraftingForId(null);
+    }
+  };
+
+  const pickDraft = async (row, picked) => {
+    // picked: 'atlas' | 'alfred'
+    setDraftPickedId(row.id);
+    try {
+      const pickedArtifactId = picked === "atlas" ? row.draft_atlas_artifact_id : row.draft_alfred_artifact_id;
+      const otherArtifactId = picked === "atlas" ? row.draft_alfred_artifact_id : row.draft_atlas_artifact_id;
+
+      // Fetch the picked draft's body for tracking
+      const { data: pickedArt } = await supabase.from("robot_artifacts").select("payload").eq("id", pickedArtifactId).maybeSingle();
+      const originalBody = pickedArt?.payload?.body || "";
+
+      // Log the pick
+      const { data: pickRow } = await supabase.from("inbox_draft_picks").insert({
+        user_id: session.user.id,
+        triage_id: row.id,
+        gmail_thread_id: row.gmail_thread_id,
+        atlas_artifact_id: row.draft_atlas_artifact_id,
+        alfred_artifact_id: row.draft_alfred_artifact_id,
+        picked_robot: picked,
+        picked_artifact_id: pickedArtifactId,
+        original_body: originalBody,
+      }).select("id").single();
+
+      // Mark the rejected one as cancelled, picked one stays as draft
+      if (otherArtifactId) {
+        await supabase.from("robot_artifacts").update({ status: "cancelled" }).eq("id", otherArtifactId);
+      }
+
+      // Link pick back to triage row
+      if (pickRow?.id) {
+        await supabase.from("inbox_triage").update({ draft_pick_id: pickRow.id }).eq("id", row.id);
+      }
+
+      await loadTriageData();
+    } catch (err) {
+      setError(`Pick failed: ${err.message || String(err)}`);
+    } finally {
+      setDraftPickedId(null);
+    }
+  };
 
   const loadTriageData = React.useCallback(async () => {
     const [{ data: tRows }, { data: cats }] = await Promise.all([
@@ -6961,6 +7021,10 @@ After all threads are triaged, give a one-sentence summary.`,
               onThumbsDown={(reason) => submitThumbsDown(r, reason)}
               onNote={(note) => submitNote(r, note)}
               onView={() => setViewing(r)}
+              onGenerateDrafts={() => generateDrafts(r)}
+              onPickDraft={(picked) => pickDraft(r, picked)}
+              draftsBusy={draftingForId === r.id}
+              draftPickedId={draftPickedId}
             />
           ))}
         </div>
@@ -6971,7 +7035,7 @@ After all threads are triaged, give a one-sentence summary.`,
   );
 }
 
-function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory, onChangePriority, onThumbsUp, onThumbsDown, onNote, onView }) {
+function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory, onChangePriority, onThumbsUp, onThumbsDown, onNote, onView, onGenerateDrafts, onPickDraft, draftsBusy, draftPickedId }) {
   const priority = row.user_override_priority || row.priority;
   const priorityStyle = {
     urgent: { bg: "#fef2f2", color: "#dc2626", label: "URGENT" },
@@ -7071,6 +7135,33 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
         </div>
       )}
 
+      {/* Draft replies block — only for high-stakes threads with needs_response */}
+      {row.needs_response && !row.user_marked_handled && (() => {
+        const cat = category?.name?.toLowerCase() || "";
+        const isHighStakes = ["investor", "client", "deal", "team"].includes(cat);
+        if (!isHighStakes) return null;
+        const hasDrafts = row.draft_atlas_artifact_id && row.draft_alfred_artifact_id;
+        const hasPicked = !!row.draft_pick_id;
+        return (
+          <div style={{ marginTop: 10, padding: "10px 12px", background: "#fefce8", border: "1px dashed #fde047", borderRadius: 8 }}>
+            {!hasDrafts && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 11, color: "#78350f" }}>
+                  <strong>↩ Needs a reply.</strong> Atlas + Alfred can draft you two options.
+                </div>
+                <button onClick={onGenerateDrafts} disabled={draftsBusy} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: draftsBusy ? "#cbd5e1" : "#1C3820", color: "#fff", fontSize: 11, fontWeight: 700, cursor: draftsBusy ? "default" : "pointer" }}>{draftsBusy ? "Drafting…" : "✏️ Draft replies"}</button>
+              </div>
+            )}
+            {hasDrafts && !hasPicked && (
+              <DualDraftPicker row={row} onPickDraft={onPickDraft} pickInProgress={draftPickedId === row.id} />
+            )}
+            {hasDrafts && hasPicked && (
+              <PickedDraftView row={row} />
+            )}
+          </div>
+        );
+      })()}
+
       {/* Feedback row */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
         {feedbackState === null && (
@@ -7099,6 +7190,99 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
         {feedbackState === "submitted-up" && <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>✓ Confirmed — clearing…</span>}
         {feedbackState === "submitted-down" && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>✓ Saved — Atlas will learn. Clearing…</span>}
         {feedbackState === "submitted-note" && <span style={{ fontSize: 11, color: "#1C3820", fontWeight: 700 }}>✓ Rule saved. Clearing…</span>}
+      </div>
+    </div>
+  );
+}
+
+function DualDraftPicker({ row, onPickDraft, pickInProgress }) {
+  const [atlasArt, setAtlasArt] = useState(null);
+  const [alfredArt, setAlfredArt] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null); // 'atlas' | 'alfred' | null
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ids = [row.draft_atlas_artifact_id, row.draft_alfred_artifact_id].filter(Boolean);
+      const { data } = await supabase.from("robot_artifacts").select("id, payload, status").in("id", ids);
+      if (cancelled) return;
+      const a = (data || []).find((x) => x.id === row.draft_atlas_artifact_id);
+      const b = (data || []).find((x) => x.id === row.draft_alfred_artifact_id);
+      setAtlasArt(a); setAlfredArt(b); setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [row.draft_atlas_artifact_id, row.draft_alfred_artifact_id]);
+
+  if (loading) return <div style={{ fontSize: 11, color: "#78350f" }}>Loading drafts…</div>;
+
+  const renderDraftCard = (label, color, art, key) => {
+    if (!art) return <div style={{ fontSize: 11, color: "#dc2626" }}>⚠️ {label} draft missing</div>;
+    const body = art.payload?.body || "";
+    const preview = body.slice(0, 240);
+    const isExpanded = expanded === key;
+    return (
+      <div style={{ background: "#fff", border: `1px solid ${color}40`, borderRadius: 8, padding: "10px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}20`, color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={() => setExpanded(isExpanded ? null : key)} style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: "pointer" }}>{isExpanded ? "Collapse" : "Expand"}</button>
+            <button onClick={() => onPickDraft(key)} disabled={pickInProgress} style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 5, border: "none", background: pickInProgress ? "#cbd5e1" : color, color: "#fff", cursor: pickInProgress ? "default" : "pointer" }}>Pick this</button>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: isExpanded ? "none" : 84, overflow: "hidden", position: "relative" }}>
+          {isExpanded ? body : preview}
+          {!isExpanded && body.length > 240 && <span style={{ color: "#94a3b8", fontSize: 10 }}>… ({body.length - 240} more chars)</span>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#78350f", marginBottom: 8 }}>↩ Two drafts ready — pick one to keep, the other will be discarded.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {renderDraftCard("ATLAS · strategic", "#f59e0b", atlasArt, "atlas")}
+        {renderDraftCard("ALFRED · polished", "#3b82f6", alfredArt, "alfred")}
+      </div>
+      <div style={{ fontSize: 10, color: "#78350f", marginTop: 6, fontStyle: "italic" }}>Both drafts are saved as Gmail Drafts. The picked one stays; the other is cancelled. Edit and send from Gmail when ready.</div>
+    </div>
+  );
+}
+
+function PickedDraftView({ row }) {
+  const [pick, setPick] = useState(null);
+  const [pickedArt, setPickedArt] = useState(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: pickRow } = await supabase.from("inbox_draft_picks").select("*").eq("id", row.draft_pick_id).maybeSingle();
+      if (cancelled) return;
+      setPick(pickRow);
+      if (pickRow?.picked_artifact_id) {
+        const { data: art } = await supabase.from("robot_artifacts").select("payload, external_url, external_id, status").eq("id", pickRow.picked_artifact_id).maybeSingle();
+        if (!cancelled) setPickedArt(art);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [row.draft_pick_id]);
+
+  if (!pick || !pickedArt) return <div style={{ fontSize: 11, color: "#78350f" }}>Loading picked draft…</div>;
+
+  const botColor = pick.picked_robot === "atlas" ? "#f59e0b" : "#3b82f6";
+  const botName = pick.picked_robot === "atlas" ? "ATLAS" : "ALFRED";
+  const draftsUrl = pickedArt.external_url || "https://mail.google.com/mail/u/0/#drafts";
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 4, background: `${botColor}20`, color: botColor, textTransform: "uppercase" }}>✓ Picked: {botName}</span>
+        <span style={{ fontSize: 10, color: "#78350f" }}>Edit and send from Gmail Drafts.</span>
+        <a href={draftsUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 5, background: "#1C3820", color: "#fff", textDecoration: "none" }}>📧 Open in Gmail</a>
+      </div>
+      <div style={{ background: "#fff", border: `1px solid ${botColor}30`, borderRadius: 6, padding: "10px 12px", fontSize: 11, color: "#475569", lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: 200, overflow: "auto" }}>
+        {pickedArt.payload?.body || "(empty)"}
       </div>
     </div>
   );
