@@ -9858,20 +9858,21 @@ function BrandAuditDetailModal({ report, isMobile, onClose, onDelete }) {
 
 /* — Studio View — Upload long video → AI clips, by Michelangelo — */
 // Parse the text output of list_drive_videos tool into structured rows.
-// Tool output format per row: "[file_id] file_name · 12.3 MB · 45s · 2026-05-02"
+// Tool output format per row: "[file_id] (Folder) file_name · 12.3 MB · 45s · 2026-05-02"
 function parseDriveListResult(text) {
   if (!text || typeof text !== "string") return [];
   const rows = [];
   const lines = text.split("\n");
   for (const line of lines) {
-    const match = line.match(/^\[([^\]]+)\]\s+(.+?)(?:\s+·\s+(.+))?$/);
+    // Match "[id] (FolderLabel) name · ..." OR "[id] name · ..." for backward compat
+    const match = line.match(/^\[([^\]]+)\]\s+(?:\(([^)]+)\)\s+)?(.+?)(?:\s+·\s+(.+))?$/);
     if (!match) continue;
-    const [, id, name, rest] = match;
+    const [, id, folder, name, rest] = match;
     const parts = rest ? rest.split("·").map((s) => s.trim()) : [];
     const size = parts.find((p) => /\d+(?:\.\d+)?\s*(MB|KB|GB)/.test(p)) || "";
     const duration = parts.find((p) => /^\d+s$/.test(p)) || "";
     const date = parts.find((p) => /^\d{4}-\d{2}-\d{2}$/.test(p)) || "";
-    rows.push({ id, name, size, duration, date });
+    rows.push({ id, name, size, duration, date, folder: folder || "Inbox" });
   }
   return rows;
 }
@@ -10142,11 +10143,15 @@ function StudioView({ isMobile, session, robots = [] }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {driveVideos.map((v) => {
                     const submitting = driveSubmitting === v.id;
+                    const folderColor = v.folder === "Inbox" ? "#10b981" : v.folder === "Processed" ? "#94a3b8" : "#a855f7";
                     return (
                       <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)" }}>
                         <span style={{ fontSize: 18, flexShrink: 0 }}>🎬</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                            <span style={{ fontSize: 8, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: `${folderColor}22`, color: folderColor, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>{v.folder || "Inbox"}</span>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name}</div>
+                          </div>
                           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
                             {v.size}{v.duration ? ` · ${v.duration}` : ""}{v.date ? ` · ${v.date}` : ""}
                           </div>

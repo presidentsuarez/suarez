@@ -1008,32 +1008,49 @@ async function listDriveVideos(input: any, ctx: any) {
   const token = await getGoogleAccessToken(ctx);
   if (!token) return { result: "Error: Google Drive is not connected." };
 
-  // Resolve folder ID
-  let folderId = input.folder_id;
-  if (!folderId) {
-    const { data: settings } = await ctx.supabase.from("studio_settings").select("drive_inbox_folder_id").eq("user_id", ctx.user_id).maybeSingle();
-    folderId = settings?.drive_inbox_folder_id;
+  // Build the list of folder IDs to search.
+  // - If caller specified one, search only that.
+  // - Otherwise search all three Studio folders so users who drop into the wrong subfolder still see their files.
+  const folderIdsToSearch: { id: string; label: string }[] = [];
+  if (input.folder_id) {
+    folderIdsToSearch.push({ id: input.folder_id, label: "Specified" });
+  } else {
+    const { data: settings } = await ctx.supabase.from("studio_settings").select("drive_inbox_folder_id, drive_processed_folder_id, drive_output_folder_id").eq("user_id", ctx.user_id).maybeSingle();
+    if (!settings?.drive_inbox_folder_id) {
+      return { result: "Error: Studio folders not configured. Call setup_studio_drive_folders first." };
+    }
+    folderIdsToSearch.push({ id: settings.drive_inbox_folder_id, label: "Inbox" });
+    if (settings.drive_processed_folder_id) folderIdsToSearch.push({ id: settings.drive_processed_folder_id, label: "Processed" });
+    if (settings.drive_output_folder_id) folderIdsToSearch.push({ id: settings.drive_output_folder_id, label: "Output" });
   }
-  if (!folderId) return { result: "Error: no folder specified and no default Studio Inbox configured. Call setup_studio_drive_folders first." };
 
   const limit = Math.min(input.limit || 25, 50);
-  const baseQuery = `'${folderId}' in parents and trashed=false and (mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.MOV' or name contains '.mkv' or name contains '.webm')`;
-  const q = input.query_extra ? `${baseQuery} and (${input.query_extra})` : baseQuery;
+  const allFiles: any[] = [];
 
-  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,modifiedTime,videoMediaMetadata)&orderBy=modifiedTime desc&pageSize=${limit}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  const data = await res.json();
-  if (!res.ok) return { result: `Error from Drive: ${res.status} — ${JSON.stringify(data).slice(0, 300)}` };
+  for (const f of folderIdsToSearch) {
+    const baseQuery = `'${f.id}' in parents and trashed=false and (mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.MOV' or name contains '.mkv' or name contains '.webm')`;
+    const q = input.query_extra ? `${baseQuery} and (${input.query_extra})` : baseQuery;
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,size,createdTime,modifiedTime,videoMediaMetadata)&orderBy=modifiedTime desc&pageSize=${limit}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) continue; // skip folders that error, don't fail entire list
+    for (const file of (data.files || [])) {
+      allFiles.push({ ...file, _folder: f.label });
+    }
+  }
 
-  const files = data.files || [];
-  if (files.length === 0) return { result: `No video files in folder. (Drop videos into Drive → Suarez Global → Studio → Inbox to process.)` };
+  if (allFiles.length === 0) return { result: `No video files in any Studio folder. Drop videos into Drive → Suarez Global → Studio → Inbox to process.` };
 
-  const lines = files.map((f: any) => {
+  // Sort all by modifiedTime desc
+  allFiles.sort((a, b) => (b.modifiedTime || "").localeCompare(a.modifiedTime || ""));
+  const limited = allFiles.slice(0, limit);
+
+  const lines = limited.map((f: any) => {
     const sizeMB = f.size ? `${(Number(f.size) / 1024 / 1024).toFixed(1)} MB` : "—";
     const dur = f.videoMediaMetadata?.durationMillis ? `${Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)}s` : "";
-    return `[${f.id}] ${f.name} · ${sizeMB}${dur ? " · " + dur : ""} · ${(f.modifiedTime || "").slice(0, 10)}`;
+    return `[${f.id}] (${f._folder}) ${f.name} · ${sizeMB}${dur ? " · " + dur : ""} · ${(f.modifiedTime || "").slice(0, 10)}`;
   });
-  return { result: `${files.length} video${files.length !== 1 ? "s" : ""} in folder:\n${lines.join("\n")}` };
+  return { result: `${limited.length} video${limited.length !== 1 ? "s" : ""} across Studio folders:\n${lines.join("\n")}` };
 }
 
 async function getDriveSignedUrl(input: any, ctx: any) {
