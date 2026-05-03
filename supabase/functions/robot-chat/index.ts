@@ -1126,6 +1126,12 @@ async function getDriveSignedUrl(input: any, ctx: any) {
     return { result: "Error: Drive returned no body stream." };
   }
 
+  // Encode each path segment but preserve the slashes — Supabase Storage
+  // requires the path to keep its hierarchical structure. encodeURIComponent
+  // on the whole path encodes slashes as %2F, which Storage signs OK but then
+  // rejects on download with InvalidSignature.
+  const encodedPath = objectPath.split("/").map((seg) => encodeURIComponent(seg)).join("/");
+
   // 5. Upload to Supabase Storage. We use the storage API's binary upload endpoint,
   // streaming the body directly without buffering. Deno fetch supports passing a
   // ReadableStream as body.
@@ -1133,7 +1139,7 @@ async function getDriveSignedUrl(input: any, ctx: any) {
   // because Supabase's auto-injected SUPABASE_SERVICE_ROLE_KEY may use the newer
   // sb_secret_... format, which Storage rejects with "Invalid Compact JWS".
   const storageKey = Deno.env.get("STORAGE_SERVICE_KEY") || SUPABASE_SERVICE_ROLE_KEY;
-  const storageUploadUrl = `${SUPABASE_URL}/storage/v1/object/videos-source/${encodeURIComponent(objectPath)}`;
+  const storageUploadUrl = `${SUPABASE_URL}/storage/v1/object/videos-source/${encodedPath}`;
   const contentType = meta.mimeType || driveStreamRes.headers.get("content-type") || "video/mp4";
 
   // Some upstreams require Content-Length for the upload; if Drive provided it, pass it through.
@@ -1160,7 +1166,7 @@ async function getDriveSignedUrl(input: any, ctx: any) {
 
   // 6. Generate a signed URL for Submagic. 4-hour validity covers Submagic's
   // download + processing window comfortably. Re-issuable if needed.
-  const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/videos-source/${encodeURIComponent(objectPath)}`, {
+  const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/videos-source/${encodedPath}`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${storageKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ expiresIn: 4 * 60 * 60 }),
@@ -1175,8 +1181,18 @@ async function getDriveSignedUrl(input: any, ctx: any) {
     ? signed.signedURL
     : `${SUPABASE_URL}/storage/v1${signed.signedURL.startsWith("/") ? "" : "/"}${signed.signedURL}`;
 
+  // 7. PRE-FLIGHT CHECK: verify the signed URL actually works before we hand it
+  // off to Submagic. We had a bug where URL encoding broke the download path —
+  // this catches that class of issue before failing in production.
+  const headRes = await fetch(signedUrl, { method: "HEAD" });
+  if (!headRes.ok) {
+    return { result: `Error: signed URL failed pre-flight check (${headRes.status}). Storage said: ${headRes.headers.get("content-type") || "unknown"}. URL: ${signedUrl.slice(0, 200)}...` };
+  }
+  const verifiedSize = headRes.headers.get("content-length");
+  const verifiedType = headRes.headers.get("content-type");
+
   return {
-    result: `✓ Bridged "${meta.name}" (${sizeMB ? sizeMB + " MB" : "unknown size"}) Drive → Supabase Storage. Signed URL ready for Submagic (4h validity):\n${signedUrl}\n\nStored at: videos-source/${objectPath}`,
+    result: `✓ Bridged "${meta.name}" (${sizeMB ? sizeMB + " MB" : "unknown size"}) Drive → Supabase Storage. Signed URL verified (${verifiedSize ? Math.round(Number(verifiedSize)/1024/1024) + " MB" : "?"}, ${verifiedType || "?"}) and ready for Submagic (4h validity):\n${signedUrl}\n\nStored at: videos-source/${objectPath}`,
     artifact: {
       type: "drive_bridged_url",
       title: meta.name,
