@@ -144,6 +144,23 @@ Deno.serve(async (req) => {
           triaged_at: new Date().toISOString(),
         });
 
+        // Sync Gmail label (fire-and-forget; don't block rule processing)
+        try {
+          fetch(`${SUPABASE_URL}/functions/v1/gmail-label-sync`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+            body: JSON.stringify({
+              action: "sync_one",
+              user_id,
+              thread_id: t.thread_id,
+            }),
+          }).catch(() => {});
+        } catch (_) {}
+
         // Bump match count
         await supabase.from("inbox_rules").update({
           match_count: (match.match_count || 0) + 1,

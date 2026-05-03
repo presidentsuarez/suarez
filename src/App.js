@@ -6784,6 +6784,10 @@ After all threads are triaged, give a one-sentence summary.`,
 
   const overrideCategory = async (row, newCatId) => {
     await supabase.from("inbox_triage").update({ user_override_category_id: newCatId }).eq("id", row.id);
+    // Sync Gmail label in background (don't block UI)
+    supabase.functions.invoke("gmail-label-sync", {
+      body: { action: "sync_one", user_id: session.user.id, thread_id: row.gmail_thread_id },
+    }).catch(() => {});
     await loadTriageData();
   };
 

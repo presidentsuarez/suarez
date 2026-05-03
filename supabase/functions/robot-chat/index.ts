@@ -1665,6 +1665,106 @@ async function listInboxCategories(_input: any, ctx: any) {
   return { result: `Available categories (use the exact name in triage_inbox_thread):\n${lines.join("\n")}` };
 }
 
+// Ensure a Gmail label exists for a category. Returns label id (creates if missing).
+async function ensureGmailLabel(ctx: any, token: string, categoryName: string): Promise<{ id: string; name: string } | null> {
+  const labelName = `Suarez/${categoryName}`;
+
+  // First: check our cache (inbox_categories.gmail_label_id)
+  const { data: catRow } = await ctx.supabase.from("inbox_categories")
+    .select("id, gmail_label_id, gmail_label_name").eq("user_id", ctx.user_id).ilike("name", categoryName).maybeSingle();
+  if (catRow?.gmail_label_id) return { id: catRow.gmail_label_id, name: catRow.gmail_label_name || labelName };
+
+  // List existing Gmail labels
+  const listRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!listRes.ok) return null;
+  const labels = (await listRes.json()).labels || [];
+  let label = labels.find((l: any) => l.name === labelName);
+
+  // Create if missing
+  if (!label) {
+    const createRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: labelName,
+        labelListVisibility: "labelShow",
+        messageListVisibility: "show",
+      }),
+    });
+    if (!createRes.ok) {
+      console.error("Failed to create Gmail label:", await createRes.text());
+      return null;
+    }
+    label = await createRes.json();
+  }
+
+  // Cache the id
+  if (catRow?.id && label?.id) {
+    await ctx.supabase.from("inbox_categories")
+      .update({ gmail_label_id: label.id, gmail_label_name: labelName })
+      .eq("id", catRow.id);
+  }
+  return label?.id ? { id: label.id, name: labelName } : null;
+}
+
+// Apply the right Suarez/<Category> label to a thread. Removes any other Suarez/* label first.
+async function syncGmailLabelToThread(ctx: any, threadId: string, categoryName: string): Promise<void> {
+  try {
+    const token = await getGoogleAccessToken(ctx);
+    if (!token) return;
+
+    // Get thread's current labels
+    const tRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=metadata`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!tRes.ok) return;
+    const tData = await tRes.json();
+    const allMessages = tData.messages || [];
+
+    // Build set of all label IDs across all messages in the thread
+    const labelIdsOnThread = new Set<string>();
+    for (const m of allMessages) {
+      for (const lid of (m.labelIds || [])) labelIdsOnThread.add(lid);
+    }
+
+    // Look up our Suarez/* label IDs from cache
+    const { data: cats } = await ctx.supabase.from("inbox_categories")
+      .select("name, gmail_label_id").eq("user_id", ctx.user_id).not("gmail_label_id", "is", null);
+    const ourLabelIds = new Set((cats || []).map((c: any) => c.gmail_label_id));
+
+    // Remove any of our labels currently on the thread (we'll add the right one back if matching)
+    const toRemove = [...labelIdsOnThread].filter((id) => ourLabelIds.has(id));
+
+    // Ensure the target label exists
+    const target = await ensureGmailLabel(ctx, token, categoryName);
+    if (!target) return;
+
+    const toAdd = [target.id];
+    // If target is already on, remove from removal list
+    const finalRemove = toRemove.filter((id) => id !== target.id);
+
+    if (finalRemove.length === 0 && toAdd.length === 1 && labelIdsOnThread.has(target.id)) {
+      // Already correctly labeled, nothing to do
+      return;
+    }
+
+    const body: any = {};
+    if (toAdd.length) body.addLabelIds = toAdd;
+    if (finalRemove.length) body.removeLabelIds = finalRemove;
+    if (Object.keys(body).length === 0) return;
+
+    await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}/modify`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    console.error("syncGmailLabelToThread error (non-fatal):", e);
+  }
+}
+
 async function triageInboxThread(input: any, ctx: any) {
   if (!input.thread_id || !input.category) return { result: "Error: thread_id and category required." };
 
@@ -1720,11 +1820,13 @@ async function triageInboxThread(input: any, ctx: any) {
 
   if (existing) {
     await ctx.supabase.from("inbox_triage").update(row).eq("id", existing.id);
-    return { result: `✓ Triage updated: ${input.category} / ${priority}${input.needs_response ? " · needs response" : ""}.`, artifact: { type: "inbox_triage", title: subject || input.thread_id, id: existing.id } };
+    syncGmailLabelToThread(ctx, input.thread_id, input.category).catch(() => {});
+    return { result: `✓ Triage updated: ${input.category} / ${priority}${input.needs_response ? " · needs response" : ""}. Gmail label synced.`, artifact: { type: "inbox_triage", title: subject || input.thread_id, id: existing.id } };
   } else {
     const { data: inserted, error: insErr } = await ctx.supabase.from("inbox_triage").insert(row).select("id").single();
     if (insErr) return { result: `Error: ${insErr.message}` };
-    return { result: `✓ Triaged as ${input.category} / ${priority}${input.needs_response ? " · needs response" : ""}.`, artifact: { type: "inbox_triage", title: subject || input.thread_id, id: inserted.id } };
+    syncGmailLabelToThread(ctx, input.thread_id, input.category).catch(() => {});
+    return { result: `✓ Triaged as ${input.category} / ${priority}${input.needs_response ? " · needs response" : ""}. Gmail label synced.`, artifact: { type: "inbox_triage", title: subject || input.thread_id, id: inserted.id } };
   }
 }
 
