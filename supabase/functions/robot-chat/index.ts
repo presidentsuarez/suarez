@@ -837,67 +837,87 @@ async function saveBrandAudit(input: any, ctx: any) {
 // ─── VIDEO (Submagic Magic Clips) ──────────────────────────────────────────
 async function clipLongVideo(input: any, ctx: any) {
   const submagicKey = Deno.env.get("SUBMAGIC_API_KEY");
-  if (!submagicKey) {
-    return { result: "Error: Submagic is not configured. Set SUBMAGIC_API_KEY in Supabase secrets." };
-  }
-
   const sourceUrl = input.source_url;
   if (!sourceUrl) return { result: "Error: source_url is required." };
 
-  // Detect YouTube vs direct file URL
   const isYouTube = /youtube\.com\/watch|youtu\.be\//.test(sourceUrl);
   const projectTitle = (input.title || "Untitled clipping").slice(0, 100);
   const template = input.template || "Sara";
   const minLen = Number(input.min_clip_length) || 15;
   const maxLen = Number(input.max_clip_length) || 60;
   const language = input.language || "en";
-
   const webhookUrl = "https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/video-webhook";
+
+  // Route based on source type:
+  //   YouTube  → /v1/projects/magic-clips  (multi-clip extractor; YouTube only)
+  //   Direct   → /v1/projects              (single polished video; supports videoUrl)
+  // This is a Submagic API limitation: magic-clips refuses non-YouTube URLs with
+  //   "Validation failed: youtubeUrl is required, Unknown field: videoUrl"
+  const endpoint = isYouTube
+    ? "https://api.submagic.co/v1/projects/magic-clips"
+    : "https://api.submagic.co/v1/projects";
 
   const requestBody: any = {
     title: projectTitle,
     language,
     templateName: template,
     webhookUrl,
-    minClipLength: minLen,
-    maxClipLength: maxLen,
   };
   if (isYouTube) {
     requestBody.youtubeUrl = sourceUrl;
+    requestBody.minClipLength = minLen;
+    requestBody.maxClipLength = maxLen;
   } else {
     requestBody.videoUrl = sourceUrl;
+    // For single-project endpoint: turn on the polish features Magic Clips would have applied
+    requestBody.magicZooms = true;
+    requestBody.magicBrolls = true;
   }
 
-  const res = await fetch("https://api.submagic.co/v1/projects/magic-clips", {
-    method: "POST",
-    headers: {
-      "x-api-key": submagicKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
+  const artifactType = isYouTube ? "video_clips_project" : "video_render";
+  const summaryLabel = isYouTube ? "Processing — clips arrive in 5-15 min" : "Processing — polished video arrives in 5-15 min";
 
-  const data = await res.json();
-  if (!res.ok) {
-    await logRobotAction(ctx.supabase, {
-      user_id: ctx.user_id, robot_id: ctx.robot_id, service: "submagic", action: "magic_clips_request",
-      success: false, error_type: `http_${res.status}`, meta: { title: projectTitle, error: JSON.stringify(data).slice(0, 300) },
+  let externalId: string | null = null;
+  let submagicError: string | null = null;
+  let submagicErrorDetail: string | null = null;
+
+  if (!submagicKey) {
+    submagicError = "submagic_not_configured";
+    submagicErrorDetail = "SUBMAGIC_API_KEY is not set in Supabase secrets.";
+  } else {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "x-api-key": submagicKey, "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
     });
-    return { result: `Error from Submagic: ${res.status} — ${JSON.stringify(data).slice(0, 400)}` };
+    const data = await res.json();
+    if (!res.ok) {
+      submagicError = `http_${res.status}`;
+      submagicErrorDetail = data?.message || JSON.stringify(data).slice(0, 400);
+      await logRobotAction(ctx.supabase, {
+        user_id: ctx.user_id, robot_id: ctx.robot_id, service: "submagic", action: isYouTube ? "magic_clips_request" : "single_project_request",
+        success: false, error_type: `http_${res.status}`, meta: { title: projectTitle, error: submagicErrorDetail, source_type: isYouTube ? "youtube" : "file" },
+      });
+    } else {
+      externalId = data.id;
+    }
   }
 
-  const externalId = data.id;
-  // Save the parent project as a queued artifact. Webhook will fill in clips on completion.
+  // ALWAYS create the artifact so failures are visible in Studio (not just in usage_log).
+  const isFailed = submagicError !== null;
   const { data: artRow } = await ctx.supabase.from("robot_artifacts").insert({
     user_id: ctx.user_id,
     robot_id: ctx.robot_id,
-    artifact_type: "video_clips_project",
+    artifact_type: artifactType,
     title: projectTitle,
-    summary: "Processing — clips arrive in 5-15 min",
+    summary: isFailed
+      ? `Submagic rejected request: ${submagicErrorDetail?.slice(0, 200) || submagicError}`
+      : summaryLabel,
     external_id: externalId,
     external_url: null,
     payload: {
       provider: "submagic",
+      submagic_endpoint: endpoint,
       source_url: sourceUrl,
       source_type: isYouTube ? "youtube" : "file",
       template,
@@ -906,18 +926,28 @@ async function clipLongVideo(input: any, ctx: any) {
       language,
       submagic_project_id: externalId,
       requested_at: new Date().toISOString(),
+      ...(isFailed ? { error: submagicError, error_detail: submagicErrorDetail, failed_at: new Date().toISOString() } : {}),
     },
-    status: "queued",
+    status: isFailed ? "failed" : "queued",
   }).select("id").single();
 
+  if (isFailed) {
+    return {
+      result: `❌ Submagic rejected the request: ${submagicErrorDetail || submagicError}\n\nThe project was saved as failed in Studio so you can see what happened. ${!isYouTube ? "\n\nNote: Submagic's Magic Clips (multi-clip extraction) only works with YouTube URLs. For Drive files we use their single-project endpoint, which produces ONE polished video instead of multiple clips." : ""}`,
+      artifact: { type: artifactType, title: projectTitle, id: artRow?.id, status: "failed" },
+    };
+  }
+
   await logRobotAction(ctx.supabase, {
-    user_id: ctx.user_id, robot_id: ctx.robot_id, service: "submagic", action: "magic_clips_request",
+    user_id: ctx.user_id, robot_id: ctx.robot_id, service: "submagic", action: isYouTube ? "magic_clips_request" : "single_project_request",
     success: true, meta: { submagic_project_id: externalId, title: projectTitle, template, source_type: isYouTube ? "youtube" : "file" },
   });
 
   return {
-    result: `✓ Submagic project queued: "${projectTitle}" (id ${externalId}). Template: ${template}. Clips will appear in Studio in 5-15 minutes when Submagic finishes processing.`,
-    artifact: { type: "video_clips_project", title: projectTitle, id: artRow?.id, external_id: externalId },
+    result: isYouTube
+      ? `✓ Submagic Magic Clips queued: "${projectTitle}" (id ${externalId}). Template: ${template}. Multiple clips will appear in Studio in 5-15 minutes.`
+      : `✓ Submagic single-project queued: "${projectTitle}" (id ${externalId}). Template: ${template}. Polished captioned video will appear in 5-15 minutes. Note: this is one polished video, not multiple clips — Magic Clips only works with YouTube URLs.`,
+    artifact: { type: artifactType, title: projectTitle, id: artRow?.id, external_id: externalId },
   };
 }
 

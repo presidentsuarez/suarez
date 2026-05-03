@@ -47,8 +47,14 @@ Deno.serve(async (req) => {
     }
 
     if (status === "completed" || status === "success") {
-      // Mark parent complete + capture all clip URLs in payload
-      const clips = Array.isArray(body.clips) ? body.clips : [];
+      // Submagic returns either:
+      //   - magicClips[] / clips[] (from /v1/projects/magic-clips — multi-clip)
+      //   - downloadUrl (from /v1/projects — single polished video)
+      const clips = Array.isArray(body.magicClips) ? body.magicClips
+                  : Array.isArray(body.clips) ? body.clips
+                  : [];
+      const isSingleVideo = clips.length === 0 && body.downloadUrl;
+
       const updatedPayload = {
         ...(parent.payload || {}),
         completed_at: new Date().toISOString(),
@@ -58,15 +64,23 @@ Deno.serve(async (req) => {
           title: c.title || c.name || null,
           downloadUrl: c.downloadUrl || c.url || null,
           duration: c.duration || null,
-          score: c.score || null,
+          score: c.viralityScores?.total || c.score || null,
           startTime: c.startTime || null,
           endTime: c.endTime || null,
         })),
+        ...(isSingleVideo ? { single_video_url: body.downloadUrl } : {}),
       };
+
+      const summary = clips.length > 0
+        ? `${clips.length} clip${clips.length !== 1 ? "s" : ""} ready for review`
+        : isSingleVideo
+          ? "Polished video ready — click to download"
+          : "Render complete";
 
       await supabase.from("robot_artifacts").update({
         status: "completed",
-        summary: clips.length > 0 ? `${clips.length} clip${clips.length !== 1 ? "s" : ""} ready for review` : "Render complete",
+        summary,
+        external_url: body.downloadUrl || null,
         payload: updatedPayload,
       }).eq("id", parent.id);
 

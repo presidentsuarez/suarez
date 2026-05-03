@@ -9898,7 +9898,7 @@ function StudioView({ isMobile, session, robots = [] }) {
 
   const loadAll = React.useCallback(async () => {
     const [{ data: parents }, { data: clipRows }, { data: settings }] = await Promise.all([
-      supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clips_project").order("created_at", { ascending: false }).limit(50),
+      supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).in("artifact_type", ["video_clips_project", "video_render"]).order("created_at", { ascending: false }).limit(50),
       supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clip").order("created_at", { ascending: false }).limit(200),
       supabase.from("studio_settings").select("*").eq("user_id", session.user.id).maybeSingle(),
     ]);
@@ -10364,6 +10364,18 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
                 </div>
               )}
             </div>
+          )}
+
+          {/* Single polished video (from /v1/projects endpoint, when no clips) */}
+          {clips.length === 0 && p.single_video_url && project.status === "completed" && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>🎞️ Polished Video</div>
+              <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", borderRadius: 12, padding: "20px 22px", marginBottom: 22, color: "#fff" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, fontFamily: "'Playfair Display', serif" }}>{project.title}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginBottom: 12 }}>Polished single video — captions, magic zooms, B-rolls. Submagic doesn't support multi-clip extraction for non-YouTube sources.</div>
+                <a href={p.single_video_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "8px 18px", borderRadius: 8, background: "#D4C08C", color: "#1C3820", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>⬇️ Download polished video</a>
+              </div>
+            </>
           )}
 
           {clips.length > 0 && (
