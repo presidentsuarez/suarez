@@ -33,6 +33,8 @@ function detectChannels(message: string): string[] {
   if (/\b(email|gmail|reply|inbox|cc |constant contact|campaign|newsletter)\b/.test(m)) ch.push("email");
   if (/\b(text|sms|quo|message them|opening line|texting|reply.*\d{3})\b/.test(m)) ch.push("sms");
   if (/\b(constant contact|cc draft|cc email|campaign|blast|newsletter)\b/.test(m)) ch.push("cc_campaign");
+  // Inbox triage: when user asks to triage / categorize / sweep inbox, prefer inbox-tagged memories
+  if (/\b(triage|inbox|categorize|sort.*inbox|inbox.*sort|inbox.*sweep)\b/.test(m)) ch.push("inbox");
   return ch;
 }
 
@@ -79,17 +81,51 @@ async function loadKnowledgeContext(supabase: any, user_id: string, message: str
     }
   }
 
-  // 3. Memories — top 5 by importance + recency
-  const { data: mems } = await supabase
-    .from("memories")
-    .select("title, content, category, importance")
-    .eq("user_id", user_id)
-    .eq("active", true)
-    .order("importance", { ascending: false })
-    .order("last_used_at", { ascending: false, nullsFirst: false })
-    .limit(5);
+  // 3. Memories — when triaging inbox, load inbox-tagged memories preferentially
+  // (so Atlas remembers user-specific patterns: "Wake Up Warrior is promotional",
+  // "John from Acme is a real client, never archive him", etc.).
+  const isInboxWork = channels.includes("inbox");
+  let mems: any[] | null = null;
+  if (isInboxWork) {
+    // Pull up to 8 inbox-tagged memories, then top up with general top-importance
+    const { data: inboxMems } = await supabase
+      .from("memories")
+      .select("title, content, category, importance, tags")
+      .eq("user_id", user_id)
+      .eq("active", true)
+      .contains("tags", ["inbox"])
+      .order("importance", { ascending: false })
+      .order("last_used_at", { ascending: false, nullsFirst: false })
+      .limit(8);
+    mems = inboxMems || [];
+    // Top up to 8 with general high-importance memories not already included
+    if (mems.length < 8) {
+      const { data: generalMems } = await supabase
+        .from("memories")
+        .select("title, content, category, importance, tags")
+        .eq("user_id", user_id)
+        .eq("active", true)
+        .order("importance", { ascending: false })
+        .limit(8);
+      const existingTitles = new Set(mems.map((m: any) => m.title));
+      for (const gm of (generalMems || [])) {
+        if (mems.length >= 8) break;
+        if (!existingTitles.has(gm.title)) mems.push(gm);
+      }
+    }
+  } else {
+    const { data: standardMems } = await supabase
+      .from("memories")
+      .select("title, content, category, importance")
+      .eq("user_id", user_id)
+      .eq("active", true)
+      .order("importance", { ascending: false })
+      .order("last_used_at", { ascending: false, nullsFirst: false })
+      .limit(5);
+    mems = standardMems || [];
+  }
   if (mems?.length) {
-    parts.push(`\n═══ MEMORIES (top 5 — search for more with search_memories tool) ═══`);
+    parts.push(`\n═══ MEMORIES (top ${mems.length}${isInboxWork ? " — inbox-tagged prioritized" : " — search for more with search_memories tool"}) ═══`);
     for (const m of mems) {
       parts.push(`[${m.category}] ${m.title}\n  ${m.content}`);
     }

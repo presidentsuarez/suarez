@@ -6617,9 +6617,106 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
     await loadAll();
   };
 
-  const overrideCategory = async (id, newCatId) => {
-    await supabase.from("inbox_triage").update({ user_override_category_id: newCatId }).eq("id", id);
+  const overrideCategory = async (row, newCatId) => {
+    // If category is being changed by user, log a feedback event marking the
+    // original Atlas judgment as wrong for category.
+    const wasOverride = row.user_override_category_id;
+    await supabase.from("inbox_triage").update({ user_override_category_id: newCatId }).eq("id", row.id);
+    // Don't auto-log feedback on category change alone — user might just be exploring categories.
+    // Feedback goes through the explicit 👍/👎 buttons.
     await loadAll();
+  };
+
+  const overridePriority = async (row, newPriority) => {
+    await supabase.from("inbox_triage").update({ user_override_priority: newPriority }).eq("id", row.id);
+    await loadAll();
+  };
+
+  // 👍 — Atlas got it right. Logs feedback as positive signal. No friction.
+  const submitThumbsUp = async (row) => {
+    try {
+      await supabase.functions.invoke("feedback-capture", {
+        body: {
+          user_id: session.user.id,
+          robot_id: row.triaged_by_robot_id || atlas?.id || null,
+          event_type: "thumbs_up",
+          verdict: "approved",
+          original_content: `Triage: ${row.subject || "(no subject)"} from ${row.sender_email} → category=${row.category_id}, priority=${row.priority}, needs_response=${row.needs_response}, reasoning="${row.reasoning || ""}"`,
+          context: { kind: "inbox_triage", thread_id: row.gmail_thread_id, sender: row.sender_email },
+          extract_memory: false,
+        },
+      });
+    } catch (e) { console.error("feedback log failed:", e); }
+  };
+
+  // 👎 with required reason. Logs feedback + extracts a memory tagged 'inbox'.
+  const submitThumbsDown = async (row, reason) => {
+    if (!reason || !reason.trim()) return;
+    try {
+      const effectiveCat = catMap[row.user_override_category_id || row.category_id];
+      const effectivePrio = row.user_override_priority || row.priority;
+      const correctedNote = `Atlas categorized ${row.subject ? `"${row.subject}"` : "this thread"} from ${row.sender_email || "?"} as ${catMap[row.category_id]?.name || "?"}/${row.priority}. User corrected to ${effectiveCat?.name || "?"}/${effectivePrio}. User reason: ${reason.trim()}`;
+
+      const { data: fbResp } = await supabase.functions.invoke("feedback-capture", {
+        body: {
+          user_id: session.user.id,
+          robot_id: row.triaged_by_robot_id || atlas?.id || null,
+          event_type: "thumbs_down",
+          verdict: "rejected",
+          original_content: `Triage: ${row.subject || "(no subject)"} from ${row.sender_email} → category=${catMap[row.category_id]?.name || "?"}, priority=${row.priority}, needs_response=${row.needs_response}, reasoning="${row.reasoning || ""}"`,
+          edited_content: `Corrected to: category=${effectiveCat?.name || "?"}, priority=${effectivePrio}`,
+          user_note: reason.trim(),
+          context: { kind: "inbox_triage", thread_id: row.gmail_thread_id, sender: row.sender_email },
+          extract_memory: true,
+          memory_tags: ["inbox"],
+        },
+      });
+      // If feedback-capture didn't auto-extract (older deploy), call extract-memory directly with the feedback id
+      if (fbResp?.feedback_event_id && !fbResp?.memory_extracted) {
+        try {
+          await supabase.functions.invoke("extract-memory", {
+            body: {
+              user_id: session.user.id,
+              feedback_event_id: fbResp.feedback_event_id,
+              tags: ["inbox"],
+              hint: correctedNote,
+            },
+          });
+        } catch (e) { /* non-fatal */ }
+      }
+    } catch (e) { console.error("feedback log failed:", e); }
+  };
+
+  // ✏️ free-text rule note → tagged 'inbox' memory
+  const submitNote = async (row, note) => {
+    if (!note || !note.trim()) return;
+    try {
+      const { data: fbResp } = await supabase.functions.invoke("feedback-capture", {
+        body: {
+          user_id: session.user.id,
+          robot_id: row.triaged_by_robot_id || atlas?.id || null,
+          event_type: "edit",
+          verdict: "edited",
+          original_content: `Triage: ${row.subject || "(no subject)"} from ${row.sender_email}`,
+          user_note: note.trim(),
+          context: { kind: "inbox_triage", thread_id: row.gmail_thread_id, sender: row.sender_email },
+          extract_memory: true,
+          memory_tags: ["inbox"],
+        },
+      });
+      if (fbResp?.feedback_event_id && !fbResp?.memory_extracted) {
+        try {
+          await supabase.functions.invoke("extract-memory", {
+            body: {
+              user_id: session.user.id,
+              feedback_event_id: fbResp.feedback_event_id,
+              tags: ["inbox"],
+              hint: note.trim(),
+            },
+          });
+        } catch (e) { /* non-fatal */ }
+      }
+    } catch (e) { console.error("note submit failed:", e); }
   };
 
   const catMap = {};
@@ -6709,7 +6806,19 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map((r) => (
-            <TriageCard key={r.id} row={r} category={catMap[r.user_override_category_id || r.category_id]} categories={categories} onMarkHandled={() => markHandled(r.id, r.user_marked_handled)} onChangeCategory={(catId) => overrideCategory(r.id, catId)} onView={() => setViewing(r)} />
+            <TriageCard
+              key={r.id}
+              row={r}
+              category={catMap[r.user_override_category_id || r.category_id]}
+              categories={categories}
+              onMarkHandled={() => markHandled(r.id, r.user_marked_handled)}
+              onChangeCategory={(catId) => overrideCategory(r, catId)}
+              onChangePriority={(prio) => overridePriority(r, prio)}
+              onThumbsUp={() => submitThumbsUp(r)}
+              onThumbsDown={(reason) => submitThumbsDown(r, reason)}
+              onNote={(note) => submitNote(r, note)}
+              onView={() => setViewing(r)}
+            />
           ))}
         </div>
       )}
@@ -6719,7 +6828,7 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   );
 }
 
-function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory, onView }) {
+function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory, onChangePriority, onThumbsUp, onThumbsDown, onNote, onView }) {
   const priority = row.user_override_priority || row.priority;
   const priorityStyle = {
     urgent: { bg: "#fef2f2", color: "#dc2626", label: "URGENT" },
@@ -6727,6 +6836,49 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
     normal: { bg: "#eff6ff", color: "#3b82f6", label: "NORMAL" },
     low: { bg: "#f8fafc", color: "#94a3b8", label: "LOW" },
   }[priority] || { bg: "#f8fafc", color: "#94a3b8", label: priority?.toUpperCase() };
+
+  const [feedbackState, setFeedbackState] = useState(null); // null | 'up' | 'down' | 'note' | 'submitting' | 'submitted'
+  const [reason, setReason] = useState("");
+
+  const handleThumbsUp = async () => {
+    setFeedbackState("submitting");
+    await onThumbsUp();
+    setFeedbackState("submitted-up");
+    setTimeout(() => setFeedbackState(null), 1800);
+  };
+
+  const openThumbsDown = () => {
+    setFeedbackState("down");
+    setReason("");
+  };
+
+  const submitThumbsDown = async () => {
+    if (!reason.trim()) return;
+    setFeedbackState("submitting");
+    await onThumbsDown(reason);
+    setFeedbackState("submitted-down");
+    setReason("");
+    setTimeout(() => setFeedbackState(null), 2200);
+  };
+
+  const openNote = () => {
+    setFeedbackState("note");
+    setReason("");
+  };
+
+  const submitNote = async () => {
+    if (!reason.trim()) return;
+    setFeedbackState("submitting");
+    await onNote(reason);
+    setFeedbackState("submitted-note");
+    setReason("");
+    setTimeout(() => setFeedbackState(null), 2200);
+  };
+
+  const cancelFeedback = () => {
+    setFeedbackState(null);
+    setReason("");
+  };
 
   return (
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", opacity: row.user_marked_handled ? 0.5 : 1, transition: "opacity 0.2s" }}>
@@ -6737,7 +6889,12 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
               {categories.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
             </select>
           )}
-          <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 7px", borderRadius: 4, background: priorityStyle.bg, color: priorityStyle.color, letterSpacing: "0.05em" }}>{priorityStyle.label}</span>
+          <select value={priority} onChange={(e) => onChangePriority(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ fontSize: 9, fontWeight: 800, padding: "3px 7px", borderRadius: 4, background: priorityStyle.bg, color: priorityStyle.color, letterSpacing: "0.05em", border: `1px solid ${priorityStyle.color}30`, cursor: "pointer" }}>
+            <option value="urgent">URGENT</option>
+            <option value="high">HIGH</option>
+            <option value="normal">NORMAL</option>
+            <option value="low">LOW</option>
+          </select>
           {row.needs_response && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#dcfce7", color: "#166534" }}>↩ NEEDS RESPONSE</span>}
           {row.is_actionable && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#fef3c7", color: "#92400e" }}>⚡ ACTION</span>}
         </div>
@@ -6746,6 +6903,7 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
           <button onClick={onView} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: "#475569", fontSize: 11, padding: "3px 10px", cursor: "pointer", fontWeight: 600 }}>View</button>
         </div>
       </div>
+
       <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>{row.subject || "(no subject)"}</div>
       <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{row.sender_name || row.sender_email || "(unknown)"} · {row.thread_received_at ? new Date(row.thread_received_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
       {row.snippet && <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5, marginBottom: 6, fontStyle: "italic" }}>"{row.snippet.slice(0, 200)}"</div>}
@@ -6755,6 +6913,36 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
           {row.suggested_action && <div style={{ marginTop: 4, fontWeight: 600 }}>→ {row.suggested_action}</div>}
         </div>
       )}
+
+      {/* Feedback row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+        {feedbackState === null && (
+          <>
+            <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, marginRight: 4 }}>Was this right?</span>
+            <button onClick={handleThumbsUp} title="Atlas got this right" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 12, padding: "4px 10px", cursor: "pointer" }}>👍</button>
+            <button onClick={openThumbsDown} title="Atlas got this wrong (reason required)" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 12, padding: "4px 10px", cursor: "pointer" }}>👎</button>
+            <button onClick={openNote} title="Add a rule / note about this" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 11, padding: "4px 10px", cursor: "pointer", color: "#475569" }}>✏️ Add rule</button>
+          </>
+        )}
+        {feedbackState === "down" && (
+          <div style={{ display: "flex", gap: 6, flex: 1, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`Why is this wrong? (e.g. "${row.sender_email} is always promotional, not Newsletter")`} onKeyDown={(e) => { if (e.key === "Enter") submitThumbsDown(); if (e.key === "Escape") cancelFeedback(); }} autoFocus style={{ flex: 1, minWidth: 200, fontSize: 11, padding: "6px 10px", border: "1px solid #fca5a5", borderRadius: 6, outline: "none" }} />
+            <button onClick={submitThumbsDown} disabled={!reason.trim()} style={{ background: reason.trim() ? "#dc2626" : "#cbd5e1", color: "#fff", border: "none", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "5px 12px", cursor: reason.trim() ? "pointer" : "not-allowed" }}>Submit 👎</button>
+            <button onClick={cancelFeedback} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: "#94a3b8", fontSize: 10, padding: "5px 8px", cursor: "pointer" }}>Cancel</button>
+          </div>
+        )}
+        {feedbackState === "note" && (
+          <div style={{ display: "flex", gap: 6, flex: 1, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`Rule to teach the system (e.g. "Anything from this domain → Investor / high")`} onKeyDown={(e) => { if (e.key === "Enter") submitNote(); if (e.key === "Escape") cancelFeedback(); }} autoFocus style={{ flex: 1, minWidth: 200, fontSize: 11, padding: "6px 10px", border: "1px solid #1C3820", borderRadius: 6, outline: "none" }} />
+            <button onClick={submitNote} disabled={!reason.trim()} style={{ background: reason.trim() ? "#1C3820" : "#cbd5e1", color: "#fff", border: "none", borderRadius: 6, fontSize: 10, fontWeight: 700, padding: "5px 12px", cursor: reason.trim() ? "pointer" : "not-allowed" }}>Save rule</button>
+            <button onClick={cancelFeedback} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: "#94a3b8", fontSize: 10, padding: "5px 8px", cursor: "pointer" }}>Cancel</button>
+          </div>
+        )}
+        {feedbackState === "submitting" && <span style={{ fontSize: 11, color: "#64748b", fontStyle: "italic" }}>Saving…</span>}
+        {feedbackState === "submitted-up" && <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>✓ Confirmed</span>}
+        {feedbackState === "submitted-down" && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>✓ Saved — Atlas will learn from this</span>}
+        {feedbackState === "submitted-note" && <span style={{ fontSize: 11, color: "#1C3820", fontWeight: 700 }}>✓ Rule saved to inbox memory</span>}
+      </div>
     </div>
   );
 }
