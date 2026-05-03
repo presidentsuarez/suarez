@@ -353,16 +353,24 @@ const TOOLS = [
   },
   {
     name: "clip_long_video",
-    description: "Generate multiple short-form vertical clips from a longer video. Uses Submagic's Magic Clips: AI finds the most engaging moments, applies captions, formats vertical (9:16). Async — returns immediately with a 'queued' artifact; real clips arrive via webhook in 5-15 minutes and appear in Studio. Use this when the user uploads a long video and wants social shorts, podcast pulls, highlight reels.",
+    description: "Generate clips/polished video from a source. YouTube URL → multi-clip extraction (Magic Clips). Direct file URL → single polished captioned video. Async — appears as 'queued' artifact; real result arrives via webhook in 5-15 min. ALL OPTIONS BELOW are optional — when not specified, Studio defaults are used (configurable in Knowledge Base → Studio Defaults). Per-call values override defaults.",
     input_schema: {
       type: "object",
       properties: {
         source_url: { type: "string", description: "Public URL to the source video. Either a YouTube URL or a Supabase Storage signed URL from an uploaded file." },
         title: { type: "string", description: "Project title (1-100 chars). Visible to user in Studio." },
-        template: { type: "string", description: "Caption template style. Common options: 'Hormozi 2' (bold yellow), 'Sara' (soft modern, default), 'Beast' (MrBeast-style), 'Devin' (clean minimal). Pick based on the brand vibe — Suarez Global = polished/executive, lean toward Sara or Devin." },
-        min_clip_length: { type: "number", description: "Minimum seconds per clip. Default 15." },
-        max_clip_length: { type: "number", description: "Maximum seconds per clip. Default 60." },
-        language: { type: "string", description: "Language code for captions. Default 'en'." },
+        template: { type: "string", description: "Override caption template. Examples: 'Hormozi 2' (bold yellow), 'Sara' (default polished), 'Beast', 'Devin'. Omit to use Studio default." },
+        min_clip_length: { type: "number", description: "YouTube only. Override min seconds per clip. Default from Studio settings (15)." },
+        max_clip_length: { type: "number", description: "YouTube only. Override max seconds per clip. Default from Studio settings (60)." },
+        language: { type: "string", description: "Override language code. Default 'en' or Studio setting." },
+        magic_zooms: { type: "boolean", description: "Override magic zooms toggle. Auto-zoom on emphasis points." },
+        magic_brolls: { type: "boolean", description: "Override magic B-rolls toggle. Auto-insert relevant B-roll." },
+        magic_zooms_percentage: { type: "number", description: "0-100 zoom intensity. Default 50." },
+        magic_brolls_percentage: { type: "number", description: "0-100 B-roll density. Default 50." },
+        remove_bad_takes: { type: "boolean", description: "Auto-remove flubs, false starts, and ums. Useful for unscripted talking-head footage." },
+        clean_audio: { type: "boolean", description: "Remove background noise and even audio levels." },
+        disable_captions: { type: "boolean", description: "Set true if user wants ZERO captions burned in (for content where captions would clutter)." },
+        dictionary: { type: "array", items: { type: "string" }, description: "Per-call dictionary additions, merged with Studio brand dictionary. Use for one-off proper nouns specific to this video." },
       },
       required: ["source_url", "title"],
     },
@@ -880,19 +888,40 @@ async function clipLongVideo(input: any, ctx: any) {
   const sourceUrl = input.source_url;
   if (!sourceUrl) return { result: "Error: source_url is required." };
 
+  // Load Studio defaults so per-render input can override but unset values fall back.
+  const { data: settings } = await ctx.supabase
+    .from("studio_settings")
+    .select("default_template, default_min_clip_length, default_max_clip_length, default_language, default_magic_zooms, default_magic_brolls, default_remove_bad_takes, default_clean_audio, default_disable_captions, default_magic_zooms_percentage, default_magic_brolls_percentage, brand_dictionary, submagic_user_theme_id")
+    .eq("user_id", ctx.user_id)
+    .maybeSingle();
+
   const isYouTube = /youtube\.com\/watch|youtu\.be\//.test(sourceUrl);
   const projectTitle = (input.title || "Untitled clipping").slice(0, 100);
-  const template = input.template || "Sara";
-  const minLen = Number(input.min_clip_length) || 15;
-  const maxLen = Number(input.max_clip_length) || 60;
-  const language = input.language || "en";
+  const template = input.template || settings?.default_template || "Sara";
+  const minLen = Number(input.min_clip_length) || Number(settings?.default_min_clip_length) || 15;
+  const maxLen = Number(input.max_clip_length) || Number(settings?.default_max_clip_length) || 60;
+  const language = input.language || settings?.default_language || "en";
   const webhookUrl = "https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/video-webhook";
+
+  // Polish toggles (per-call input overrides settings; settings overrides hardcoded defaults).
+  const magicZooms = input.magic_zooms !== undefined ? Boolean(input.magic_zooms) : (settings?.default_magic_zooms ?? true);
+  const magicBrolls = input.magic_brolls !== undefined ? Boolean(input.magic_brolls) : (settings?.default_magic_brolls ?? true);
+  const removeBadTakes = input.remove_bad_takes !== undefined ? Boolean(input.remove_bad_takes) : (settings?.default_remove_bad_takes ?? false);
+  const cleanAudio = input.clean_audio !== undefined ? Boolean(input.clean_audio) : (settings?.default_clean_audio ?? false);
+  const disableCaptions = input.disable_captions !== undefined ? Boolean(input.disable_captions) : (settings?.default_disable_captions ?? false);
+  const magicZoomsPercentage = input.magic_zooms_percentage !== undefined ? Number(input.magic_zooms_percentage) : (settings?.default_magic_zooms_percentage ?? 50);
+  const magicBrollsPercentage = input.magic_brolls_percentage !== undefined ? Number(input.magic_brolls_percentage) : (settings?.default_magic_brolls_percentage ?? 50);
+
+  // Brand dictionary: per-call input merges with settings.
+  const brandDictFromSettings = Array.isArray(settings?.brand_dictionary) ? settings.brand_dictionary : [];
+  const brandDictFromInput = Array.isArray(input.dictionary) ? input.dictionary : [];
+  const brandDictionary = Array.from(new Set([...brandDictFromSettings, ...brandDictFromInput])).filter(Boolean);
+
+  const userThemeId = input.user_theme_id || settings?.submagic_user_theme_id || null;
 
   // Route based on source type:
   //   YouTube  → /v1/projects/magic-clips  (multi-clip extractor; YouTube only)
   //   Direct   → /v1/projects              (single polished video; supports videoUrl)
-  // This is a Submagic API limitation: magic-clips refuses non-YouTube URLs with
-  //   "Validation failed: youtubeUrl is required, Unknown field: videoUrl"
   const endpoint = isYouTube
     ? "https://api.submagic.co/v1/projects/magic-clips"
     : "https://api.submagic.co/v1/projects";
@@ -900,18 +929,32 @@ async function clipLongVideo(input: any, ctx: any) {
   const requestBody: any = {
     title: projectTitle,
     language,
-    templateName: template,
     webhookUrl,
   };
+  // userThemeId and templateName are mutually exclusive
+  if (userThemeId) {
+    requestBody.userThemeId = userThemeId;
+  } else {
+    requestBody.templateName = template;
+  }
+
+  if (brandDictionary.length > 0) {
+    requestBody.dictionary = brandDictionary;
+  }
+
   if (isYouTube) {
     requestBody.youtubeUrl = sourceUrl;
     requestBody.minClipLength = minLen;
     requestBody.maxClipLength = maxLen;
   } else {
     requestBody.videoUrl = sourceUrl;
-    // For single-project endpoint: turn on the polish features Magic Clips would have applied
-    requestBody.magicZooms = true;
-    requestBody.magicBrolls = true;
+    requestBody.magicZooms = magicZooms;
+    requestBody.magicBrolls = magicBrolls;
+    if (magicZooms && magicZoomsPercentage !== 50) requestBody.magicZoomsPercentage = magicZoomsPercentage;
+    if (magicBrolls && magicBrollsPercentage !== 50) requestBody.magicBrollsPercentage = magicBrollsPercentage;
+    if (removeBadTakes) requestBody.removeBadTakes = true;
+    if (cleanAudio) requestBody.cleanAudio = true;
+    if (disableCaptions) requestBody.disableCaptions = true;
   }
 
   const artifactType = isYouTube ? "video_clips_project" : "video_render";

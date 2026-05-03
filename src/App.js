@@ -8736,6 +8736,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
     { key: "memories", icon: "🧠", label: "Memories", desc: "What we've learned" },
     { key: "exemplars", icon: "💎", label: "Exemplars", desc: "Gold-standard examples" },
     { key: "content", icon: "📝", label: "Content Library", desc: "Past videos & transcripts" },
+    { key: "studio", icon: "🎬", label: "Studio Defaults", desc: "Video render settings" },
     { key: "feedback", icon: "📊", label: "Feedback Log", desc: "Audit trail" },
   ];
 
@@ -8783,6 +8784,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
           {tab === "memories" && <MemoriesTab session={session} isMobile={isMobile} robots={robots} />}
           {tab === "exemplars" && <ExemplarsTab session={session} isMobile={isMobile} />}
           {tab === "content" && <ContentLibraryTab session={session} isMobile={isMobile} />}
+          {tab === "studio" && <StudioDefaultsTab session={session} isMobile={isMobile} />}
           {tab === "feedback" && <FeedbackLogTab session={session} isMobile={isMobile} robots={robots} />}
         </div>
       </div>
@@ -9016,6 +9018,238 @@ function ContentLibraryDetailModal({ transcript, isMobile, onClose, onReIngest, 
             <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Studio Defaults Tab — Submagic per-render settings + brand dictionary — */
+const SUBMAGIC_TEMPLATES = [
+  // Curated set — Submagic has 45 total but these are the most relevant
+  { name: "Sara", desc: "Polished, executive — DEFAULT (matches Suarez Global brand)" },
+  { name: "Devin", desc: "Clean minimal — also great for executive content" },
+  { name: "Hormozi 1", desc: "Bold yellow — high-energy, viral" },
+  { name: "Hormozi 2", desc: "Bold yellow + emphasis — most popular" },
+  { name: "Hormozi 3", desc: "Variant of Hormozi style" },
+  { name: "Beast", desc: "MrBeast-style — youth/entertainment" },
+  { name: "Karl", desc: "Modern, clean white text" },
+  { name: "Mark", desc: "Neutral, professional" },
+  { name: "Jess", desc: "Friendly, approachable" },
+  { name: "Ali", desc: "Style emphasis on key words" },
+  { name: "Iman", desc: "Modern & engaging" },
+  { name: "Noah", desc: "Punchy with color highlights" },
+];
+
+function StudioDefaultsTab({ session, isMobile }) {
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [newDictTerm, setNewDictTerm] = useState("");
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  React.useEffect(() => {
+    supabase.from("studio_settings").select("*").eq("user_id", session.user.id).maybeSingle().then(({ data }) => {
+      setSettings(data || {
+        user_id: session.user.id,
+        default_template: "Sara",
+        default_min_clip_length: 15,
+        default_max_clip_length: 60,
+        default_language: "en",
+        default_magic_zooms: true,
+        default_magic_brolls: true,
+        default_remove_bad_takes: false,
+        default_clean_audio: false,
+        default_disable_captions: false,
+        default_magic_zooms_percentage: 50,
+        default_magic_brolls_percentage: 50,
+        brand_dictionary: [],
+        submagic_user_theme_id: null,
+        submagic_user_theme_name: null,
+      });
+      setLoading(false);
+    });
+  }, [session.user.id]);
+
+  const update = (field, value) => setSettings((s) => ({ ...s, [field]: value }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    const payload = {
+      default_template: settings.default_template,
+      default_min_clip_length: Number(settings.default_min_clip_length) || 15,
+      default_max_clip_length: Number(settings.default_max_clip_length) || 60,
+      default_language: settings.default_language || "en",
+      default_magic_zooms: !!settings.default_magic_zooms,
+      default_magic_brolls: !!settings.default_magic_brolls,
+      default_remove_bad_takes: !!settings.default_remove_bad_takes,
+      default_clean_audio: !!settings.default_clean_audio,
+      default_disable_captions: !!settings.default_disable_captions,
+      default_magic_zooms_percentage: Number(settings.default_magic_zooms_percentage) || 50,
+      default_magic_brolls_percentage: Number(settings.default_magic_brolls_percentage) || 50,
+      brand_dictionary: settings.brand_dictionary || [],
+      submagic_user_theme_id: settings.submagic_user_theme_id || null,
+      submagic_user_theme_name: settings.submagic_user_theme_name || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (settings.id) {
+      const { data } = await supabase.from("studio_settings").update(payload).eq("id", settings.id).select().single();
+      if (data) setSettings(data);
+    } else {
+      const { data } = await supabase.from("studio_settings").insert({ ...payload, user_id: session.user.id }).select().single();
+      if (data) setSettings(data);
+    }
+    setSaving(false);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2200);
+  };
+
+  const addDictTerm = () => {
+    const t = newDictTerm.trim();
+    if (!t) return;
+    const cur = settings.brand_dictionary || [];
+    if (cur.some((x) => x.toLowerCase() === t.toLowerCase())) { setNewDictTerm(""); return; }
+    update("brand_dictionary", [...cur, t]);
+    setNewDictTerm("");
+  };
+  const removeDictTerm = (idx) => update("brand_dictionary", (settings.brand_dictionary || []).filter((_, i) => i !== idx));
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  const Section = ({ title, subtitle, children }) => (
+    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? 16 : 22, marginBottom: 16 }}>
+      <SectionHeader text={title} />
+      {subtitle && <p style={{ fontSize: 11, color: "#94a3b8", margin: "0 0 14px" }}>{subtitle}</p>}
+      {children}
+    </div>
+  );
+
+  const Toggle = ({ label, value, onChange, helper }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "#f8fafc", borderRadius: 8, marginBottom: 8 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{label}</div>
+        {helper && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{helper}</div>}
+      </div>
+      <button onClick={() => onChange(!value)} style={{ width: 44, height: 24, borderRadius: 12, border: "none", background: value ? "#1C3820" : "#e2e8f0", position: "relative", cursor: "pointer", flexShrink: 0, transition: "background 0.15s" }}>
+        <span style={{ position: "absolute", top: 3, left: value ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.15s" }} />
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      {/* Sticky save bar */}
+      <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#f8fafc", padding: "8px 0", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: savedFlash ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>
+          {savedFlash ? "✓ Saved — applies to next render" : "Edits don't save automatically"}
+        </div>
+        <GreenButton small onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "💾 Save Defaults"}</GreenButton>
+      </div>
+
+      {/* Caption template */}
+      <Section title="🎨 Caption Template" subtitle="The visual style for burned-in captions. Sara matches Suarez Global's polished/executive vibe.">
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+          {SUBMAGIC_TEMPLATES.map((t) => {
+            const isActive = settings.default_template === t.name;
+            return (
+              <button key={t.name} onClick={() => update("default_template", t.name)} style={{ padding: "10px 14px", background: isActive ? "#1C3820" : "#fff", color: isActive ? "#fff" : "#0f172a", border: isActive ? "1px solid #1C3820" : "1px solid #e2e8f0", borderRadius: 10, cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", gap: 2 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
+                <div style={{ fontSize: 10, opacity: isActive ? 0.8 : 0.6 }}>{t.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+        <details style={{ marginTop: 10, fontSize: 11, color: "#64748b" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Want a different template?</summary>
+          <div style={{ marginTop: 6 }}>Submagic has 45 templates total. Type any exact name here to override:</div>
+          <input value={settings.default_template || ""} onChange={(e) => update("default_template", e.target.value)} style={{ ...inputStyle, marginTop: 6 }} placeholder="Sara" />
+        </details>
+      </Section>
+
+      {/* Polish toggles */}
+      <Section title="✨ Polish Features" subtitle="Submagic's AI enhancements applied to every render.">
+        <Toggle label="Magic Zooms" value={settings.default_magic_zooms} onChange={(v) => update("default_magic_zooms", v)} helper="Auto-zoom on emphasis points in your speech" />
+        {settings.default_magic_zooms && (
+          <div style={{ paddingLeft: 12, marginBottom: 8 }}>
+            <label style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>Intensity: {settings.default_magic_zooms_percentage}%</label>
+            <input type="range" min="0" max="100" value={settings.default_magic_zooms_percentage || 50} onChange={(e) => update("default_magic_zooms_percentage", Number(e.target.value))} style={{ width: "100%", marginTop: 4 }} />
+          </div>
+        )}
+        <Toggle label="Magic B-Rolls" value={settings.default_magic_brolls} onChange={(v) => update("default_magic_brolls", v)} helper="Auto-insert relevant B-roll clips" />
+        {settings.default_magic_brolls && (
+          <div style={{ paddingLeft: 12, marginBottom: 8 }}>
+            <label style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>Density: {settings.default_magic_brolls_percentage}%</label>
+            <input type="range" min="0" max="100" value={settings.default_magic_brolls_percentage || 50} onChange={(e) => update("default_magic_brolls_percentage", Number(e.target.value))} style={{ width: "100%", marginTop: 4 }} />
+          </div>
+        )}
+        <Toggle label="Remove Bad Takes" value={settings.default_remove_bad_takes} onChange={(v) => update("default_remove_bad_takes", v)} helper="Auto-trim ums, false starts, dead air. Recommended for unscripted talking-head." />
+        <Toggle label="Clean Audio" value={settings.default_clean_audio} onChange={(v) => update("default_clean_audio", v)} helper="Remove background noise, even out audio levels" />
+        <Toggle label="Disable Captions" value={settings.default_disable_captions} onChange={(v) => update("default_disable_captions", v)} helper="Skip captions entirely (rare — only for content where they'd clutter)" />
+      </Section>
+
+      {/* Clip length & language */}
+      <Section title="⏱️ Clip Length & Language" subtitle="Defaults for Magic Clips (YouTube source) extraction.">
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Min clip length (s)</label>
+            <input type="number" min={1} max={300} value={settings.default_min_clip_length || 15} onChange={(e) => update("default_min_clip_length", Number(e.target.value))} style={inputStyle} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Max clip length (s)</label>
+            <input type="number" min={1} max={600} value={settings.default_max_clip_length || 60} onChange={(e) => update("default_max_clip_length", Number(e.target.value))} style={inputStyle} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Language</label>
+            <select value={settings.default_language || "en"} onChange={(e) => update("default_language", e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option value="en">English</option>
+              <option value="es">Spanish</option>
+              <option value="pt">Portuguese</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+            </select>
+          </div>
+        </div>
+      </Section>
+
+      {/* Brand dictionary */}
+      <Section title="📖 Brand Dictionary" subtitle="Words Submagic should NEVER garble in transcription. Brand names, products, proper nouns. Applied to every render automatically.">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {(settings.brand_dictionary || []).length === 0 && (
+            <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>No terms yet — add brand/product names below.</span>
+          )}
+          {(settings.brand_dictionary || []).map((t, i) => (
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 6, background: "#1C382010", color: "#1C3820", border: "1px solid #1C382030" }}>
+              {t}
+              <button onClick={() => removeDictTerm(i)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input value={newDictTerm} onChange={(e) => setNewDictTerm(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDictTerm(); } }} placeholder="e.g. REAP, Suarez Capital, multifamily" style={{ ...inputStyle, flex: 1 }} />
+          <button onClick={addDictTerm} disabled={!newDictTerm.trim()} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: newDictTerm.trim() ? "#1C3820" : "#cbd5e1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: newDictTerm.trim() ? "pointer" : "not-allowed" }}>Add</button>
+        </div>
+      </Section>
+
+      {/* Custom theme */}
+      <Section title="🎨 Custom Theme (advanced)" subtitle="If you've created a custom theme in Submagic's dashboard, paste its UUID here to use your own brand fonts/colors instead of one of their templates.">
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Theme UUID</label>
+            <input value={settings.submagic_user_theme_id || ""} onChange={(e) => update("submagic_user_theme_id", e.target.value || null)} placeholder="e.g. 749a19fs-4b45-4b14-bd31-a3970a1a5ff2" style={inputStyle} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Theme name (label only)</label>
+            <input value={settings.submagic_user_theme_name || ""} onChange={(e) => update("submagic_user_theme_name", e.target.value || null)} placeholder="e.g. Suarez Global Hunter Green" style={inputStyle} />
+          </div>
+        </div>
+        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>When a custom theme is set, it overrides the template above. Leave blank to use the template.</div>
+        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>Create one at <a href="https://app.submagic.co" target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6" }}>app.submagic.co</a> → Themes → Create new theme.</div>
+      </Section>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 0 24px" }}>
+        <GreenButton small onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "💾 Save Defaults"}</GreenButton>
       </div>
     </div>
   );
