@@ -139,20 +139,22 @@ Deno.serve(async (req) => {
       await supabase.from("robot_artifacts").update(updates).eq("id", artifact.id);
     }
 
-    // If we just marked completed, fire the mirror to Drive + Supabase backup.
-    // Fire-and-forget — don't block the response on it.
+    // If we just marked completed, fire mirror + transcript ingestion in parallel.
     if (updates.status === "completed") {
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/mirror-render-output`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-            "apikey": SUPABASE_SERVICE_ROLE_KEY,
-          },
-          body: JSON.stringify({ artifact_id: artifact.id, user_id }),
-        });
-      } catch (e) { console.error("mirror trigger failed (non-fatal):", e); }
+        await Promise.allSettled([
+          fetch(`${SUPABASE_URL}/functions/v1/mirror-render-output`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "apikey": SUPABASE_SERVICE_ROLE_KEY },
+            body: JSON.stringify({ artifact_id: artifact.id, user_id }),
+          }),
+          fetch(`${SUPABASE_URL}/functions/v1/ingest-transcript`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "apikey": SUPABASE_SERVICE_ROLE_KEY },
+            body: JSON.stringify({ artifact_id: artifact.id, user_id }),
+          }),
+        ]);
+      } catch (e) { console.error("post-completion triggers failed (non-fatal):", e); }
     }
 
     return new Response(JSON.stringify({

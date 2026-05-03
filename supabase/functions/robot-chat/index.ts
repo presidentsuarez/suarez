@@ -408,6 +408,43 @@ const TOOLS = [
     description: "Idempotently create the Suarez Global / Studio / Inbox, Processed, Output folders in Drive. Returns folder IDs. Safe to call multiple times (won't duplicate). Call this once on first Studio use, or if folder IDs aren't configured.",
     input_schema: { type: "object", properties: {} },
   },
+  // ─── Content Library (transcripts of past videos) ─
+  {
+    name: "search_content_library",
+    description: "Search the user's library of past video transcripts (everything ever processed in Studio). Use this BEFORE drafting new content to check for repetition, find similar past topics, or pull quotes/themes from previous videos. Searches both summaries and full transcripts. Returns up to 10 matches.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query — keyword, topic, brand mention, or theme. Examples: 'Tampa multifamily', 'cap rate', 'REAP demo', 'Q3 results'." },
+        brand: { type: "string", description: "Optional filter to videos that mention a specific brand: 'REAP', 'Suarez Capital', 'Tampa Development Group', etc." },
+        limit: { type: "number", description: "Max results (default 5, max 10)." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_transcript",
+    description: "Retrieve the full transcript and AI-extracted intelligence (summary, topics, suggested hooks, brand mentions, suggested caption) for a specific video by its transcript_id (returned from search_content_library) or artifact_id. Use when you need to quote from a video, build off a past hook, or write a follow-up.",
+    input_schema: {
+      type: "object",
+      properties: {
+        transcript_id: { type: "string", description: "UUID of the content_transcripts row." },
+        artifact_id: { type: "string", description: "UUID of the source robot_artifacts row (alternative to transcript_id)." },
+        include_full_transcript: { type: "boolean", description: "Default true. Set false to get only the metadata/summary without the full text." },
+      },
+    },
+  },
+  {
+    name: "list_content_library",
+    description: "List recent video transcripts in the library, newest first. Use to give the user an overview of what's in the catalog. Returns title, summary, key topics, brand mentions, duration.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Default 10, max 25." },
+        brand: { type: "string", description: "Optional brand filter." },
+      },
+    },
+  },
 ];
 
 // ─── TOOL EXECUTION ────────────────────────────────────────────────────────
@@ -436,6 +473,9 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "get_drive_signed_url": return await getDriveSignedUrl(input, ctx);
       case "move_drive_file": return await moveDriveFile(input, ctx);
       case "setup_studio_drive_folders": return await setupStudioDriveFolders(input, ctx);
+      case "search_content_library": return await searchContentLibrary(input, ctx);
+      case "get_transcript": return await getTranscript(input, ctx);
+      case "list_content_library": return await listContentLibrary(input, ctx);
       default: return { result: `Error: unknown tool '${name}'` };
     }
   } catch (err) {
@@ -1233,6 +1273,119 @@ async function moveDriveFile(input: any, ctx: any) {
   if (!res.ok) return { result: `Error moving file: ${JSON.stringify(data).slice(0, 200)}` };
 
   return { result: `✓ Moved "${meta.name}" to destination folder.` };
+}
+
+// ─── CONTENT LIBRARY (transcripts) ─────────────────────────────────────────
+async function searchContentLibrary(input: any, ctx: any) {
+  const limit = Math.min(Number(input.limit) || 5, 10);
+  const query = String(input.query || "").trim();
+  if (!query) return { result: "Error: query required." };
+
+  // Use ilike across title, summary, full_transcript. Also filter by brand if given.
+  // We split the query into significant terms and OR them so partial matches still hit.
+  const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+  if (terms.length === 0) terms.push(query.toLowerCase());
+
+  let q = ctx.supabase.from("content_transcripts")
+    .select("id, source_artifact_id, title, summary, key_topics, brand_mentions, suggested_hooks, duration_seconds, created_at")
+    .eq("user_id", ctx.user_id)
+    .eq("ai_processing_status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  // Build OR clause: each term searched across title + summary + full_transcript
+  const orParts: string[] = [];
+  for (const t of terms) {
+    const safe = t.replace(/[%,()]/g, "");
+    if (!safe) continue;
+    orParts.push(`title.ilike.%${safe}%`);
+    orParts.push(`summary.ilike.%${safe}%`);
+    orParts.push(`full_transcript.ilike.%${safe}%`);
+  }
+  if (orParts.length) q = q.or(orParts.join(","));
+
+  const { data, error } = await q;
+  if (error) return { result: `Error: ${error.message}` };
+  if (!data || data.length === 0) return { result: `No videos in the content library match "${query}". Either you haven't covered this topic yet, or process more videos through Studio first.` };
+
+  let results = data;
+  if (input.brand) {
+    const brandLower = String(input.brand).toLowerCase();
+    results = results.filter((r: any) => {
+      const mentions = Array.isArray(r.brand_mentions) ? r.brand_mentions : [];
+      return mentions.some((m: any) => String(m).toLowerCase().includes(brandLower));
+    });
+    if (results.length === 0) return { result: `No videos mention "${input.brand}" specifically. Did you mean to search without that filter?` };
+  }
+
+  const lines = results.map((r: any) => {
+    const dur = r.duration_seconds ? `${Math.round(r.duration_seconds)}s` : "?";
+    const date = (r.created_at || "").slice(0, 10);
+    const topics = Array.isArray(r.key_topics) ? r.key_topics.slice(0, 4).join(", ") : "";
+    const brands = Array.isArray(r.brand_mentions) && r.brand_mentions.length > 0 ? `[${r.brand_mentions.join(", ")}]` : "";
+    return `[${r.id}] "${r.title}" · ${date} · ${dur}${brands ? " · " + brands : ""}\n  Summary: ${r.summary || "(no summary)"}\n  Topics: ${topics}`;
+  });
+  return { result: `Found ${results.length} video(s) matching "${query}":\n\n${lines.join("\n\n")}` };
+}
+
+async function getTranscript(input: any, ctx: any) {
+  const includeFullTranscript = input.include_full_transcript !== false;
+  let q = ctx.supabase.from("content_transcripts").select("*").eq("user_id", ctx.user_id);
+  if (input.transcript_id) q = q.eq("id", input.transcript_id);
+  else if (input.artifact_id) q = q.eq("source_artifact_id", input.artifact_id);
+  else return { result: "Error: transcript_id or artifact_id required." };
+
+  const { data, error } = await q.maybeSingle();
+  if (error) return { result: `Error: ${error.message}` };
+  if (!data) return { result: "No transcript found for that ID." };
+
+  const parts: string[] = [];
+  parts.push(`═══ "${data.title}" ═══`);
+  parts.push(`Date: ${(data.created_at || "").slice(0, 10)} · Duration: ${data.duration_seconds ? Math.round(data.duration_seconds) + "s" : "?"} · Language: ${data.language}`);
+  if (data.summary) parts.push(`\nSummary: ${data.summary}`);
+  if (Array.isArray(data.key_topics) && data.key_topics.length) parts.push(`Topics: ${data.key_topics.join(", ")}`);
+  if (Array.isArray(data.brand_mentions) && data.brand_mentions.length) parts.push(`Brand mentions: ${data.brand_mentions.join(", ")}`);
+  if (Array.isArray(data.suggested_hooks) && data.suggested_hooks.length) {
+    parts.push(`\nSuggested hooks:`);
+    data.suggested_hooks.forEach((h: any, i: number) => parts.push(`  ${i + 1}. ${h}`));
+  }
+  if (data.suggested_caption) parts.push(`\nSuggested caption:\n${data.suggested_caption}`);
+  if (Array.isArray(data.suggested_hashtags) && data.suggested_hashtags.length) parts.push(`Hashtags: ${data.suggested_hashtags.map((t: string) => `#${t}`).join(" ")}`);
+  if (includeFullTranscript && data.full_transcript) {
+    parts.push(`\n--- FULL TRANSCRIPT ---\n${data.full_transcript}`);
+  }
+  return { result: parts.join("\n") };
+}
+
+async function listContentLibrary(input: any, ctx: any) {
+  const limit = Math.min(Number(input.limit) || 10, 25);
+  let q = ctx.supabase.from("content_transcripts")
+    .select("id, title, summary, key_topics, brand_mentions, duration_seconds, created_at")
+    .eq("user_id", ctx.user_id)
+    .eq("ai_processing_status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  const { data, error } = await q;
+  if (error) return { result: `Error: ${error.message}` };
+  if (!data || data.length === 0) return { result: "Content library is empty. Process videos through Studio to start building it." };
+
+  let results = data;
+  if (input.brand) {
+    const brandLower = String(input.brand).toLowerCase();
+    results = results.filter((r: any) => {
+      const mentions = Array.isArray(r.brand_mentions) ? r.brand_mentions : [];
+      return mentions.some((m: any) => String(m).toLowerCase().includes(brandLower));
+    });
+    if (results.length === 0) return { result: `No videos in library mention "${input.brand}".` };
+  }
+
+  const lines = results.map((r: any) => {
+    const dur = r.duration_seconds ? `${Math.round(r.duration_seconds)}s` : "?";
+    const date = (r.created_at || "").slice(0, 10);
+    const topics = Array.isArray(r.key_topics) ? r.key_topics.slice(0, 3).join(", ") : "";
+    return `• [${r.id}] "${r.title}" · ${date} · ${dur}\n   ${r.summary || "(no summary yet)"}\n   Topics: ${topics}`;
+  });
+  return { result: `${results.length} video${results.length !== 1 ? "s" : ""} in your content library (newest first):\n\n${lines.join("\n\n")}` };
 }
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────

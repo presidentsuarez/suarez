@@ -8735,6 +8735,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
     { key: "style", icon: "📐", label: "Style Guide", desc: "How we communicate" },
     { key: "memories", icon: "🧠", label: "Memories", desc: "What we've learned" },
     { key: "exemplars", icon: "💎", label: "Exemplars", desc: "Gold-standard examples" },
+    { key: "content", icon: "📝", label: "Content Library", desc: "Past videos & transcripts" },
     { key: "feedback", icon: "📊", label: "Feedback Log", desc: "Audit trail" },
   ];
 
@@ -8781,7 +8782,239 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
           {tab === "style" && <StyleGuideTab session={session} isMobile={isMobile} />}
           {tab === "memories" && <MemoriesTab session={session} isMobile={isMobile} robots={robots} />}
           {tab === "exemplars" && <ExemplarsTab session={session} isMobile={isMobile} />}
+          {tab === "content" && <ContentLibraryTab session={session} isMobile={isMobile} />}
           {tab === "feedback" && <FeedbackLogTab session={session} isMobile={isMobile} robots={robots} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Content Library Tab — past video transcripts with AI summaries — */
+function ContentLibraryTab({ session, isMobile }) {
+  const [transcripts, setTranscripts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [brandFilter, setBrandFilter] = useState("all");
+  const [viewing, setViewing] = useState(null);
+  const [reIngestingId, setReIngestingId] = useState(null);
+
+  const loadTranscripts = React.useCallback(async () => {
+    const { data } = await supabase
+      .from("content_transcripts")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    setTranscripts(data || []);
+    setLoading(false);
+  }, [session.user.id]);
+
+  React.useEffect(() => { loadTranscripts(); }, [loadTranscripts]);
+
+  // Build brand list from data
+  const allBrands = React.useMemo(() => {
+    const set = new Set();
+    transcripts.forEach((t) => (t.brand_mentions || []).forEach((b) => set.add(b)));
+    return Array.from(set).sort();
+  }, [transcripts]);
+
+  const filtered = transcripts.filter((t) => {
+    if (brandFilter !== "all") {
+      const mentions = (t.brand_mentions || []).map(String);
+      if (!mentions.some((b) => b.toLowerCase().includes(brandFilter.toLowerCase()))) return false;
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      const inTitle = (t.title || "").toLowerCase().includes(s);
+      const inSummary = (t.summary || "").toLowerCase().includes(s);
+      const inTopics = (t.key_topics || []).some((k) => String(k).toLowerCase().includes(s));
+      const inTranscript = (t.full_transcript || "").toLowerCase().includes(s);
+      if (!inTitle && !inSummary && !inTopics && !inTranscript) return false;
+    }
+    return true;
+  });
+
+  const reIngest = async (artifactId) => {
+    setReIngestingId(artifactId);
+    try {
+      await supabase.functions.invoke("ingest-transcript", {
+        body: { artifact_id: artifactId, user_id: session.user.id, force: true },
+      });
+      await loadTranscripts();
+    } catch (e) {
+      alert("Re-extract failed: " + (e?.message || String(e)));
+    }
+    setReIngestingId(null);
+  };
+
+  const deleteTranscript = async (id) => {
+    if (!window.confirm("Delete this transcript? The video itself will not be deleted.")) return;
+    await supabase.from("content_transcripts").delete().eq("id", id);
+    setTranscripts((p) => p.filter((t) => t.id !== id));
+    setViewing(null);
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spinner /></div>;
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Search transcripts, topics, brands..." style={{ ...inputStyle, flex: 1, minWidth: 240, maxWidth: 360 }} className="sz-input" />
+        <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} style={{ ...inputStyle, width: "auto", cursor: "pointer" }}>
+          <option value="all">All brands ({transcripts.length})</option>
+          {allBrands.map((b) => (
+            <option key={b} value={b}>{b} ({transcripts.filter((t) => (t.brand_mentions || []).map(String).some((m) => m.toLowerCase().includes(b.toLowerCase()))).length})</option>
+          ))}
+        </select>
+      </div>
+
+      {transcripts.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>📝</div>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+            No transcripts yet. Process videos through Studio (🎬 sidebar) and they'll automatically land here with AI summaries, topics, and suggested captions.
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 24, textAlign: "center" }}>
+          <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>No transcripts match your filters.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map((t) => (
+            <div key={t.id} className="sz-hover-card" onClick={() => setViewing(t)} style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: "14px 18px", cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 2 }}>{t.title}</div>
+                  <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
+                    {(t.created_at || "").slice(0, 10)}
+                    {t.duration_seconds ? ` · ${Math.round(t.duration_seconds)}s` : ""}
+                    {t.language ? ` · ${t.language}` : ""}
+                  </div>
+                </div>
+                {t.ai_processing_status === "completed" ? (
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#f0fdf4", color: "#16a34a", textTransform: "uppercase" }}>✓ Processed</span>
+                ) : t.ai_processing_status === "in_progress" ? (
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef3c7", color: "#92400e", textTransform: "uppercase" }}>⏳ Processing</span>
+                ) : t.ai_processing_status === "failed" ? (
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: "#fef2f2", color: "#dc2626", textTransform: "uppercase" }}>✗ Failed</span>
+                ) : null}
+              </div>
+              {t.summary && (
+                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 8 }}>{t.summary}</div>
+              )}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(t.brand_mentions || []).slice(0, 4).map((b, i) => (
+                  <span key={i} style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#1C382010", color: "#1C3820", border: "1px solid #1C382030" }}>💼 {b}</span>
+                ))}
+                {(t.key_topics || []).slice(0, 4).map((k, i) => (
+                  <span key={i} style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0" }}>{k}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {viewing && <ContentLibraryDetailModal transcript={viewing} isMobile={isMobile} onClose={() => setViewing(null)} onReIngest={() => reIngest(viewing.source_artifact_id)} reIngesting={reIngestingId === viewing.source_artifact_id} onDelete={() => deleteTranscript(viewing.id)} />}
+    </div>
+  );
+}
+
+function ContentLibraryDetailModal({ transcript, isMobile, onClose, onReIngest, reIngesting, onDelete }) {
+  const t = transcript;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 880, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "22px 26px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>📝 Transcript</div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{t.title}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontFamily: "'DM Mono', monospace", marginTop: 4 }}>
+            {(t.created_at || "").slice(0, 10)}
+            {t.duration_seconds ? ` · ${Math.round(t.duration_seconds)}s` : ""}
+            {t.language ? ` · ${t.language}` : ""}
+            {t.full_transcript ? ` · ${t.full_transcript.split(/\s+/).length} words` : ""}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "18px 20px" : "24px 28px" }}>
+          {t.summary && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Summary</div>
+              <div style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: "3px solid #D4C08C", fontSize: 13, color: "#475569", lineHeight: 1.6 }}>{t.summary}</div>
+            </div>
+          )}
+
+          {(t.key_topics || []).length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Topics covered</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {t.key_topics.map((k, i) => (
+                  <span key={i} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: "#eff6ff", color: "#3b82f6", border: "1px solid #bfdbfe" }}>{k}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(t.brand_mentions || []).length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Brand mentions</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {t.brand_mentions.map((b, i) => (
+                  <span key={i} style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 6, background: "#1C382010", color: "#1C3820", border: "1px solid #1C382030" }}>💼 {b}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(t.suggested_hooks || []).length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Suggested hooks</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {t.suggested_hooks.map((h, i) => (
+                  <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#0f172a", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: "#D4C08C", fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>{i + 1}</span>
+                    <span>{h}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {t.suggested_caption && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Suggested caption</div>
+              <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", fontSize: 12, color: "#475569", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{t.suggested_caption}</div>
+              {(t.suggested_hashtags || []).length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#3b82f6", lineHeight: 1.6 }}>{t.suggested_hashtags.map((h) => `#${h}`).join(" ")}</div>
+              )}
+            </div>
+          )}
+
+          {t.full_transcript && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Full transcript</div>
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", fontSize: 12, color: "#475569", lineHeight: 1.8, whiteSpace: "pre-wrap", maxHeight: 380, overflowY: "auto", fontFamily: "'Helvetica', sans-serif" }}>{t.full_transcript}</div>
+            </div>
+          )}
+
+          {t.ai_processing_status === "failed" && t.ai_processing_error && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#7f1d1d" }}>
+              <strong>AI extraction failed:</strong> {t.ai_processing_error}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
+          <button onClick={onDelete} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onReIngest} disabled={reIngesting} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 11, fontWeight: 700, cursor: reIngesting ? "default" : "pointer" }}>{reIngesting ? "Re-extracting…" : "🔄 Re-extract AI"}</button>
+            <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
+          </div>
         </div>
       </div>
     </div>
