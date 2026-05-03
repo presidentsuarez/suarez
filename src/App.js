@@ -10359,6 +10359,8 @@ function StudioView({ isMobile, session, robots = [] }) {
   const [driveSubmitting, setDriveSubmitting] = useState(null); // file_id currently being submitted
   const [optionsModal, setOptionsModal] = useState(null); // { source, payload } where payload describes what to clip when confirmed
   const [studioDefaults, setStudioDefaults] = useState(null);
+  const [ytStatus, setYtStatus] = useState(null); // { connected, last_sync_at, posts_synced }
+  const [ytSyncing, setYtSyncing] = useState(false);
   const [ytForm, setYtForm] = useState({ url: "", title: "", template: "Sara", min: 15, max: 60 });
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = React.useRef(null);
@@ -10366,15 +10368,24 @@ function StudioView({ isMobile, session, robots = [] }) {
   const michelangelo = robots.find((r) => r.name === "Michelangelo") || robots.find((r) => r.role && r.role.toLowerCase().includes("producer")) || robots[0];
 
   const loadAll = React.useCallback(async () => {
-    const [{ data: parents }, { data: clipRows }, { data: settings }] = await Promise.all([
+    const [{ data: parents }, { data: clipRows }, { data: settings }, { data: tokens }, { data: lastSync }, { data: ytPosts }] = await Promise.all([
       supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).in("artifact_type", ["video_clips_project", "video_render"]).order("created_at", { ascending: false }).limit(50),
       supabase.from("robot_artifacts").select("*").eq("user_id", session.user.id).eq("artifact_type", "video_clip").order("created_at", { ascending: false }).limit(200),
       supabase.from("studio_settings").select("*").eq("user_id", session.user.id).maybeSingle(),
+      supabase.from("gmail_tokens").select("scopes").eq("user_id", session.user.id).maybeSingle(),
+      supabase.from("api_usage_log").select("created_at, metadata").eq("user_id", session.user.id).eq("service", "youtube_data").eq("action", "sync_performance").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("content_posts").select("id", { count: "exact" }).eq("user_id", session.user.id).eq("platform", "youtube"),
     ]);
     setProjects(parents || []);
     setClips(clipRows || []);
     setDriveSettings(settings);
-    setStudioDefaults(settings); // same row, used by quick-options modal
+    setStudioDefaults(settings);
+    setYtStatus({
+      connected: (tokens?.scopes || "").includes("youtube"),
+      last_sync_at: lastSync?.created_at || null,
+      last_sync_count: lastSync?.metadata?.synced || 0,
+      yt_post_count: (ytPosts || []).length,
+    });
     setLoading(false);
   }, [session.user.id]);
 
@@ -10429,6 +10440,39 @@ function StudioView({ isMobile, session, robots = [] }) {
     // which would cause an infinite loop. The ref + manual Refresh button covers re-load needs.
     // eslint-disable-next-line
   }, [submitMode, michelangelo?.id]);
+
+  const handleYouTubeConnect = () => {
+    const url = `https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/youtube-auth?user_id=${session.user.id}`;
+    window.open(url, "_blank", "width=560,height=720");
+    // Poll for connection state — the OAuth callback writes the merged scope to gmail_tokens
+    const startTime = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - startTime > 90000) { clearInterval(poll); return; }
+      const { data: tokens } = await supabase.from("gmail_tokens").select("scopes").eq("user_id", session.user.id).maybeSingle();
+      if ((tokens?.scopes || "").includes("youtube")) {
+        clearInterval(poll);
+        await loadAll();
+      }
+    }, 3000);
+  };
+
+  const handleYouTubeSyncNow = async () => {
+    if (ytSyncing) return;
+    setYtSyncing(true);
+    setError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("youtube-sync", {
+        body: { user_id: session.user.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      await loadAll();
+    } catch (err) {
+      setError(`YouTube sync failed: ${err.message || String(err)}`);
+    } finally {
+      setYtSyncing(false);
+    }
+  };
 
   // Auto-refresh while any project is queued/processing — every 20s
   React.useEffect(() => {
@@ -10752,10 +10796,36 @@ function StudioView({ isMobile, session, robots = [] }) {
             <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", borderRadius: 8, fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>⚠️ {error}</div>
           )}
 
-          <div style={{ marginTop: 14, display: "flex", gap: 16, fontSize: 11, color: "rgba(255,255,255,0.5)", flexWrap: "wrap" }}>
+          <div style={{ marginTop: 14, display: "flex", gap: 16, fontSize: 11, color: "rgba(255,255,255,0.5)", flexWrap: "wrap", alignItems: "center" }}>
             <span>📂 {projects.length} project{projects.length !== 1 ? "s" : ""}</span>
             <span>🎞️ {totalClips} clip{totalClips !== 1 ? "s" : ""} ready</span>
             {queuedProjects.length > 0 && <span style={{ color: "#fbbf24" }}>⏳ {queuedProjects.length} processing</span>}
+
+            <span style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {/* Drive connection pill */}
+              {driveSettings?.drive_inbox_folder_id ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, padding: "4px 10px", borderRadius: 12, background: "rgba(16,185,129,0.15)", color: "#86efac", border: "1px solid rgba(16,185,129,0.3)" }}>
+                  📁 Drive
+                </span>
+              ) : null}
+
+              {/* YouTube connection pill */}
+              {ytStatus?.connected ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, padding: "4px 10px", borderRadius: 12, background: "rgba(220,38,38,0.15)", color: "#fca5a5", border: "1px solid rgba(220,38,38,0.3)" }}>
+                  ▶️ YouTube
+                  {ytStatus.last_sync_at && (
+                    <span style={{ opacity: 0.7 }}>· synced {new Date(ytStatus.last_sync_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                  )}
+                  <button onClick={handleYouTubeSyncNow} disabled={ytSyncing} title="Sync all YouTube post stats now" style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fca5a5", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 6, cursor: ytSyncing ? "default" : "pointer", marginLeft: 2 }}>
+                    {ytSyncing ? "⏳" : "↻"}
+                  </button>
+                </span>
+              ) : (
+                <button onClick={handleYouTubeConnect} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, padding: "4px 12px", borderRadius: 12, background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)", cursor: "pointer", fontWeight: 600 }}>
+                  ▶️ Connect YouTube
+                </button>
+              )}
+            </span>
           </div>
         </div>
 
