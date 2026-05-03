@@ -9963,9 +9963,25 @@ function StudioView({ isMobile, session, robots = [] }) {
   React.useEffect(() => {
     const anyQueued = projects.some((p) => p.status === "queued" || p.status === "processing");
     if (!anyQueued) return;
-    const t = setInterval(() => { loadAll(); }, 20000);
+    const t = setInterval(async () => {
+      // Re-pull artifacts from DB
+      await loadAll();
+      // For any project queued >2 min, manually sync from Submagic (covers missed webhooks)
+      const stale = projects.filter((p) => {
+        if (p.status !== "queued" && p.status !== "processing") return false;
+        const ageMs = Date.now() - new Date(p.created_at).getTime();
+        return ageMs > 2 * 60 * 1000;
+      });
+      for (const p of stale.slice(0, 3)) { // cap at 3 per tick to avoid storm
+        try {
+          await supabase.functions.invoke("video-status-sync", {
+            body: { artifact_id: p.id, user_id: session.user.id },
+          });
+        } catch (e) { /* non-fatal */ }
+      }
+    }, 30000);
     return () => clearInterval(t);
-  }, [projects, loadAll]);
+  }, [projects, loadAll, session.user.id]);
 
   const clipsForProject = (projectId) => clips.filter((c) => c.payload?.parent_artifact_id === projectId);
 
@@ -10237,7 +10253,7 @@ function StudioView({ isMobile, session, robots = [] }) {
           </>
         )}
 
-        {viewing && <StudioProjectModal project={viewing} clips={clipsForProject(viewing.id)} isMobile={isMobile} onClose={() => setViewing(null)} onDelete={() => deleteProject(viewing.id)} />}
+        {viewing && <StudioProjectModal project={viewing} clips={clipsForProject(viewing.id)} isMobile={isMobile} session={session} onClose={() => setViewing(null)} onDelete={() => deleteProject(viewing.id)} onRefresh={async () => { await loadAll(); const updated = projects.find((p) => p.id === viewing.id); if (updated) setViewing(updated); }} />}
       </div>
     </div>
   );
@@ -10269,10 +10285,42 @@ function ProjectCard({ project, clipCount, onClick }) {
   );
 }
 
-function StudioProjectModal({ project, clips, isMobile, onClose, onDelete }) {
+function StudioProjectModal({ project, clips, isMobile, session, onClose, onDelete, onRefresh }) {
   const p = project.payload || {};
   const isProcessing = project.status === "queued" || project.status === "processing";
   const isFailed = project.status === "failed";
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+
+  const syncStatus = async () => {
+    if (!session) return;
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const { data, error } = await supabase.functions.invoke("video-status-sync", {
+        body: { artifact_id: project.id, user_id: session.user.id },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        setSyncMsg(`⚠️ ${data.error}${data.details ? " — " + JSON.stringify(data.details).slice(0, 200) : ""}`);
+        return;
+      }
+      if (data?.still_processing) {
+        setSyncMsg(`⏳ Still processing on Submagic's end (status: ${data.submagic_status}). Try again in a few minutes.`);
+        return;
+      }
+      if (data?.new_status === "completed") {
+        setSyncMsg(`✓ Render complete — ${data.created_clip_count} clip${data.created_clip_count !== 1 ? "s" : ""} loaded.`);
+      } else if (data?.new_status === "failed") {
+        setSyncMsg(`✗ Submagic reports failed: ${data.failure_reason || "unknown reason"}`);
+      }
+      await onRefresh?.();
+    } catch (err) {
+      setSyncMsg(`Sync failed: ${err.message || String(err)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
@@ -10295,14 +10343,21 @@ function StudioProjectModal({ project, clips, isMobile, onClose, onDelete }) {
           {isProcessing && (
             <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 10, padding: "14px 18px", marginBottom: 18 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e", marginBottom: 4 }}>⏳ Submagic is processing this video</div>
-              <div style={{ fontSize: 12, color: "#78350f", lineHeight: 1.5 }}>This typically takes 5–15 minutes for a long video. Clips will appear here when ready. The page auto-refreshes every 20 seconds.</div>
+              <div style={{ fontSize: 12, color: "#78350f", lineHeight: 1.5, marginBottom: 10 }}>This typically takes 5–15 minutes for a long video. Clips will appear here when ready. If it's been longer than 15 min, the webhook may have missed — use Re-check status.</div>
+              <button onClick={syncStatus} disabled={syncing} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #92400e", background: "#fff", color: "#92400e", fontSize: 11, fontWeight: 700, cursor: syncing ? "default" : "pointer" }}>{syncing ? "Checking…" : "🔄 Re-check status"}</button>
+              {syncMsg && <div style={{ marginTop: 8, fontSize: 11, color: "#78350f", fontWeight: 600 }}>{syncMsg}</div>}
             </div>
           )}
           {isFailed && (
             <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "14px 18px", marginBottom: 18 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b", marginBottom: 4 }}>✗ Render failed</div>
-              <div style={{ fontSize: 12, color: "#7f1d1d", lineHeight: 1.5 }}>{project.summary || "Submagic returned an error. Check the source URL or try a shorter clip."}</div>
+              <div style={{ fontSize: 12, color: "#7f1d1d", lineHeight: 1.5 }}>{project.summary || "Submagic returned an error."}</div>
               {p.error && <pre style={{ fontSize: 10, color: "#7f1d1d", background: "#fff", padding: 8, borderRadius: 6, marginTop: 8, overflowX: "auto", whiteSpace: "pre-wrap" }}>{typeof p.error === "string" ? p.error : JSON.stringify(p.error, null, 2)}</pre>}
+              {p.source_type === "youtube" && (
+                <div style={{ marginTop: 10, padding: "10px 14px", background: "#fff", borderRadius: 8, border: "1px solid #fca5a5", fontSize: 11, color: "#7f1d1d", lineHeight: 1.5 }}>
+                  <strong>Why YouTube downloads sometimes fail:</strong> Submagic uses YouTube's public extraction, which is rate-limited and blocked for many videos (age-restricted, region-locked, unlisted, or simply rate-limited that hour). For reliability, download the video to your laptop first, drop into Drive Studio Inbox, and submit from the Drive picker.
+                </div>
+              )}
             </div>
           )}
 
