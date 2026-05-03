@@ -6595,15 +6595,55 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
       const messages = gmailData?.messages || [];
       const inboxThreadIds = new Set(messages.map((m) => m.threadId || m.thread_id || m.id));
       const triagedIds = new Set(triageRows.map((r) => r.gmail_thread_id));
-      const newIds = [...inboxThreadIds].filter((id) => !triagedIds.has(id));
+      const newMessages = messages.filter((m) => !triagedIds.has(m.threadId || m.thread_id || m.id));
 
-      if (newIds.length === 0) {
-        // Nothing new, set the timestamp anyway so we don't keep checking on every navigation
+      if (newMessages.length === 0) {
         try { localStorage.setItem(lastRunKey, String(Date.now())); } catch (_) {}
         return;
       }
 
-      setAutoStatus(`Atlas is reading ${newIds.length} new email${newIds.length !== 1 ? "s" : ""}…`);
+      setAutoStatus(`Checking rules for ${newMessages.length} new email${newMessages.length !== 1 ? "s" : ""}…`);
+
+      // STEP 1: try rules first — cheaper + faster than LLM. Only matched threads get
+      // auto-triaged here; unmatched (or low-confidence) ones fall through to Atlas.
+      const threadPayloads = newMessages.map((m) => {
+        const fromRaw = m.from || "";
+        const senderMatch = fromRaw.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/);
+        const sender_name = senderMatch ? senderMatch[1].trim() : "";
+        const sender_email = senderMatch ? senderMatch[2].trim() : fromRaw.trim();
+        return {
+          thread_id: m.threadId || m.thread_id || m.id,
+          sender_email,
+          sender_name,
+          subject: m.subject || "",
+          snippet: m.snippet || "",
+          received_at: m.date || null,
+        };
+      });
+
+      let unmatchedThreadIds = threadPayloads.map((t) => t.thread_id);
+      try {
+        const { data: rulesResp } = await supabase.functions.invoke("inbox-rules", {
+          body: { action: "apply_to_threads", user_id: session.user.id, threads: threadPayloads },
+        });
+        if (rulesResp?.skipped_thread_ids) unmatchedThreadIds = rulesResp.skipped_thread_ids;
+        const autoApplied = (rulesResp?.auto_applied || 0) + (rulesResp?.pending_review || 0);
+        if (autoApplied > 0) {
+          setAutoStatus(`${autoApplied} auto-handled by rules · Atlas reading ${unmatchedThreadIds.length} more…`);
+        }
+      } catch (e) {
+        console.error("rules pre-pass failed (non-fatal, falling through to LLM):", e);
+      }
+
+      // STEP 2: if everything was rule-handled, we're done. Otherwise Atlas reads the rest.
+      if (unmatchedThreadIds.length === 0) {
+        try { localStorage.setItem(lastRunKey, String(Date.now())); } catch (_) {}
+        setAutoStatus("");
+        await loadTriageData();
+        return;
+      }
+
+      setAutoStatus(`Atlas is reading ${unmatchedThreadIds.length} new email${unmatchedThreadIds.length !== 1 ? "s" : ""}…`);
 
       const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
         body: {
@@ -6692,6 +6732,29 @@ After all threads are triaged, give a one-sentence summary.`,
     await loadTriageData();
   };
 
+  // Adjust confidence on the rule that auto-applied to a triage row, if any.
+  const adjustRuleConfidence = async (row, delta) => {
+    if (!row.applied_rule_id) return;
+    try {
+      const { data: rule } = await supabase.from("inbox_rules").select("confidence, thumbs_up_count, thumbs_down_count").eq("id", row.applied_rule_id).maybeSingle();
+      if (!rule) return;
+      const newConfidence = Math.max(0, Math.min(1, Number(rule.confidence || 0) + delta));
+      const update = {
+        confidence: newConfidence.toFixed(2),
+        thumbs_up_count: rule.thumbs_up_count + (delta > 0 ? 1 : 0),
+        thumbs_down_count: rule.thumbs_down_count + (delta < 0 ? 1 : 0),
+      };
+      // If confidence drops below 0.30, disable the rule
+      if (newConfidence < 0.30) update.active = false;
+      await supabase.from("inbox_rules").update(update).eq("id", row.applied_rule_id);
+    } catch (e) { /* non-fatal */ }
+  };
+
+  // Mark row as user-confirmed (used when 👍 lands on a B-tier auto-applied row).
+  const markUserConfirmed = async (rowId) => {
+    await supabase.from("inbox_triage").update({ user_confirmed: true }).eq("id", rowId);
+  };
+
   const submitThumbsUp = async (row) => {
     try {
       await supabase.functions.invoke("feedback-capture", {
@@ -6701,11 +6764,13 @@ After all threads are triaged, give a one-sentence summary.`,
           event_type: "thumbs_up",
           verdict: "approved",
           original_content: `Triage: ${row.subject || "(no subject)"} from ${row.sender_email} → category=${row.category_id}, priority=${row.priority}, needs_response=${row.needs_response}, reasoning="${row.reasoning || ""}"`,
-          context: { kind: "inbox_triage", thread_id: row.gmail_thread_id, sender: row.sender_email },
+          context: { kind: "inbox_triage", thread_id: row.gmail_thread_id, sender: row.sender_email, applied_rule_id: row.applied_rule_id },
           extract_memory: false,
         },
       });
     } catch (e) { /* non-fatal */ }
+    if (row.applied_rule_id) await adjustRuleConfidence(row, +0.05);
+    if (row.auto_applied) await markUserConfirmed(row.id);
     await autoMarkHandled(row.id);
     await loadTriageData();
   };
@@ -6743,6 +6808,7 @@ After all threads are triaged, give a one-sentence summary.`,
       }
     } catch (e) { /* non-fatal */ }
     if (memoryId) await tagMemoryAsInbox(memoryId);
+    if (row.applied_rule_id) await adjustRuleConfidence(row, -0.20);
     await autoMarkHandled(row.id);
     await loadTriageData();
   };
@@ -6803,6 +6869,7 @@ After all threads are triaged, give a one-sentence summary.`,
 
   const activeCount = triageRows.filter((r) => !r.user_marked_handled).length;
   const needsResponseCount = triageRows.filter((r) => r.needs_response && !r.user_marked_handled).length;
+  const pendingReviewCount = triageRows.filter((r) => r.auto_applied && !r.user_confirmed && !r.user_marked_handled).length;
 
   if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>;
 
@@ -6856,6 +6923,16 @@ After all threads are triaged, give a one-sentence summary.`,
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#64748b", cursor: "pointer" }}>
             <input type="checkbox" checked={showHandled} onChange={(e) => setShowHandled(e.target.checked)} style={{ accentColor: "#1C3820" }} /> Show handled
           </label>
+        </div>
+      )}
+
+      {/* Pending review strip — B-tier rules applied, awaiting user confirmation */}
+      {pendingReviewCount > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", marginBottom: 10, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 16 }}>⚖️</span>
+          <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: "#78350f" }}>
+            <strong>{pendingReviewCount} rule-applied {pendingReviewCount === 1 ? "thread is" : "threads are"} awaiting your review.</strong> Confirm with 👍 to boost the rule's confidence, or 👎 to flag it.
+          </div>
         </div>
       )}
 
@@ -6947,13 +7024,26 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
   };
 
   return (
-    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", opacity: row.user_marked_handled ? 0.5 : 1, transition: "opacity 0.2s" }}>
+    <div style={{
+      background: "#fff",
+      border: row.auto_applied && !row.user_confirmed ? "1px solid #fde68a" : "1px solid #e2e8f0",
+      borderRadius: 12,
+      padding: "14px 16px",
+      opacity: row.user_marked_handled ? 0.5 : 1,
+      transition: "opacity 0.2s",
+      boxShadow: row.auto_applied && !row.user_confirmed ? "0 0 0 3px rgba(253, 230, 138, 0.25)" : "none",
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
           {category && (
             <select value={category.id} onChange={(e) => onChangeCategory(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: `${category.color}20`, color: category.color, border: `1px solid ${category.color}40`, cursor: "pointer", textTransform: "uppercase" }}>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
             </select>
+          )}
+          {row.auto_applied && (
+            <span title="Auto-applied by an inbox rule" style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: row.user_confirmed ? "#dcfce7" : "#fef3c7", color: row.user_confirmed ? "#166534" : "#92400e" }}>
+              {row.user_confirmed ? "⚖️ RULE ✓" : "⚖️ RULE"}
+            </span>
           )}
           <select value={priority} onChange={(e) => onChangePriority(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ fontSize: 9, fontWeight: 800, padding: "3px 7px", borderRadius: 4, background: priorityStyle.bg, color: priorityStyle.color, letterSpacing: "0.05em", border: `1px solid ${priorityStyle.color}30`, cursor: "pointer" }}>
             <option value="urgent">URGENT</option>
@@ -9272,6 +9362,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
     { key: "exemplars", icon: "💎", label: "Exemplars", desc: "Gold-standard examples" },
     { key: "content", icon: "📝", label: "Content Library", desc: "Past videos & transcripts" },
     { key: "studio", icon: "🎬", label: "Studio Defaults", desc: "Video render settings" },
+    { key: "inbox_rules", icon: "⚖️", label: "Inbox Rules", desc: "Auto-categorization rules" },
     { key: "feedback", icon: "📊", label: "Feedback Log", desc: "Audit trail" },
   ];
 
@@ -9320,6 +9411,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
           {tab === "exemplars" && <ExemplarsTab session={session} isMobile={isMobile} />}
           {tab === "content" && <ContentLibraryTab session={session} isMobile={isMobile} />}
           {tab === "studio" && <StudioDefaultsTab session={session} isMobile={isMobile} />}
+          {tab === "inbox_rules" && <InboxRulesTab session={session} isMobile={isMobile} />}
           {tab === "feedback" && <FeedbackLogTab session={session} isMobile={isMobile} robots={robots} />}
         </div>
       </div>
@@ -9552,6 +9644,348 @@ function ContentLibraryDetailModal({ transcript, isMobile, onClose, onReIngest, 
             <button onClick={onReIngest} disabled={reIngesting} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 11, fontWeight: 700, cursor: reIngesting ? "default" : "pointer" }}>{reIngesting ? "Re-extracting…" : "🔄 Re-extract AI"}</button>
             <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Inbox Rules Tab — manage auto-categorization rules + pending suggestions — */
+function InboxRulesTab({ session, isMobile }) {
+  const [rules, setRules] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestStatus, setSuggestStatus] = useState("");
+
+  const loadAll = React.useCallback(async () => {
+    const [{ data: r }, { data: c }] = await Promise.all([
+      supabase.from("inbox_rules").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }),
+      supabase.from("inbox_categories").select("*").eq("user_id", session.user.id).eq("active", true).order("sort_order", { ascending: true }),
+    ]);
+    setRules(r || []);
+    setCategories(c || []);
+    setLoading(false);
+  }, [session.user.id]);
+
+  React.useEffect(() => { loadAll(); }, [loadAll]);
+
+  const runSuggest = async () => {
+    setSuggesting(true);
+    setSuggestStatus("");
+    try {
+      const { data, error } = await supabase.functions.invoke("inbox-rules", {
+        body: { action: "suggest", user_id: session.user.id, days_back: 30, threshold: 3 },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const n = data?.suggested || 0;
+      setSuggestStatus(n === 0 ? `No new patterns to suggest. (${data?.groups_analyzed || 0} sender-corrections analyzed; need ≥3 same-direction corrections to suggest a rule.)` : `${n} new suggestion${n !== 1 ? "s" : ""} added below.`);
+      await loadAll();
+    } catch (err) {
+      setSuggestStatus(`Failed: ${err.message || String(err)}`);
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const approveSuggestion = async (rule) => {
+    await supabase.from("inbox_rules").update({ suggestion_status: "active", active: true }).eq("id", rule.id);
+    await loadAll();
+  };
+
+  const rejectSuggestion = async (rule) => {
+    await supabase.from("inbox_rules").update({ suggestion_status: "rejected", active: false }).eq("id", rule.id);
+    await loadAll();
+  };
+
+  const toggleActive = async (rule) => {
+    await supabase.from("inbox_rules").update({ active: !rule.active }).eq("id", rule.id);
+    await loadAll();
+  };
+
+  const deleteRule = async (rule) => {
+    if (!window.confirm(`Delete rule "${rule.name}"?`)) return;
+    await supabase.from("inbox_rules").delete().eq("id", rule.id);
+    await loadAll();
+  };
+
+  const updateConfidence = async (rule, newConf) => {
+    await supabase.from("inbox_rules").update({ confidence: Math.max(0, Math.min(1, newConf)).toFixed(2) }).eq("id", rule.id);
+    await loadAll();
+  };
+
+  const tier = (conf) => Number(conf) >= 0.85 ? "A" : Number(conf) >= 0.60 ? "B" : "C";
+  const tierStyle = (t) => ({
+    A: { bg: "#dcfce7", color: "#166534", label: "A · auto" },
+    B: { bg: "#fef3c7", color: "#92400e", label: "B · review" },
+    C: { bg: "#f1f5f9", color: "#64748b", label: "C · hint" },
+  }[t]);
+
+  const pending = rules.filter((r) => r.suggestion_status === "pending_review");
+  const active = rules.filter((r) => r.suggestion_status === "active");
+  const disabled = rules.filter((r) => r.suggestion_status === "rejected" || (r.suggestion_status === "active" && !r.active));
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>;
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      {/* Hero */}
+      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: "18px 22px", marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 4px", fontFamily: "'Playfair Display', serif" }}>⚖️ Inbox Rules</h3>
+            <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.6 }}>
+              Deterministic rules that auto-categorize threads before Atlas reads them. <strong>A-tier</strong> (≥85%) fires automatically. <strong>B-tier</strong> (60-84%) auto-applies but lands in your review queue. <strong>C-tier</strong> (&lt;60%) is a hint Atlas considers.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={runSuggest} disabled={suggesting} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 700, cursor: suggesting ? "default" : "pointer" }}>{suggesting ? "Analyzing…" : "🔍 Suggest from feedback"}</button>
+            <button onClick={() => setShowCreate(true)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ New rule</button>
+          </div>
+        </div>
+        {suggestStatus && <div style={{ marginTop: 10, fontSize: 11, color: "#475569", padding: "8px 12px", background: "#f8fafc", borderRadius: 6 }}>{suggestStatus}</div>}
+      </div>
+
+      {/* Pending suggestions */}
+      {pending.length > 0 && (
+        <>
+          <SectionHeader text={`Pending suggestions (${pending.length})`} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
+            {pending.map((r) => (
+              <RuleCard key={r.id} rule={r} categories={categories} tier={tier(r.confidence)} tierStyle={tierStyle} mode="pending"
+                onApprove={() => approveSuggestion(r)}
+                onReject={() => rejectSuggestion(r)}
+                onUpdateConfidence={(c) => updateConfidence(r, c)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Active rules */}
+      <SectionHeader text={`Active rules (${active.filter((r) => r.active).length})`} />
+      {active.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 12, border: "1px dashed #e2e8f0", padding: 24, textAlign: "center", marginBottom: 22 }}>
+          <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>No rules yet. Click <strong>+ New rule</strong> to author one, or <strong>🔍 Suggest from feedback</strong> to mine your past corrections for patterns.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
+          {active.map((r) => (
+            <RuleCard key={r.id} rule={r} categories={categories} tier={tier(r.confidence)} tierStyle={tierStyle} mode="active"
+              onToggleActive={() => toggleActive(r)}
+              onDelete={() => deleteRule(r)}
+              onUpdateConfidence={(c) => updateConfidence(r, c)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Disabled / rejected */}
+      {disabled.length > 0 && (
+        <details style={{ marginBottom: 22 }}>
+          <summary style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em", padding: "6px 0" }}>Disabled / rejected ({disabled.length})</summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {disabled.map((r) => (
+              <RuleCard key={r.id} rule={r} categories={categories} tier={tier(r.confidence)} tierStyle={tierStyle} mode="disabled"
+                onToggleActive={() => toggleActive(r)}
+                onDelete={() => deleteRule(r)}
+              />
+            ))}
+          </div>
+        </details>
+      )}
+
+      {showCreate && <NewRuleModal session={session} categories={categories} isMobile={isMobile} onClose={() => setShowCreate(false)} onSaved={async () => { setShowCreate(false); await loadAll(); }} />}
+    </div>
+  );
+}
+
+function RuleCard({ rule, categories, tier, tierStyle, mode, onApprove, onReject, onToggleActive, onDelete, onUpdateConfidence }) {
+  const cat = categories.find((c) => c.id === rule.action_category_id);
+  const ts = tierStyle(tier);
+  const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
+
+  return (
+    <div style={{
+      background: "#fff",
+      border: mode === "pending" ? "1px solid #fde68a" : (rule.active ? "1px solid #e2e8f0" : "1px dashed #cbd5e1"),
+      borderRadius: 12, padding: "12px 16px",
+      boxShadow: mode === "pending" ? "0 0 0 3px rgba(253, 230, 138, 0.25)" : "none",
+      opacity: !rule.active && mode === "active" ? 0.5 : 1,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+            <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 4, background: ts.bg, color: ts.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{ts.label}</span>
+            {rule.source === "feedback_pattern" && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#eff6ff", color: "#3b82f6" }}>SUGGESTED</span>}
+            {rule.source === "manual" && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#f0f9ff", color: "#0369a1" }}>MANUAL</span>}
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#0f172a" }}>{rule.name}</span>
+          </div>
+          {rule.description && <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{rule.description}</div>}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            {conditions.map((c, i) => {
+              const label = c.type === "from_email" ? "from:" : c.type === "from_email_domain" ? "domain:" : "subject:";
+              return <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0" }}>{label} {c.value}</span>;
+            })}
+          </div>
+          <div style={{ fontSize: 10, color: "#64748b" }}>
+            → <strong style={{ color: cat?.color || "#0f172a" }}>{cat?.icon} {cat?.name || "?"}</strong> · {rule.action_priority}
+            {rule.match_count > 0 && <span style={{ marginLeft: 8 }}>· matched {rule.match_count}x</span>}
+            {rule.thumbs_up_count > 0 && <span style={{ marginLeft: 6, color: "#16a34a" }}>👍 {rule.thumbs_up_count}</span>}
+            {rule.thumbs_down_count > 0 && <span style={{ marginLeft: 6, color: "#dc2626" }}>👎 {rule.thumbs_down_count}</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {mode === "pending" && (
+            <>
+              <button onClick={onReject} style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", color: "#dc2626", cursor: "pointer" }}>Reject</button>
+              <button onClick={onApprove} style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, border: "none", borderRadius: 6, background: "#16a34a", color: "#fff", cursor: "pointer" }}>Approve</button>
+            </>
+          )}
+          {mode === "active" && (
+            <>
+              <button onClick={onToggleActive} title={rule.active ? "Disable" : "Enable"} style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", color: rule.active ? "#475569" : "#16a34a", cursor: "pointer" }}>{rule.active ? "Disable" : "Enable"}</button>
+              <button onClick={onDelete} style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", color: "#dc2626", cursor: "pointer" }}>Delete</button>
+            </>
+          )}
+          {mode === "disabled" && (
+            <>
+              <button onClick={onToggleActive} style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", color: "#16a34a", cursor: "pointer" }}>Re-enable</button>
+              <button onClick={onDelete} style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", color: "#dc2626", cursor: "pointer" }}>Delete</button>
+            </>
+          )}
+        </div>
+      </div>
+      {onUpdateConfidence && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, paddingTop: 6, borderTop: "1px solid #f1f5f9" }}>
+          <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600 }}>Confidence: {Math.round(Number(rule.confidence) * 100)}%</span>
+          <input type="range" min="0" max="100" value={Math.round(Number(rule.confidence) * 100)} onChange={(e) => onUpdateConfidence(Number(e.target.value) / 100)} style={{ flex: 1, accentColor: "#1C3820" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewRuleModal({ session, categories, isMobile, onClose, onSaved }) {
+  const [name, setName] = useState("");
+  const [conditions, setConditions] = useState([{ type: "from_email_domain", value: "" }]);
+  const [categoryId, setCategoryId] = useState(categories[0]?.id || "");
+  const [priority, setPriority] = useState("normal");
+  const [confidence, setConfidence] = useState(1.0);
+  const [needsResponse, setNeedsResponse] = useState(false);
+  const [isActionable, setIsActionable] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const updateCondition = (idx, field, value) => {
+    setConditions((p) => p.map((c, i) => i === idx ? { ...c, [field]: value } : c));
+  };
+  const addCondition = () => setConditions((p) => [...p, { type: "from_email_domain", value: "" }]);
+  const removeCondition = (idx) => setConditions((p) => p.filter((_, i) => i !== idx));
+
+  const save = async () => {
+    if (!name.trim()) { setError("Name required."); return; }
+    if (!categoryId) { setError("Category required."); return; }
+    const validConditions = conditions.filter((c) => c.value.trim());
+    if (validConditions.length === 0) { setError("At least one condition required."); return; }
+
+    setSaving(true);
+    setError("");
+    try {
+      const { error: insErr } = await supabase.from("inbox_rules").insert({
+        user_id: session.user.id,
+        name: name.trim(),
+        conditions: validConditions,
+        action_category_id: categoryId,
+        action_priority: priority,
+        action_needs_response: needsResponse,
+        action_is_actionable: isActionable,
+        action_reasoning: `Manual rule: ${name.trim()}`,
+        confidence: confidence.toFixed(2),
+        source: "manual",
+        suggestion_status: "active",
+        active: true,
+      });
+      if (insErr) throw insErr;
+      await onSaved?.();
+    } catch (err) {
+      setError(`Save failed: ${err.message || String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 560, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "18px 22px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 28, height: 28, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 2 }}>⚖️ New Inbox Rule</div>
+          <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>Author a rule</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Rule name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Stripe receipts → Notification (low)" style={inputStyle} />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>When… (all must match)</label>
+            {conditions.map((c, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <select value={c.type} onChange={(e) => updateCondition(i, "type", e.target.value)} style={{ ...inputStyle, width: "auto", cursor: "pointer" }}>
+                  <option value="from_email_domain">Sender domain</option>
+                  <option value="from_email">Exact sender</option>
+                  <option value="subject_contains">Subject contains</option>
+                </select>
+                <input value={c.value} onChange={(e) => updateCondition(i, "value", e.target.value)} placeholder={c.type === "from_email_domain" ? "stripe.com" : c.type === "from_email" ? "team@example.com" : "invoice"} style={{ ...inputStyle, flex: 1 }} />
+                {conditions.length > 1 && <button onClick={() => removeCondition(i)} style={{ padding: "0 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", cursor: "pointer" }}>×</button>}
+              </div>
+            ))}
+            <button onClick={addCondition} style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: "1px dashed #cbd5e1", background: "#fff", color: "#475569", cursor: "pointer" }}>+ Add condition</button>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Then categorize as…</label>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 8 }}>
+              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+              </select>
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14, display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#475569", cursor: "pointer" }}>
+              <input type="checkbox" checked={needsResponse} onChange={(e) => setNeedsResponse(e.target.checked)} style={{ accentColor: "#1C3820" }} /> Needs response
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#475569", cursor: "pointer" }}>
+              <input type="checkbox" checked={isActionable} onChange={(e) => setIsActionable(e.target.checked)} style={{ accentColor: "#1C3820" }} /> Is actionable
+            </label>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Confidence: {Math.round(confidence * 100)}% — {confidence >= 0.85 ? "A · auto" : confidence >= 0.60 ? "B · review queue" : "C · hint only"}</label>
+            <input type="range" min="0" max="100" value={Math.round(confidence * 100)} onChange={(e) => setConfidence(Number(e.target.value) / 100)} style={{ width: "100%", accentColor: "#1C3820" }} />
+            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>You wrote this rule yourself, so the default is 100% (auto-fires). Lower it if you want to verify the first few matches.</div>
+          </div>
+
+          {error && <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#dc2626", fontSize: 12 }}>⚠️ {error}</div>}
+        </div>
+
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
+          <button onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: saving ? "#cbd5e1" : "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>{saving ? "Saving…" : "Save rule"}</button>
         </div>
       </div>
     </div>
