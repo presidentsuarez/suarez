@@ -382,7 +382,7 @@ const TOOLS = [
   },
   {
     name: "get_drive_signed_url",
-    description: "Get a temporary download URL for a Drive file so external services (like Submagic) can fetch it. Returns a URL that expires in ~1 hour. Use this AFTER list_drive_videos to grab a specific file's URL before passing to clip_long_video.",
+    description: "Bridge a Drive file into Supabase Storage and return a signed URL that external services like Submagic can fetch reliably. Streams the file from Drive to Supabase (4-hour signed URL). Use this AFTER list_drive_videos to prep a file before clip_long_video. Note: this is the recommended path for any non-YouTube source — Drive's public-link sharing is unreliable for external services.",
     input_schema: {
       type: "object",
       properties: {
@@ -1084,44 +1084,107 @@ async function listDriveVideos(input: any, ctx: any) {
 }
 
 async function getDriveSignedUrl(input: any, ctx: any) {
+  // RENAMED IN SPIRIT: this now streams the Drive file into Supabase Storage and
+  // returns a clean Supabase signed URL that Submagic (or any external service)
+  // can fetch reliably. The function name stays the same for backward compat,
+  // but the strategy is completely different — no Drive public permissions.
+
   const token = await getGoogleAccessToken(ctx);
   if (!token) return { result: "Error: Google Drive is not connected." };
   if (!input.file_id) return { result: "Error: file_id required." };
 
-  // Strategy: make file readable by anyone-with-link (temporarily), then return
-  // a stable Drive download URL that Submagic can fetch. The user can revoke
-  // later via revoke_drive_share or via the move_drive_file flow that runs
-  // after processing completes.
-
-  // 1. Verify file exists + get metadata
+  // 1. Get file metadata
   const metaRes = await fetch(`https://www.googleapis.com/drive/v3/files/${input.file_id}?fields=id,name,mimeType,size`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const meta = await metaRes.json();
   if (!metaRes.ok) return { result: `Error: Drive file ${input.file_id} not found. ${JSON.stringify(meta).slice(0, 200)}` };
 
-  // 2. Grant anyone-with-link read access (idempotent — Drive de-dupes by type+role)
-  const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${input.file_id}/permissions?fields=id`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "anyone", role: "reader" }),
-  });
-  if (!permRes.ok) {
-    const e = await permRes.json();
-    return { result: `Error granting Drive permission: ${JSON.stringify(e).slice(0, 200)}` };
+  const sizeBytes = Number(meta.size || 0);
+  const sizeMB = sizeBytes ? Math.round(sizeBytes / 1024 / 1024) : null;
+
+  // 2. Sanity-check size against Supabase project file limit (5GB after our config bump)
+  if (sizeBytes > 5 * 1024 * 1024 * 1024) {
+    return { result: `Error: file is ${sizeMB} MB, exceeds 5 GB Supabase Storage cap. Trim or compress before processing.` };
   }
-  const perm = await permRes.json();
 
-  // 3. Direct download URL — works for files of any size when shared anyone-with-link.
-  // The "uc?export=download" form follows redirects to actual storage, no virus-scan
-  // page for files served via this exact endpoint when the perm is anyone-with-link.
-  const publicUrl = `https://drive.google.com/uc?export=download&id=${input.file_id}`;
+  // 3. Build target path in videos-source bucket
+  const cleanName = (meta.name || "video.mp4").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const objectPath = `${ctx.user_id}/drive-${input.file_id}-${Date.now()}-${cleanName}`;
 
-  // Track the permission so we can revoke after processing
-  const sizeMB = meta.size ? Math.round(Number(meta.size) / 1024 / 1024) : null;
+  // 4. Stream Drive file → Supabase Storage.
+  // Drive's alt=media gives us the raw bytes when authenticated.
+  const driveDownloadUrl = `https://www.googleapis.com/drive/v3/files/${input.file_id}?alt=media`;
+  const driveStreamRes = await fetch(driveDownloadUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!driveStreamRes.ok) {
+    const errText = await driveStreamRes.text();
+    return { result: `Error downloading from Drive: ${driveStreamRes.status} — ${errText.slice(0, 300)}` };
+  }
+  if (!driveStreamRes.body) {
+    return { result: "Error: Drive returned no body stream." };
+  }
+
+  // 5. Upload to Supabase Storage. We use the storage API's binary upload endpoint,
+  // streaming the body directly without buffering. Deno fetch supports passing a
+  // ReadableStream as body.
+  // NOTE: We use STORAGE_SERVICE_KEY (the JWT-format service role key) explicitly
+  // because Supabase's auto-injected SUPABASE_SERVICE_ROLE_KEY may use the newer
+  // sb_secret_... format, which Storage rejects with "Invalid Compact JWS".
+  const storageKey = Deno.env.get("STORAGE_SERVICE_KEY") || SUPABASE_SERVICE_ROLE_KEY;
+  const storageUploadUrl = `${SUPABASE_URL}/storage/v1/object/videos-source/${encodeURIComponent(objectPath)}`;
+  const contentType = meta.mimeType || driveStreamRes.headers.get("content-type") || "video/mp4";
+
+  // Some upstreams require Content-Length for the upload; if Drive provided it, pass it through.
+  const contentLength = driveStreamRes.headers.get("content-length") || (sizeBytes ? String(sizeBytes) : null);
+
+  const uploadHeaders: Record<string, string> = {
+    "Authorization": `Bearer ${storageKey}`,
+    "Content-Type": contentType,
+    "x-upsert": "true",
+  };
+  if (contentLength) uploadHeaders["Content-Length"] = contentLength;
+
+  const uploadRes = await fetch(storageUploadUrl, {
+    method: "POST",
+    headers: uploadHeaders,
+    body: driveStreamRes.body,
+    // @ts-ignore — Deno-specific option to allow streaming request bodies
+    duplex: "half",
+  });
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    return { result: `Error uploading to Supabase Storage: ${uploadRes.status} — ${errText.slice(0, 300)}` };
+  }
+
+  // 6. Generate a signed URL for Submagic. 4-hour validity covers Submagic's
+  // download + processing window comfortably. Re-issuable if needed.
+  const signedRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/videos-source/${encodeURIComponent(objectPath)}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${storageKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 4 * 60 * 60 }),
+  });
+  const signed = await signedRes.json();
+  if (!signedRes.ok || !signed.signedURL) {
+    return { result: `Error creating signed URL: ${JSON.stringify(signed).slice(0, 200)}` };
+  }
+
+  // Supabase returns a relative path; build the full URL
+  const signedUrl = signed.signedURL.startsWith("http")
+    ? signed.signedURL
+    : `${SUPABASE_URL}/storage/v1${signed.signedURL.startsWith("/") ? "" : "/"}${signed.signedURL}`;
+
   return {
-    result: `✓ Public download URL ready for "${meta.name}"${sizeMB ? ` (${sizeMB} MB)` : ""}.\nURL: ${publicUrl}\nPermission ID: ${perm.id} (revoke via Drive after processing)`,
-    artifact: { type: "drive_signed_url", title: meta.name, id: input.file_id, external_id: input.file_id, external_url: publicUrl, payload: { permission_id: perm.id, size_bytes: meta.size } },
+    result: `✓ Bridged "${meta.name}" (${sizeMB ? sizeMB + " MB" : "unknown size"}) Drive → Supabase Storage. Signed URL ready for Submagic (4h validity):\n${signedUrl}\n\nStored at: videos-source/${objectPath}`,
+    artifact: {
+      type: "drive_bridged_url",
+      title: meta.name,
+      id: input.file_id,
+      external_id: input.file_id,
+      external_url: signedUrl,
+      payload: { storage_path: objectPath, size_bytes: sizeBytes, source: "drive" },
+    },
   };
 }
 
