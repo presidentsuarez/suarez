@@ -58,19 +58,36 @@ Deno.serve(async (req) => {
       const clips = Array.isArray(sm.magicClips) && sm.magicClips.length > 0
         ? sm.magicClips
         : Array.isArray(sm.clips) ? sm.clips : [];
+      // Single-video case: no clips array but downloadUrl at top level (the /v1/projects endpoint)
+      const isSingleVideo = clips.length === 0 && sm.downloadUrl;
+
       const updatedPayload = {
         ...(artifact.payload || {}),
         completed_at: new Date().toISOString(),
-        provider_response: { status: sm.status, downloadUrl: sm.downloadUrl || null },
+        provider_response: { status: sm.status, downloadUrl: sm.downloadUrl || null, directUrl: sm.directUrl || null, previewUrl: sm.previewUrl || null },
         clips: clips.map((c: any) => ({
           id: c.id, title: c.title || c.name || null,
           downloadUrl: c.downloadUrl || c.url || null,
-          duration: c.duration || null, score: c.score || null,
+          duration: c.duration || null, score: c.viralityScores?.total || c.score || null,
           startTime: c.startTime || null, endTime: c.endTime || null,
         })),
+        ...(isSingleVideo ? {
+          single_video_url: sm.downloadUrl,
+          direct_url: sm.directUrl || null,
+          preview_url: sm.previewUrl || null,
+          submagic_description: sm.description || null,
+          duration_seconds: sm.videoMetaData?.duration || null,
+          width: sm.videoMetaData?.width || null,
+          height: sm.videoMetaData?.height || null,
+        } : {}),
       };
       updates.status = "completed";
-      updates.summary = clips.length > 0 ? `${clips.length} clip${clips.length !== 1 ? "s" : ""} ready (synced manually)` : "Render complete";
+      updates.summary = clips.length > 0
+        ? `${clips.length} clip${clips.length !== 1 ? "s" : ""} ready (synced manually)`
+        : isSingleVideo
+          ? "Polished video ready — click to download"
+          : "Render complete";
+      updates.external_url = sm.downloadUrl || null;
       updates.payload = updatedPayload;
 
       // Only create child clip artifacts if none already exist for this parent
@@ -120,6 +137,22 @@ Deno.serve(async (req) => {
 
     if (Object.keys(updates).length > 0) {
       await supabase.from("robot_artifacts").update(updates).eq("id", artifact.id);
+    }
+
+    // If we just marked completed, fire the mirror to Drive + Supabase backup.
+    // Fire-and-forget — don't block the response on it.
+    if (updates.status === "completed") {
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/mirror-render-output`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+          },
+          body: JSON.stringify({ artifact_id: artifact.id, user_id }),
+        });
+      } catch (e) { console.error("mirror trigger failed (non-fatal):", e); }
     }
 
     return new Response(JSON.stringify({

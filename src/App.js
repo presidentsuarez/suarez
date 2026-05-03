@@ -10370,11 +10370,50 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
           {clips.length === 0 && p.single_video_url && project.status === "completed" && (
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>🎞️ Polished Video</div>
-              <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", borderRadius: 12, padding: "20px 22px", marginBottom: 22, color: "#fff" }}>
+              <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", borderRadius: 12, padding: "20px 22px", marginBottom: 14, color: "#fff" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, fontFamily: "'Playfair Display', serif" }}>{project.title}</div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginBottom: 12 }}>Polished single video — captions, magic zooms, B-rolls. Submagic doesn't support multi-clip extraction for non-YouTube sources.</div>
-                <a href={p.single_video_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "8px 18px", borderRadius: 8, background: "#D4C08C", color: "#1C3820", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>⬇️ Download polished video</a>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginBottom: 12 }}>Polished single video — captions, magic zooms, B-rolls.</div>
+
+                {/* Inline preview — use durable URL if available, else Submagic */}
+                {(p.durable_video_url || p.single_video_url) && (
+                  <video controls preload="metadata" style={{ width: "100%", maxHeight: 360, borderRadius: 8, background: "#000", marginBottom: 12 }} src={p.durable_video_url || p.single_video_url}>
+                    Your browser does not support video playback.
+                  </video>
+                )}
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <a href={p.durable_video_url || p.single_video_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "8px 18px", borderRadius: 8, background: "#D4C08C", color: "#1C3820", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>⬇️ Download</a>
+                  {p.drive_view_url && (
+                    <a href={p.drive_view_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "8px 18px", borderRadius: 8, background: "rgba(255,255,255,0.1)", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", border: "1px solid rgba(255,255,255,0.2)" }}>📁 Open in Drive</a>
+                  )}
+                  {p.preview_url && (
+                    <a href={p.preview_url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "8px 18px", borderRadius: 8, background: "rgba(255,255,255,0.1)", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", border: "1px solid rgba(255,255,255,0.2)" }}>🎬 Submagic preview</a>
+                  )}
+                </div>
               </div>
+
+              {/* Mirror status */}
+              {p.mirror_status === "completed" ? (
+                <div style={{ fontSize: 10, color: "#16a34a", marginBottom: 22, display: "flex", alignItems: "center", gap: 6 }}>
+                  ✓ Backed up to Drive Output folder + Supabase Storage. URLs above are permanent.
+                </div>
+              ) : p.mirror_status === "failed" ? (
+                <div style={{ fontSize: 10, color: "#dc2626", marginBottom: 22 }}>
+                  ⚠️ Auto-backup to Drive failed. Submagic URL may expire — download the video soon.
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 22 }}>
+                  ⏳ Auto-backing up to Drive + Supabase…
+                </div>
+              )}
+
+              {/* AI-generated metadata Submagic gave us */}
+              {p.submagic_description && (
+                <div style={{ background: "#f8fafc", borderLeft: "3px solid #D4C08C", borderRadius: 8, padding: "10px 14px", marginBottom: 22 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Submagic suggested caption</div>
+                  <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{p.submagic_description}</div>
+                </div>
+              )}
             </>
           )}
 

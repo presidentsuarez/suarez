@@ -123,6 +123,19 @@ Deno.serve(async (req) => {
         },
       });
 
+      // Fire the mirror to Drive + Supabase backup. Fire-and-forget.
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/mirror-render-output`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+          },
+          body: JSON.stringify({ artifact_id: parent.id, user_id: parent.user_id }),
+        });
+      } catch (e) { console.error("mirror trigger failed (non-fatal):", e); }
+
       return new Response(JSON.stringify({ ok: true, processed: clips.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
