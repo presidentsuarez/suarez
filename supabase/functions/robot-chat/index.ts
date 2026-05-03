@@ -500,6 +500,42 @@ const TOOLS = [
       },
     },
   },
+  // ─── Performance ─
+  {
+    name: "top_performing_videos",
+    description: "Find the user's best-performing posted videos. Returns posts ranked by views (or likes/engagement) with platform, date, and current stats. Use for 'what's working' questions, choosing what to repurpose, or learning what hooks resonate.",
+    input_schema: {
+      type: "object",
+      properties: {
+        metric: { type: "string", enum: ["views", "likes", "engagement_rate"], description: "Default 'views'. Engagement_rate = (likes + comments) / views." },
+        platform: { type: "string", description: "Optional platform filter." },
+        days_back: { type: "number", description: "Look at posts within last N days. Default 90." },
+        limit: { type: "number", description: "Default 5, max 20." },
+      },
+    },
+  },
+  {
+    name: "get_post_performance",
+    description: "Get latest performance stats for a specific post — views, likes, comments. Optionally include time-series so we can see growth trajectory.",
+    input_schema: {
+      type: "object",
+      properties: {
+        post_id: { type: "string", description: "UUID of the content_posts row." },
+        include_history: { type: "boolean", description: "Default false. If true, returns all historical snapshots for trend analysis." },
+      },
+      required: ["post_id"],
+    },
+  },
+  {
+    name: "content_cadence_summary",
+    description: "Summarize posting cadence and aggregate performance over a window. Returns: posts per platform per week, total views/likes/comments, and a comparison of platform performance. Use for weekly briefings or 'how are we doing on social' questions.",
+    input_schema: {
+      type: "object",
+      properties: {
+        days_back: { type: "number", description: "Default 30, max 365." },
+      },
+    },
+  },
 ];
 
 // ─── TOOL EXECUTION ────────────────────────────────────────────────────────
@@ -534,6 +570,9 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "log_content_post": return await logContentPost(input, ctx);
       case "find_repost_risk": return await findRepostRisk(input, ctx);
       case "list_recent_posts": return await listRecentPosts(input, ctx);
+      case "top_performing_videos": return await topPerformingVideos(input, ctx);
+      case "get_post_performance": return await getPostPerformance(input, ctx);
+      case "content_cadence_summary": return await contentCadenceSummary(input, ctx);
       default: return { result: `Error: unknown tool '${name}'` };
     }
   } catch (err) {
@@ -1627,6 +1666,138 @@ async function listRecentPosts(input: any, ctx: any) {
     return `${platform.toUpperCase()} (${posts.length}):\n${lines.join("\n")}`;
   });
   return { result: `${data.length} post(s) in last ${daysBack} days:\n\n${sections.join("\n\n")}` };
+}
+
+async function topPerformingVideos(input: any, ctx: any) {
+  const metric = input.metric || "views";
+  const limit = Math.min(Number(input.limit) || 5, 20);
+  const daysBack = Math.min(Number(input.days_back) || 90, 365);
+  const sinceDate = new Date(Date.now() - daysBack * 86400000).toISOString();
+
+  // Pull posts in window with their latest performance via the view
+  let q = ctx.supabase.from("content_posts")
+    .select("id, platform, post_url, posted_at, source_transcript_id")
+    .eq("user_id", ctx.user_id)
+    .gte("posted_at", sinceDate);
+  if (input.platform) q = q.eq("platform", String(input.platform).toLowerCase());
+  const { data: posts } = await q;
+  if (!posts || posts.length === 0) return { result: `No posts in the last ${daysBack} days${input.platform ? ` on ${input.platform}` : ""}.` };
+
+  // Pull latest perf for each post
+  const postIds = posts.map((p: any) => p.id);
+  const { data: perfs } = await ctx.supabase.from("content_performance_latest")
+    .select("*").in("post_id", postIds);
+  const perfMap: any = {};
+  (perfs || []).forEach((p: any) => { perfMap[p.post_id] = p; });
+
+  // Pull transcript titles for context
+  const tIds = [...new Set(posts.map((p: any) => p.source_transcript_id).filter(Boolean))];
+  const { data: ts } = tIds.length ? await ctx.supabase.from("content_transcripts").select("id, title").in("id", tIds) : { data: [] };
+  const titleMap: any = {};
+  (ts || []).forEach((t: any) => { titleMap[t.id] = t.title; });
+
+  // Compute score per post
+  const scored = posts.map((p: any) => {
+    const perf = perfMap[p.id] || {};
+    const views = Number(perf.views || 0);
+    const likes = Number(perf.likes || 0);
+    const comments = Number(perf.comments || 0);
+    let score = 0;
+    if (metric === "views") score = views;
+    else if (metric === "likes") score = likes;
+    else if (metric === "engagement_rate") score = views > 0 ? (likes + comments) / views : 0;
+    return { post: p, perf, score, views, likes, comments, title: titleMap[p.source_transcript_id] || "(unlinked)" };
+  });
+
+  scored.sort((a: any, b: any) => b.score - a.score);
+  const top = scored.slice(0, limit).filter((s: any) => s.score > 0 || s.views > 0);
+
+  if (top.length === 0) return { result: `No performance data yet. Click "Sync now" in Studio after logging some posts to pull stats.` };
+
+  const lines = top.map((s: any, i: number) => {
+    const date = (s.post.posted_at || "").slice(0, 10);
+    const eng = s.views > 0 ? `${(((s.likes + s.comments) / s.views) * 100).toFixed(1)}%` : "—";
+    return `${i + 1}. [${s.post.platform}] "${s.title}" · ${date}\n   ${s.views.toLocaleString()} views · ${s.likes.toLocaleString()} likes · ${s.comments.toLocaleString()} comments · ${eng} eng${s.post.post_url ? `\n   ${s.post.post_url}` : ""}`;
+  });
+  return { result: `Top ${top.length} by ${metric} (last ${daysBack} days):\n\n${lines.join("\n\n")}` };
+}
+
+async function getPostPerformance(input: any, ctx: any) {
+  if (!input.post_id) return { result: "Error: post_id required." };
+  const { data: post } = await ctx.supabase.from("content_posts").select("*").eq("id", input.post_id).eq("user_id", ctx.user_id).maybeSingle();
+  if (!post) return { result: "Post not found." };
+
+  let title = "(unlinked)";
+  if (post.source_transcript_id) {
+    const { data: t } = await ctx.supabase.from("content_transcripts").select("title").eq("id", post.source_transcript_id).maybeSingle();
+    if (t) title = t.title;
+  }
+
+  const { data: latest } = await ctx.supabase.from("content_performance_latest").select("*").eq("post_id", input.post_id).maybeSingle();
+  if (!latest) return { result: `"${title}" — no performance data yet. Run sync to pull stats.` };
+
+  const eng = latest.views > 0 ? (((Number(latest.likes || 0) + Number(latest.comments || 0)) / Number(latest.views)) * 100).toFixed(1) : "—";
+  let body = `"${title}" on ${post.platform} (posted ${(post.posted_at || "").slice(0, 10)})\n\nLatest snapshot (${(latest.synced_at || "").slice(0, 16).replace("T", " ")}):\n  ${Number(latest.views || 0).toLocaleString()} views\n  ${Number(latest.likes || 0).toLocaleString()} likes\n  ${Number(latest.comments || 0).toLocaleString()} comments\n  ${eng}% engagement rate`;
+
+  if (input.include_history) {
+    const { data: history } = await ctx.supabase.from("content_performance")
+      .select("synced_at, views, likes, comments")
+      .eq("post_id", input.post_id)
+      .order("synced_at", { ascending: true });
+    if (history && history.length > 1) {
+      body += `\n\nGrowth (${history.length} snapshots):`;
+      for (const h of history) {
+        body += `\n  ${(h.synced_at || "").slice(0, 10)} — ${Number(h.views || 0).toLocaleString()} views, ${Number(h.likes || 0).toLocaleString()} likes`;
+      }
+    }
+  }
+  if (post.post_url) body += `\n\nLink: ${post.post_url}`;
+  return { result: body };
+}
+
+async function contentCadenceSummary(input: any, ctx: any) {
+  const daysBack = Math.min(Number(input.days_back) || 30, 365);
+  const sinceDate = new Date(Date.now() - daysBack * 86400000).toISOString();
+
+  const { data: posts } = await ctx.supabase.from("content_posts")
+    .select("id, platform, posted_at")
+    .eq("user_id", ctx.user_id)
+    .gte("posted_at", sinceDate);
+  if (!posts || posts.length === 0) return { result: `No posts in the last ${daysBack} days.` };
+
+  // Latest perf for all posts
+  const { data: perfs } = await ctx.supabase.from("content_performance_latest")
+    .select("post_id, views, likes, comments")
+    .in("post_id", posts.map((p: any) => p.id));
+  const perfMap: any = {};
+  (perfs || []).forEach((p: any) => { perfMap[p.post_id] = p; });
+
+  // Aggregate by platform
+  const byPlatform: Record<string, any> = {};
+  for (const p of posts) {
+    if (!byPlatform[p.platform]) byPlatform[p.platform] = { count: 0, views: 0, likes: 0, comments: 0 };
+    byPlatform[p.platform].count += 1;
+    const perf = perfMap[p.id];
+    if (perf) {
+      byPlatform[p.platform].views += Number(perf.views || 0);
+      byPlatform[p.platform].likes += Number(perf.likes || 0);
+      byPlatform[p.platform].comments += Number(perf.comments || 0);
+    }
+  }
+
+  const totalPosts = posts.length;
+  const postsPerWeek = (totalPosts / daysBack) * 7;
+  const totalViews = Object.values(byPlatform).reduce((s: number, v: any) => s + v.views, 0);
+  const totalLikes = Object.values(byPlatform).reduce((s: number, v: any) => s + v.likes, 0);
+  const totalComments = Object.values(byPlatform).reduce((s: number, v: any) => s + v.comments, 0);
+
+  const platformLines = Object.entries(byPlatform)
+    .sort(([, a]: any, [, b]: any) => b.views - a.views)
+    .map(([plat, v]: any) => `  ${plat}: ${v.count} post${v.count !== 1 ? "s" : ""} · ${v.views.toLocaleString()} views · ${v.likes.toLocaleString()} likes`);
+
+  return {
+    result: `Cadence summary — last ${daysBack} days:\n\nTotals:\n  ${totalPosts} posts (${postsPerWeek.toFixed(1)}/week)\n  ${totalViews.toLocaleString()} views\n  ${totalLikes.toLocaleString()} likes\n  ${totalComments.toLocaleString()} comments\n\nBy platform:\n${platformLines.join("\n")}`,
+  };
 }
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────

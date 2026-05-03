@@ -10833,28 +10833,77 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
   const [posts, setPosts] = useState([]);
+  const [perfMap, setPerfMap] = useState({}); // post_id -> latest perf row
   const [showPostModal, setShowPostModal] = useState(false);
+  const [syncingPostId, setSyncingPostId] = useState(null);
 
   // Load posts linked to this artifact (or any of its child clips)
   React.useEffect(() => {
     if (!session) return;
     const allArtifactIds = [project.id, ...clips.map((c) => c.id)];
-    supabase.from("content_posts")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .in("source_artifact_id", allArtifactIds)
-      .order("posted_at", { ascending: false })
-      .then(({ data }) => setPosts(data || []));
+    (async () => {
+      const { data: postRows } = await supabase.from("content_posts")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .in("source_artifact_id", allArtifactIds)
+        .order("posted_at", { ascending: false });
+      setPosts(postRows || []);
+      // Pull latest perf for each post
+      if (postRows && postRows.length > 0) {
+        const { data: perfs } = await supabase.from("content_performance_latest")
+          .select("*").in("post_id", postRows.map((p) => p.id));
+        const m = {};
+        (perfs || []).forEach((p) => { m[p.post_id] = p; });
+        setPerfMap(m);
+      } else {
+        setPerfMap({});
+      }
+    })();
   }, [project.id, clips, session]);
 
   const reloadPosts = async () => {
     const allArtifactIds = [project.id, ...clips.map((c) => c.id)];
-    const { data } = await supabase.from("content_posts")
+    const { data: postRows } = await supabase.from("content_posts")
       .select("*")
       .eq("user_id", session.user.id)
       .in("source_artifact_id", allArtifactIds)
       .order("posted_at", { ascending: false });
-    setPosts(data || []);
+    setPosts(postRows || []);
+    if (postRows && postRows.length > 0) {
+      const { data: perfs } = await supabase.from("content_performance_latest")
+        .select("*").in("post_id", postRows.map((p) => p.id));
+      const m = {};
+      (perfs || []).forEach((p) => { m[p.post_id] = p; });
+      setPerfMap(m);
+    }
+  };
+
+  const syncPost = async (post) => {
+    if (post.platform !== "youtube") {
+      alert(`${post.platform} sync isn't built yet — only YouTube has a working analytics integration so far.`);
+      return;
+    }
+    setSyncingPostId(post.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("youtube-sync", {
+        body: { user_id: session.user.id, post_id: post.id },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        if (String(data.error).includes("not connected")) {
+          if (window.confirm("YouTube isn't connected yet. Open the auth page now?")) {
+            window.open(`https://bkezvsjhaepgvsvfywhk.supabase.co/functions/v1/youtube-auth?user_id=${session.user.id}`, "_blank");
+          }
+          return;
+        }
+        throw new Error(data.error);
+      }
+      await reloadPosts();
+    } catch (err) {
+      alert(`Sync failed: ${err.message || String(err)}`);
+    } finally {
+      setSyncingPostId(null);
+    }
   };
 
   const syncStatus = async () => {
@@ -11019,15 +11068,33 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
                   {posts.map((post) => {
                     const platformIcons = { instagram: "📷", youtube: "▶️", tiktok: "🎵", linkedin: "💼", twitter: "🐦", facebook: "👤" };
                     const icon = platformIcons[post.platform] || "📤";
+                    const perf = perfMap[post.id];
+                    const supportsSync = post.platform === "youtube";
                     return (
-                      <div key={post.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
-                        <span style={{ fontSize: 16 }}>{icon}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", textTransform: "capitalize" }}>{post.platform} {post.status === "scheduled" ? "(scheduled)" : ""}</div>
-                          <div style={{ fontSize: 10, color: "#16a34a", fontFamily: "'DM Mono', monospace" }}>{(post.posted_at || "").slice(0, 16).replace("T", " ")}</div>
+                      <div key={post.id} style={{ padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 16 }}>{icon}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", textTransform: "capitalize" }}>{post.platform} {post.status === "scheduled" ? "(scheduled)" : ""}</div>
+                            <div style={{ fontSize: 10, color: "#16a34a", fontFamily: "'DM Mono', monospace" }}>{(post.posted_at || "").slice(0, 16).replace("T", " ")}</div>
+                          </div>
+                          {supportsSync && (
+                            <button onClick={(e) => { e.stopPropagation(); syncPost(post); }} disabled={syncingPostId === post.id} title="Sync stats from YouTube" style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 5, border: "1px solid #16a34a", background: "#fff", color: "#16a34a", cursor: syncingPostId === post.id ? "default" : "pointer" }}>{syncingPostId === post.id ? "..." : "↻"}</button>
+                          )}
+                          {post.post_url && <a href={post.post_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none" }}>↗</a>}
+                          <button onClick={async (e) => { e.stopPropagation(); if (window.confirm("Remove this post log?")) { await supabase.from("content_posts").delete().eq("id", post.id); await reloadPosts(); } }} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 14, padding: 0 }}>×</button>
                         </div>
-                        {post.post_url && <a href={post.post_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none" }}>↗</a>}
-                        <button onClick={async (e) => { e.stopPropagation(); if (window.confirm("Remove this post log?")) { await supabase.from("content_posts").delete().eq("id", post.id); await reloadPosts(); } }} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 14, padding: 0 }}>×</button>
+                        {perf && (
+                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #bbf7d0", display: "flex", gap: 14, fontSize: 11, color: "#166534", fontFamily: "'DM Mono', monospace" }}>
+                            <span><strong>{Number(perf.views || 0).toLocaleString()}</strong> views</span>
+                            <span><strong>{Number(perf.likes || 0).toLocaleString()}</strong> likes</span>
+                            <span><strong>{Number(perf.comments || 0).toLocaleString()}</strong> comments</span>
+                            <span style={{ marginLeft: "auto", color: "#16a34a", opacity: 0.7, fontSize: 9 }}>synced {(perf.synced_at || "").slice(0, 10)}</span>
+                          </div>
+                        )}
+                        {!perf && supportsSync && (
+                          <div style={{ marginTop: 6, fontSize: 10, color: "#64748b", fontStyle: "italic" }}>No stats yet — click ↻ to fetch from YouTube.</div>
+                        )}
                       </div>
                     );
                   })}
