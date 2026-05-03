@@ -453,6 +453,53 @@ const TOOLS = [
       },
     },
   },
+  // ─── Posting & dedup ─
+  {
+    name: "log_content_post",
+    description: "Log that a video has been posted to a platform. Use when the user reports posting something, OR proactively after they confirm intent to post. Required to make dedup tools work over time. Status defaults to 'posted'; can be 'scheduled' or 'draft'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        artifact_id: { type: "string", description: "UUID of the video_render or video_clip artifact that was posted." },
+        transcript_id: { type: "string", description: "Optional UUID of the content_transcripts row (for cleaner dedup linkage)." },
+        platform: { type: "string", description: "Platform name. Common: 'instagram', 'youtube', 'tiktok', 'linkedin', 'twitter', 'facebook'." },
+        platform_post_id: { type: "string", description: "Optional ID/slug from the platform (Instagram media ID, YouTube video ID, etc)." },
+        post_url: { type: "string", description: "Optional link to the live post." },
+        caption_used: { type: "string", description: "The caption you actually posted (may differ from suggested caption)." },
+        hashtags_used: { type: "array", items: { type: "string" }, description: "Hashtags actually used (without #)." },
+        status: { type: "string", enum: ["posted", "scheduled", "draft"], description: "Default 'posted'." },
+        posted_at: { type: "string", description: "ISO timestamp. Default: now." },
+        scheduled_for: { type: "string", description: "ISO timestamp if status is 'scheduled'." },
+        notes: { type: "string", description: "Optional context — performance notes, A/B variant, etc." },
+      },
+      required: ["platform"],
+    },
+  },
+  {
+    name: "find_repost_risk",
+    description: "Check whether a topic or video has already been posted recently. Use BEFORE drafting new content to avoid repetition. Searches recent posts (last 90 days by default) and matches by topic keywords, transcript similarity, or specific artifact ID. Returns matching past posts with platform/date.",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic_keywords: { type: "string", description: "Keywords describing the topic of the new content. Examples: 'Tampa multifamily underwriting', 'REAP demo', 'cap rate analysis'." },
+        artifact_id: { type: "string", description: "Optional: check if THIS specific video has been posted (anywhere)." },
+        platform: { type: "string", description: "Optional: limit to one platform (e.g. only check Instagram repost risk)." },
+        days_back: { type: "number", description: "Look back N days. Default 90." },
+      },
+    },
+  },
+  {
+    name: "list_recent_posts",
+    description: "List recently posted content across all platforms. Use for 'what have we posted this week/month' questions, content audit, or showing the user their posting cadence.",
+    input_schema: {
+      type: "object",
+      properties: {
+        days_back: { type: "number", description: "Default 30, max 365." },
+        platform: { type: "string", description: "Optional platform filter." },
+        limit: { type: "number", description: "Default 25, max 100." },
+      },
+    },
+  },
 ];
 
 // ─── TOOL EXECUTION ────────────────────────────────────────────────────────
@@ -484,6 +531,9 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "search_content_library": return await searchContentLibrary(input, ctx);
       case "get_transcript": return await getTranscript(input, ctx);
       case "list_content_library": return await listContentLibrary(input, ctx);
+      case "log_content_post": return await logContentPost(input, ctx);
+      case "find_repost_risk": return await findRepostRisk(input, ctx);
+      case "list_recent_posts": return await listRecentPosts(input, ctx);
       default: return { result: `Error: unknown tool '${name}'` };
     }
   } catch (err) {
@@ -1429,6 +1479,154 @@ async function listContentLibrary(input: any, ctx: any) {
     return `• [${r.id}] "${r.title}" · ${date} · ${dur}\n   ${r.summary || "(no summary yet)"}\n   Topics: ${topics}`;
   });
   return { result: `${results.length} video${results.length !== 1 ? "s" : ""} in your content library (newest first):\n\n${lines.join("\n\n")}` };
+}
+
+// ─── POSTING & DEDUP ───────────────────────────────────────────────────────
+async function logContentPost(input: any, ctx: any) {
+  const platform = (input.platform || "").toLowerCase().trim();
+  if (!platform) return { result: "Error: platform required." };
+
+  const row: any = {
+    user_id: ctx.user_id,
+    source_artifact_id: input.artifact_id || null,
+    source_transcript_id: input.transcript_id || null,
+    platform,
+    platform_post_id: input.platform_post_id || null,
+    post_url: input.post_url || null,
+    caption_used: input.caption_used || null,
+    hashtags_used: Array.isArray(input.hashtags_used) ? input.hashtags_used : [],
+    status: input.status || "posted",
+    posted_at: input.posted_at || new Date().toISOString(),
+    scheduled_for: input.scheduled_for || null,
+    notes: input.notes || null,
+  };
+
+  // If an artifact_id was provided but no transcript_id, look up the transcript automatically
+  if (row.source_artifact_id && !row.source_transcript_id) {
+    const { data: t } = await ctx.supabase.from("content_transcripts")
+      .select("id").eq("source_artifact_id", row.source_artifact_id).maybeSingle();
+    if (t) row.source_transcript_id = t.id;
+  }
+
+  const { data, error } = await ctx.supabase.from("content_posts").insert(row).select().single();
+  if (error) return { result: `Error logging post: ${error.message}` };
+
+  return {
+    result: `✓ Logged: ${platform} ${row.status === "posted" ? "post" : row.status} on ${(row.posted_at || "").slice(0, 10)}${row.post_url ? ` — ${row.post_url}` : ""}.`,
+    artifact: { type: "content_post", title: `${platform} ${row.status}`, id: data.id },
+  };
+}
+
+async function findRepostRisk(input: any, ctx: any) {
+  const daysBack = Math.min(Number(input.days_back) || 90, 365);
+  const sinceDate = new Date(Date.now() - daysBack * 86400000).toISOString();
+
+  // If specific artifact_id given, check direct match first
+  if (input.artifact_id) {
+    let q = ctx.supabase.from("content_posts")
+      .select("id, platform, posted_at, post_url, caption_used")
+      .eq("user_id", ctx.user_id)
+      .eq("source_artifact_id", input.artifact_id)
+      .gte("posted_at", sinceDate);
+    if (input.platform) q = q.eq("platform", String(input.platform).toLowerCase());
+    const { data, error } = await q.order("posted_at", { ascending: false });
+    if (error) return { result: `Error: ${error.message}` };
+    if (!data || data.length === 0) return { result: `✓ Safe to post — this specific video has not been posted${input.platform ? ` to ${input.platform}` : ""} in the last ${daysBack} days.` };
+    return {
+      result: `⚠️ REPOST RISK: this video was already posted ${data.length} time(s) in the last ${daysBack} days:\n${data.map((p: any) => `  • ${p.platform} on ${(p.posted_at || "").slice(0, 10)}${p.post_url ? ` — ${p.post_url}` : ""}`).join("\n")}`,
+    };
+  }
+
+  // Topic-based search: look at content_transcripts joined to content_posts
+  if (!input.topic_keywords) return { result: "Error: provide topic_keywords or artifact_id." };
+
+  const terms = String(input.topic_keywords).toLowerCase().split(/\s+/).filter((t) => t.length >= 3);
+  if (terms.length === 0) terms.push(String(input.topic_keywords).toLowerCase());
+
+  // Find transcripts matching the topic
+  let tq = ctx.supabase.from("content_transcripts")
+    .select("id, title, summary, key_topics")
+    .eq("user_id", ctx.user_id);
+  const orParts: string[] = [];
+  for (const t of terms) {
+    const safe = t.replace(/[%,()]/g, "");
+    if (!safe) continue;
+    orParts.push(`title.ilike.%${safe}%`);
+    orParts.push(`summary.ilike.%${safe}%`);
+    orParts.push(`full_transcript.ilike.%${safe}%`);
+  }
+  if (orParts.length) tq = tq.or(orParts.join(","));
+  const { data: tData } = await tq;
+
+  if (!tData || tData.length === 0) {
+    return { result: `✓ Safe to post — no past videos in your library cover "${input.topic_keywords}".` };
+  }
+
+  // Find posts linked to those transcripts
+  const transcriptIds = tData.map((t: any) => t.id);
+  let pq = ctx.supabase.from("content_posts")
+    .select("id, platform, posted_at, post_url, source_transcript_id")
+    .eq("user_id", ctx.user_id)
+    .in("source_transcript_id", transcriptIds)
+    .gte("posted_at", sinceDate);
+  if (input.platform) pq = pq.eq("platform", String(input.platform).toLowerCase());
+  const { data: pData } = await pq.order("posted_at", { ascending: false });
+
+  if (!pData || pData.length === 0) {
+    const titles = tData.slice(0, 3).map((t: any) => `"${t.title}"`).join(", ");
+    return { result: `✓ Safe to post — found ${tData.length} related video(s) in library (${titles}) but none have been posted${input.platform ? ` to ${input.platform}` : ""} in the last ${daysBack} days.` };
+  }
+
+  const transcriptMap: any = {};
+  tData.forEach((t: any) => { transcriptMap[t.id] = t; });
+  const lines = pData.map((p: any) => {
+    const t = transcriptMap[p.source_transcript_id];
+    return `  • ${p.platform} on ${(p.posted_at || "").slice(0, 10)} — "${t?.title || "?"}"${p.post_url ? ` (${p.post_url})` : ""}`;
+  });
+  return {
+    result: `⚠️ REPOST RISK: ${pData.length} related post(s) in the last ${daysBack} days covering similar topics:\n${lines.join("\n")}\n\nConsider a different angle or wait before reposting.`,
+  };
+}
+
+async function listRecentPosts(input: any, ctx: any) {
+  const daysBack = Math.min(Number(input.days_back) || 30, 365);
+  const limit = Math.min(Number(input.limit) || 25, 100);
+  const sinceDate = new Date(Date.now() - daysBack * 86400000).toISOString();
+
+  let q = ctx.supabase.from("content_posts")
+    .select("id, platform, posted_at, post_url, caption_used, source_transcript_id, status, source_artifact_id")
+    .eq("user_id", ctx.user_id)
+    .gte("posted_at", sinceDate)
+    .order("posted_at", { ascending: false })
+    .limit(limit);
+  if (input.platform) q = q.eq("platform", String(input.platform).toLowerCase());
+  const { data, error } = await q;
+  if (error) return { result: `Error: ${error.message}` };
+  if (!data || data.length === 0) return { result: `No posts logged in the last ${daysBack} days${input.platform ? ` for ${input.platform}` : ""}.` };
+
+  // Pull transcript titles for context
+  const transcriptIds = [...new Set(data.map((p: any) => p.source_transcript_id).filter(Boolean))];
+  const { data: tData } = transcriptIds.length
+    ? await ctx.supabase.from("content_transcripts").select("id, title").in("id", transcriptIds)
+    : { data: [] };
+  const titleMap: any = {};
+  (tData || []).forEach((t: any) => { titleMap[t.id] = t.title; });
+
+  // Group by platform for readability
+  const byPlatform: Record<string, any[]> = {};
+  for (const p of data) {
+    if (!byPlatform[p.platform]) byPlatform[p.platform] = [];
+    byPlatform[p.platform].push(p);
+  }
+
+  const sections = Object.entries(byPlatform).map(([platform, posts]) => {
+    const lines = posts.map((p: any) => {
+      const title = titleMap[p.source_transcript_id] || "(unlinked post)";
+      return `  • ${(p.posted_at || "").slice(0, 10)} — "${title}"${p.post_url ? ` ${p.post_url}` : ""}`;
+    });
+    return `${platform.toUpperCase()} (${posts.length}):\n${lines.join("\n")}`;
+  });
+  return { result: `${data.length} post(s) in last ${daysBack} days:\n\n${sections.join("\n\n")}` };
 }
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────

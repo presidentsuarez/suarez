@@ -10829,8 +10829,33 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
   const p = project.payload || {};
   const isProcessing = project.status === "queued" || project.status === "processing";
   const isFailed = project.status === "failed";
+  const isCompleted = project.status === "completed";
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const [posts, setPosts] = useState([]);
+  const [showPostModal, setShowPostModal] = useState(false);
+
+  // Load posts linked to this artifact (or any of its child clips)
+  React.useEffect(() => {
+    if (!session) return;
+    const allArtifactIds = [project.id, ...clips.map((c) => c.id)];
+    supabase.from("content_posts")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .in("source_artifact_id", allArtifactIds)
+      .order("posted_at", { ascending: false })
+      .then(({ data }) => setPosts(data || []));
+  }, [project.id, clips, session]);
+
+  const reloadPosts = async () => {
+    const allArtifactIds = [project.id, ...clips.map((c) => c.id)];
+    const { data } = await supabase.from("content_posts")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .in("source_artifact_id", allArtifactIds)
+      .order("posted_at", { ascending: false });
+    setPosts(data || []);
+  };
 
   const syncStatus = async () => {
     if (!session) return;
@@ -10978,6 +11003,39 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
             </>
           )}
 
+          {/* Posts log — where this video has been posted */}
+          {isCompleted && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em" }}>📤 Posted to ({posts.length})</div>
+                <button onClick={() => setShowPostModal(true)} style={{ fontSize: 10, fontWeight: 700, padding: "5px 10px", borderRadius: 6, border: "1px solid #1C3820", background: "#fff", color: "#1C3820", cursor: "pointer" }}>+ Mark as posted</button>
+              </div>
+              {posts.length === 0 ? (
+                <div style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 14px", fontSize: 12, color: "#94a3b8", textAlign: "center", fontStyle: "italic" }}>
+                  Not posted yet. Click "Mark as posted" after sharing to log it for dedup tracking.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {posts.map((post) => {
+                    const platformIcons = { instagram: "📷", youtube: "▶️", tiktok: "🎵", linkedin: "💼", twitter: "🐦", facebook: "👤" };
+                    const icon = platformIcons[post.platform] || "📤";
+                    return (
+                      <div key={post.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                        <span style={{ fontSize: 16 }}>{icon}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", textTransform: "capitalize" }}>{post.platform} {post.status === "scheduled" ? "(scheduled)" : ""}</div>
+                          <div style={{ fontSize: 10, color: "#16a34a", fontFamily: "'DM Mono', monospace" }}>{(post.posted_at || "").slice(0, 16).replace("T", " ")}</div>
+                        </div>
+                        {post.post_url && <a href={post.post_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textDecoration: "none" }}>↗</a>}
+                        <button onClick={async (e) => { e.stopPropagation(); if (window.confirm("Remove this post log?")) { await supabase.from("content_posts").delete().eq("id", post.id); await reloadPosts(); } }} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 14, padding: 0 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Project metadata */}
           <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Details</div>
           <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 16px", fontSize: 12, color: "#475569", lineHeight: 1.7 }}>
@@ -10993,10 +11051,112 @@ function StudioProjectModal({ project, clips, isMobile, session, onClose, onDele
           </div>
         </div>
 
+        {showPostModal && <MarkAsPostedModal artifactId={project.id} transcriptDefaultCaption={null} session={session} isMobile={isMobile} onClose={() => setShowPostModal(false)} onLogged={async () => { setShowPostModal(false); await reloadPosts(); }} />}
+
         {/* Footer */}
         <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
           <button onClick={onDelete} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
           <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* — Mark As Posted Modal — quick log of where a video was posted — */
+function MarkAsPostedModal({ artifactId, transcriptDefaultCaption, session, isMobile, onClose, onLogged }) {
+  const [form, setForm] = useState({
+    platform: "instagram",
+    post_url: "",
+    caption_used: transcriptDefaultCaption || "",
+    posted_at: new Date().toISOString().slice(0, 16),
+    notes: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const platforms = [
+    { id: "instagram", label: "📷 Instagram" },
+    { id: "youtube", label: "▶️ YouTube" },
+    { id: "tiktok", label: "🎵 TikTok" },
+    { id: "linkedin", label: "💼 LinkedIn" },
+    { id: "twitter", label: "🐦 Twitter / X" },
+    { id: "facebook", label: "👤 Facebook" },
+  ];
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+
+  const submit = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const { data: t } = await supabase.from("content_transcripts").select("id").eq("source_artifact_id", artifactId).maybeSingle();
+      const { error: insErr } = await supabase.from("content_posts").insert({
+        user_id: session.user.id,
+        source_artifact_id: artifactId,
+        source_transcript_id: t?.id || null,
+        platform: form.platform,
+        post_url: form.post_url || null,
+        caption_used: form.caption_used || null,
+        posted_at: form.posted_at ? new Date(form.posted_at).toISOString() : new Date().toISOString(),
+        status: "posted",
+        notes: form.notes || null,
+      });
+      if (insErr) throw insErr;
+      await onLogged?.();
+    } catch (err) {
+      setError(`Save failed: ${err.message || String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2200, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 520, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "18px 22px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 28, height: 28, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 2 }}>📤 Log Post</div>
+          <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>Mark this video as posted</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Platform</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {platforms.map((pl) => (
+                <button key={pl.id} onClick={() => setForm({ ...form, platform: pl.id })} style={{ padding: "10px 12px", background: form.platform === pl.id ? "#1C3820" : "#fff", color: form.platform === pl.id ? "#fff" : "#0f172a", border: form.platform === pl.id ? "1px solid #1C3820" : "1px solid #e2e8f0", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600, textAlign: "left" }}>{pl.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Post URL (optional)</label>
+            <input value={form.post_url} onChange={(e) => setForm({ ...form, post_url: e.target.value })} placeholder="https://..." style={inputStyle} />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Posted at</label>
+            <input type="datetime-local" value={form.posted_at} onChange={(e) => setForm({ ...form, posted_at: e.target.value })} style={inputStyle} />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Caption used (optional)</label>
+            <textarea value={form.caption_used} onChange={(e) => setForm({ ...form, caption_used: e.target.value })} rows={3} placeholder="Paste the caption you actually used. Helps train future drafts." style={{ ...inputStyle, resize: "vertical" }} />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes (optional)</label>
+            <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="A/B variant, time of day, audience target..." style={inputStyle} />
+          </div>
+
+          {error && <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#dc2626", fontSize: 12, marginBottom: 8 }}>⚠️ {error}</div>}
+        </div>
+
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
+          <button onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+          <button onClick={submit} disabled={saving} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: saving ? "#cbd5e1" : "#D4C08C", color: "#1C3820", fontSize: 12, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>{saving ? "Saving…" : "📤 Log it"}</button>
         </div>
       </div>
     </div>
