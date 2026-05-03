@@ -180,6 +180,70 @@ const TOOLS = [
       required: ["to", "subject", "body"],
     },
   },
+  // ─ Inbox Triage (read-only operations: search/read/categorize, never sends) ─
+  {
+    name: "list_inbox_threads",
+    description: "List recent Gmail threads. Use to scan recent inbox activity. Returns subject, sender, snippet, received date, and whether each is already triaged. By default returns 25 most recent threads from the inbox (excludes archived). Use this BEFORE triaging to know what needs categorization.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Optional Gmail search query, e.g. 'is:unread', 'from:investor.com', 'newer_than:7d', 'subject:proposal'." },
+        limit: { type: "number", description: "Max threads (default 25, max 100)." },
+        only_untriaged: { type: "boolean", description: "If true, only returns threads not yet triaged. Useful for catch-up sweeps." },
+      },
+    },
+  },
+  {
+    name: "get_inbox_thread",
+    description: "Fetch the full message bodies of a specific Gmail thread. Use after list_inbox_threads when you need to read what a thread actually says before categorizing or drafting a response. Returns all messages in the thread with headers and bodies.",
+    input_schema: {
+      type: "object",
+      properties: {
+        thread_id: { type: "string", description: "Gmail thread ID from list_inbox_threads." },
+      },
+      required: ["thread_id"],
+    },
+  },
+  {
+    name: "list_inbox_categories",
+    description: "List the user's inbox category taxonomy (Investor, Client, Deal, Team, Vendor, Personal, Newsletter, etc.) so you know what buckets are available before calling triage_inbox_thread. Always call this BEFORE triaging on a fresh conversation.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "triage_inbox_thread",
+    description: "Save a triage classification for a Gmail thread: which category it belongs to, how urgent, whether it needs a response, and short reasoning. This is annotation only — nothing is sent or modified in Gmail. Idempotent: calling it again on the same thread updates the existing triage row.",
+    input_schema: {
+      type: "object",
+      properties: {
+        thread_id: { type: "string", description: "Gmail thread ID." },
+        category: { type: "string", description: "Category name (must match one from list_inbox_categories — e.g. 'Investor', 'Newsletter', 'Vendor'). If you're not sure, use 'Uncategorized'." },
+        priority: { type: "string", enum: ["urgent", "high", "normal", "low"], description: "How urgent. Default 'normal'." },
+        needs_response: { type: "boolean", description: "True if this thread reasonably needs a reply from Javier." },
+        is_actionable: { type: "boolean", description: "True if this requires action beyond just reading (signing, scheduling, deciding)." },
+        suggested_action: { type: "string", description: "Optional 1-line suggested next action — e.g. 'Reply with availability', 'Forward to legal', 'Archive'." },
+        reasoning: { type: "string", description: "1-2 sentences explaining why you classified this way. This is shown to the user." },
+      },
+      required: ["thread_id", "category", "reasoning"],
+    },
+  },
+  {
+    name: "apply_gmail_label",
+    description: "Apply or remove a Gmail label on a thread. Use to actually move things into Gmail labels Javier set up (e.g. 'Investor', 'Newsletter'). Common label IDs: 'INBOX' (remove to archive), 'STARRED', 'IMPORTANT', 'UNREAD' (remove to mark read), 'TRASH'. Custom labels need to be looked up via list_gmail_labels first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        thread_id: { type: "string" },
+        add_label_ids: { type: "array", items: { type: "string" }, description: "Labels to add." },
+        remove_label_ids: { type: "array", items: { type: "string" }, description: "Labels to remove. Use ['INBOX'] to archive a thread, ['UNREAD'] to mark as read." },
+      },
+      required: ["thread_id"],
+    },
+  },
+  {
+    name: "list_gmail_labels",
+    description: "List all Gmail labels (system + user-created) so you know what's available before calling apply_gmail_label. Returns name and id for each.",
+    input_schema: { type: "object", properties: {} },
+  },
   // ─ Quo ─
   {
     name: "draft_quo_text",
@@ -546,6 +610,12 @@ async function executeTool(name: string, input: any, ctx: any): Promise<{ result
       case "get_exemplars": return await getExemplars(input, ctx);
       case "create_cc_email_draft": return await createCCDraft(input, ctx);
       case "create_gmail_draft": return await createGmailDraft(input, ctx);
+      case "list_inbox_threads": return await listInboxThreads(input, ctx);
+      case "get_inbox_thread": return await getInboxThread(input, ctx);
+      case "list_inbox_categories": return await listInboxCategories(input, ctx);
+      case "triage_inbox_thread": return await triageInboxThread(input, ctx);
+      case "apply_gmail_label": return await applyGmailLabel(input, ctx);
+      case "list_gmail_labels": return await listGmailLabels(input, ctx);
       case "draft_quo_text": return await draftQuoText(input, ctx);
       case "assign_task": return await assignTask(input, ctx);
       case "query_contacts": return await queryContacts(input, ctx);
@@ -1405,6 +1475,261 @@ async function moveDriveFile(input: any, ctx: any) {
   if (!res.ok) return { result: `Error moving file: ${JSON.stringify(data).slice(0, 200)}` };
 
   return { result: `✓ Moved "${meta.name}" to destination folder.` };
+}
+
+// ─── INBOX TRIAGE (Gmail read + categorize, never sends) ──────────────────
+// All 6 of these tools use the existing Gmail OAuth token (which has full
+// mail.google.com scope) and the inbox_triage / inbox_categories tables.
+
+function decodeBase64Url(b64: string): string {
+  try {
+    const std = b64.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = std + "=".repeat((4 - std.length % 4) % 4);
+    const raw = atob(padded);
+    return decodeURIComponent(escape(raw));
+  } catch (_) {
+    return "";
+  }
+}
+
+// Walk a Gmail payload tree and pull out the best plain-text body we can find.
+function extractPlainBody(payload: any): string {
+  if (!payload) return "";
+  if (payload.body?.data && payload.mimeType?.startsWith("text/plain")) {
+    return decodeBase64Url(payload.body.data);
+  }
+  if (Array.isArray(payload.parts)) {
+    // Prefer text/plain first
+    for (const p of payload.parts) {
+      if (p.mimeType === "text/plain" && p.body?.data) return decodeBase64Url(p.body.data);
+    }
+    // Then recurse
+    for (const p of payload.parts) {
+      const r = extractPlainBody(p);
+      if (r) return r;
+    }
+  }
+  return "";
+}
+
+function extractHeader(headers: any[], name: string): string {
+  const h = (headers || []).find((x: any) => (x.name || "").toLowerCase() === name.toLowerCase());
+  return h?.value || "";
+}
+
+function parseSender(from: string): { name: string; email: string } {
+  // "Jane Doe <jane@example.com>" or "jane@example.com"
+  const m = from.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/);
+  if (m) return { name: m[1].trim(), email: m[2].trim() };
+  return { name: "", email: from.trim() };
+}
+
+async function listInboxThreads(input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Gmail not connected." };
+  const limit = Math.min(Number(input.limit) || 25, 100);
+  const q = input.query || "in:inbox";
+
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=${limit}&q=${encodeURIComponent(q)}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json();
+  if (!res.ok) return { result: `Error from Gmail: ${res.status} — ${JSON.stringify(data).slice(0, 300)}` };
+  if (!data.threads || data.threads.length === 0) return { result: `No threads matching "${q}".` };
+
+  // Fetch existing triage rows for these thread ids (to mark which are already triaged)
+  const threadIds = data.threads.map((t: any) => t.id);
+  const { data: existingTriage } = await ctx.supabase.from("inbox_triage")
+    .select("gmail_thread_id, category_id, priority, user_marked_handled")
+    .eq("user_id", ctx.user_id).in("gmail_thread_id", threadIds);
+  const triagedMap: Record<string, any> = {};
+  (existingTriage || []).forEach((t: any) => { triagedMap[t.gmail_thread_id] = t; });
+
+  // Pull category names so we can show them in the listing
+  const catIds = [...new Set((existingTriage || []).map((t: any) => t.category_id).filter(Boolean))];
+  const { data: cats } = catIds.length ? await ctx.supabase.from("inbox_categories").select("id, name").in("id", catIds) : { data: [] };
+  const catMap: Record<string, string> = {};
+  (cats || []).forEach((c: any) => { catMap[c.id] = c.name; });
+
+  // Fetch metadata for each thread (subject + from + snippet)
+  const threadDetails: any[] = [];
+  for (const t of data.threads.slice(0, limit)) {
+    if (input.only_untriaged && triagedMap[t.id]) continue;
+    const tdRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${t.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!tdRes.ok) continue;
+    const td = await tdRes.json();
+    const lastMsg = td.messages?.[td.messages.length - 1];
+    if (!lastMsg) continue;
+    const headers = lastMsg.payload?.headers || [];
+    const subject = extractHeader(headers, "Subject") || "(no subject)";
+    const from = extractHeader(headers, "From");
+    const date = extractHeader(headers, "Date");
+    const triage = triagedMap[t.id];
+    threadDetails.push({
+      thread_id: t.id, subject, from, date,
+      snippet: lastMsg.snippet || "",
+      message_count: td.messages?.length || 1,
+      triaged: !!triage,
+      category: triage ? catMap[triage.category_id] : null,
+      priority: triage?.priority || null,
+      handled: triage?.user_marked_handled || false,
+    });
+  }
+
+  if (threadDetails.length === 0) return { result: input.only_untriaged ? "All threads in this view have been triaged already." : "No threads found." };
+
+  const lines = threadDetails.map((t: any) => {
+    const tag = t.triaged ? `✓ ${t.category || "?"}/${t.priority || "?"}${t.handled ? " (handled)" : ""}` : "[NEW]";
+    return `[${t.thread_id}] ${tag}\n  Subject: ${t.subject}\n  From: ${t.from}\n  Date: ${t.date}\n  Snippet: ${(t.snippet || "").slice(0, 140)}`;
+  });
+  return { result: `${threadDetails.length} thread(s) (query: "${q}"):\n\n${lines.join("\n\n")}` };
+}
+
+async function getInboxThread(input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Gmail not connected." };
+  if (!input.thread_id) return { result: "Error: thread_id required." };
+
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${input.thread_id}?format=full`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 200)}` };
+
+  const messages = data.messages || [];
+  if (messages.length === 0) return { result: "Thread has no messages." };
+
+  const out: string[] = [`Thread ${input.thread_id} — ${messages.length} message(s):`];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const headers = m.payload?.headers || [];
+    const subject = extractHeader(headers, "Subject");
+    const from = extractHeader(headers, "From");
+    const to = extractHeader(headers, "To");
+    const date = extractHeader(headers, "Date");
+    const body = extractPlainBody(m.payload);
+    out.push(`\n─── Message ${i + 1} ───`);
+    out.push(`From: ${from}`);
+    out.push(`To: ${to}`);
+    out.push(`Date: ${date}`);
+    out.push(`Subject: ${subject}`);
+    out.push(`\n${body.slice(0, 4000) || "(no body)"}`);
+  }
+  return { result: out.join("\n") };
+}
+
+async function listInboxCategories(_input: any, ctx: any) {
+  const { data, error } = await ctx.supabase.from("inbox_categories")
+    .select("id, name, icon, description, default_priority, color")
+    .eq("user_id", ctx.user_id).eq("active", true).order("sort_order", { ascending: true });
+  if (error) return { result: `Error: ${error.message}` };
+  if (!data || data.length === 0) return { result: "No categories defined." };
+  const lines = data.map((c: any) => `  ${c.icon || "•"} ${c.name} (default ${c.default_priority}) — ${c.description || ""}`);
+  return { result: `Available categories (use the exact name in triage_inbox_thread):\n${lines.join("\n")}` };
+}
+
+async function triageInboxThread(input: any, ctx: any) {
+  if (!input.thread_id || !input.category) return { result: "Error: thread_id and category required." };
+
+  // Resolve category name → id
+  const { data: cat } = await ctx.supabase.from("inbox_categories")
+    .select("id, default_priority").eq("user_id", ctx.user_id).ilike("name", input.category).maybeSingle();
+  if (!cat) return { result: `Error: category "${input.category}" not found. Call list_inbox_categories first.` };
+
+  // Pull thread metadata fresh (sender, subject, snippet, date) so the row is self-contained
+  const token = await getGoogleAccessToken(ctx);
+  let sender_email = null, sender_name = null, subject = null, snippet = null, thread_received_at = null, gmail_message_id = null;
+  if (token) {
+    const tdRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${input.thread_id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (tdRes.ok) {
+      const td = await tdRes.json();
+      const lastMsg = td.messages?.[td.messages.length - 1];
+      if (lastMsg) {
+        gmail_message_id = lastMsg.id;
+        const headers = lastMsg.payload?.headers || [];
+        const from = extractHeader(headers, "From");
+        const parsed = parseSender(from);
+        sender_name = parsed.name || null;
+        sender_email = parsed.email || null;
+        subject = extractHeader(headers, "Subject");
+        snippet = lastMsg.snippet || null;
+        const dateStr = extractHeader(headers, "Date");
+        if (dateStr) thread_received_at = new Date(dateStr).toISOString();
+      }
+    }
+  }
+
+  const priority = input.priority || cat.default_priority || "normal";
+  const row = {
+    user_id: ctx.user_id,
+    gmail_thread_id: input.thread_id,
+    gmail_message_id,
+    category_id: cat.id,
+    priority,
+    reasoning: input.reasoning,
+    needs_response: !!input.needs_response,
+    is_actionable: !!input.is_actionable,
+    suggested_action: input.suggested_action || null,
+    sender_email, sender_name, subject, snippet, thread_received_at,
+    triaged_at: new Date().toISOString(),
+    triaged_by_robot_id: ctx.robot_id || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: existing } = await ctx.supabase.from("inbox_triage")
+    .select("id").eq("user_id", ctx.user_id).eq("gmail_thread_id", input.thread_id).maybeSingle();
+
+  if (existing) {
+    await ctx.supabase.from("inbox_triage").update(row).eq("id", existing.id);
+    return { result: `✓ Triage updated: ${input.category} / ${priority}${input.needs_response ? " · needs response" : ""}.`, artifact: { type: "inbox_triage", title: subject || input.thread_id, id: existing.id } };
+  } else {
+    const { data: inserted, error: insErr } = await ctx.supabase.from("inbox_triage").insert(row).select("id").single();
+    if (insErr) return { result: `Error: ${insErr.message}` };
+    return { result: `✓ Triaged as ${input.category} / ${priority}${input.needs_response ? " · needs response" : ""}.`, artifact: { type: "inbox_triage", title: subject || input.thread_id, id: inserted.id } };
+  }
+}
+
+async function applyGmailLabel(input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Gmail not connected." };
+  if (!input.thread_id) return { result: "Error: thread_id required." };
+
+  const body: any = {};
+  if (Array.isArray(input.add_label_ids) && input.add_label_ids.length > 0) body.addLabelIds = input.add_label_ids;
+  if (Array.isArray(input.remove_label_ids) && input.remove_label_ids.length > 0) body.removeLabelIds = input.remove_label_ids;
+  if (!body.addLabelIds && !body.removeLabelIds) return { result: "Error: provide add_label_ids or remove_label_ids." };
+
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${input.thread_id}/modify`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    return { result: `Error from Gmail: ${res.status} — ${err.slice(0, 300)}` };
+  }
+  return { result: `✓ Labels updated for thread ${input.thread_id}.${body.removeLabelIds?.includes("INBOX") ? " (Archived)" : ""}` };
+}
+
+async function listGmailLabels(_input: any, ctx: any) {
+  const token = await getGoogleAccessToken(ctx);
+  if (!token) return { result: "Error: Gmail not connected." };
+
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) return { result: `Error: ${res.status} — ${JSON.stringify(data).slice(0, 200)}` };
+
+  const labels = data.labels || [];
+  const system = labels.filter((l: any) => l.type === "system");
+  const user = labels.filter((l: any) => l.type === "user");
+  const sLines = system.map((l: any) => `  ${l.name} (id: ${l.id})`);
+  const uLines = user.map((l: any) => `  ${l.name} (id: ${l.id})`);
+  return { result: `System labels:\n${sLines.join("\n")}\n\nUser labels:\n${uLines.length ? uLines.join("\n") : "  (none)"}` };
 }
 
 // ─── CONTENT LIBRARY (transcripts) ─────────────────────────────────────────

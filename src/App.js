@@ -6546,6 +6546,283 @@ function OutreachDashboard({ isMobile }) {
 }
 
 /* — Separate Inbox Views — */
+/* — Inbox Triage View — Atlas's read of your inbox (Phase 3A: read-only) — */
+function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onConnect }) {
+  const [triageRows, setTriageRows] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runStatus, setRunStatus] = useState("");
+  const [error, setError] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [showHandled, setShowHandled] = useState(false);
+  const [viewing, setViewing] = useState(null);
+
+  const atlas = robots.find((r) => r.name === "Atlas") || robots[0];
+
+  const loadAll = React.useCallback(async () => {
+    const [{ data: tRows }, { data: cats }] = await Promise.all([
+      supabase.from("inbox_triage").select("*").eq("user_id", session.user.id).order("thread_received_at", { ascending: false }).limit(200),
+      supabase.from("inbox_categories").select("*").eq("user_id", session.user.id).eq("active", true).order("sort_order", { ascending: true }),
+    ]);
+    setTriageRows(tRows || []);
+    setCategories(cats || []);
+    setLoading(false);
+  }, [session.user.id]);
+
+  React.useEffect(() => { loadAll(); }, [loadAll]);
+
+  const runTriageSweep = async () => {
+    if (!atlas) { setError("No Atlas robot configured."); return; }
+    if (!gmailConnected) { setError("Gmail not connected."); return; }
+    setRunning(true);
+    setRunStatus("Asking Atlas to scan recent untriaged threads…");
+    setError("");
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+        body: {
+          robot_id: atlas.id,
+          user_id: session.user.id,
+          message: `Run a triage sweep on my inbox. Specifically:
+1. Call list_inbox_categories so you know what buckets exist.
+2. Call list_inbox_threads with only_untriaged=true and limit=15 to get the most recent untriaged threads.
+3. For each thread, call get_inbox_thread to read the actual content (do NOT skip this — judging by subject and sender alone misses important context).
+4. For each thread, call triage_inbox_thread with category, priority, needs_response, is_actionable, suggested_action (if any), and 1-2 sentence reasoning.
+5. Be ruthlessly accurate: newsletters/notifications go in those buckets, real client/investor emails go in those buckets, cold pitches go in Spam-ish.
+6. After all threads are triaged, give me a one-paragraph summary of what you found — top priorities, anything I should look at first.`,
+          history: [],
+        },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) {
+        const detail = typeof data.details === "string" ? data.details : JSON.stringify(data.details || "").slice(0, 200);
+        throw new Error(`${data.error}${detail ? " — " + detail : ""}`);
+      }
+      setRunStatus(data?.response || "Triage sweep complete.");
+      await loadAll();
+    } catch (err) {
+      setError(`Triage failed: ${err.message || String(err)}`);
+      setRunStatus("");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const markHandled = async (id, currentValue) => {
+    await supabase.from("inbox_triage").update({
+      user_marked_handled: !currentValue,
+      user_handled_at: !currentValue ? new Date().toISOString() : null,
+    }).eq("id", id);
+    await loadAll();
+  };
+
+  const overrideCategory = async (id, newCatId) => {
+    await supabase.from("inbox_triage").update({ user_override_category_id: newCatId }).eq("id", id);
+    await loadAll();
+  };
+
+  const catMap = {};
+  categories.forEach((c) => { catMap[c.id] = c; });
+
+  const filtered = triageRows.filter((r) => {
+    if (!showHandled && r.user_marked_handled) return false;
+    if (filterCategory !== "all") {
+      const effectiveCat = r.user_override_category_id || r.category_id;
+      if (effectiveCat !== filterCategory) return false;
+    }
+    if (filterPriority !== "all") {
+      const effectivePrio = r.user_override_priority || r.priority;
+      if (effectivePrio !== filterPriority) return false;
+    }
+    return true;
+  });
+
+  const counts = {};
+  triageRows.filter((r) => !r.user_marked_handled).forEach((r) => {
+    const cid = r.user_override_category_id || r.category_id;
+    counts[cid] = (counts[cid] || 0) + 1;
+  });
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>;
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      {/* Hero */}
+      <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f2614 100%)", borderRadius: 16, padding: isMobile ? 18 : 24, marginBottom: 16, color: "#fff", position: "relative", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: "#f59e0b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif" }}>AT</div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em" }}>🎯 INBOX TRIAGE · POWERED BY ATLAS</div>
+            <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif", margin: "4px 0 6px" }}>Read-only triage</h2>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>Atlas reads your inbox and categorizes threads. Nothing is sent or modified in Gmail. You override anything you disagree with by clicking the category badge.</div>
+          </div>
+        </div>
+
+        {!gmailConnected ? (
+          <button onClick={onConnect} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)", background: "#D4C08C", color: "#1C3820", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📧 Connect Gmail to start</button>
+        ) : (
+          <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={runTriageSweep} disabled={running} style={{ padding: "10px 22px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)", background: running ? "rgba(212,192,140,0.2)" : "#D4C08C", color: running ? "#D4C08C" : "#1C3820", fontSize: 13, fontWeight: 700, cursor: running ? "not-allowed" : "pointer" }}>{running ? "🎯 Atlas is reading…" : "🎯 Run triage sweep"}</button>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{triageRows.length} threads triaged · {triageRows.filter((r) => r.needs_response && !r.user_marked_handled).length} need response</span>
+          </div>
+        )}
+
+        {runStatus && (
+          <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 8, fontSize: 12, color: "#86efac", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{runStatus}</div>
+        )}
+        {error && (
+          <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", borderRadius: 8, fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>⚠️ {error}</div>
+        )}
+      </div>
+
+      {/* Filters */}
+      {triageRows.length > 0 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <button onClick={() => setFilterCategory("all")} style={{ padding: "6px 12px", borderRadius: 8, border: filterCategory === "all" ? "1px solid #1C3820" : "1px solid #e2e8f0", background: filterCategory === "all" ? "#1C3820" : "#fff", color: filterCategory === "all" ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>All ({Object.values(counts).reduce((s, n) => s + n, 0)})</button>
+          {categories.filter((c) => counts[c.id]).map((c) => (
+            <button key={c.id} onClick={() => setFilterCategory(c.id)} style={{ padding: "6px 12px", borderRadius: 8, border: filterCategory === c.id ? `1px solid ${c.color}` : "1px solid #e2e8f0", background: filterCategory === c.id ? c.color : "#fff", color: filterCategory === c.id ? "#fff" : "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{c.icon} {c.name} ({counts[c.id]})</button>
+          ))}
+          <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            <option value="all">All priorities</option>
+            <option value="urgent">Urgent</option>
+            <option value="high">High</option>
+            <option value="normal">Normal</option>
+            <option value="low">Low</option>
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#64748b", cursor: "pointer" }}>
+            <input type="checkbox" checked={showHandled} onChange={(e) => setShowHandled(e.target.checked)} style={{ accentColor: "#1C3820" }} /> Show handled
+          </label>
+        </div>
+      )}
+
+      {/* List */}
+      {triageRows.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{gmailConnected ? "No triage yet. Hit \"Run triage sweep\" to have Atlas categorize your most recent threads." : "Connect Gmail to begin."}</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 24, textAlign: "center" }}>
+          <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>No threads match those filters.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map((r) => (
+            <TriageCard key={r.id} row={r} category={catMap[r.user_override_category_id || r.category_id]} categories={categories} onMarkHandled={() => markHandled(r.id, r.user_marked_handled)} onChangeCategory={(catId) => overrideCategory(r.id, catId)} onView={() => setViewing(r)} />
+          ))}
+        </div>
+      )}
+
+      {viewing && <TriageDetailModal row={viewing} category={catMap[viewing.user_override_category_id || viewing.category_id]} isMobile={isMobile} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory, onView }) {
+  const priority = row.user_override_priority || row.priority;
+  const priorityStyle = {
+    urgent: { bg: "#fef2f2", color: "#dc2626", label: "URGENT" },
+    high: { bg: "#fffbeb", color: "#f59e0b", label: "HIGH" },
+    normal: { bg: "#eff6ff", color: "#3b82f6", label: "NORMAL" },
+    low: { bg: "#f8fafc", color: "#94a3b8", label: "LOW" },
+  }[priority] || { bg: "#f8fafc", color: "#94a3b8", label: priority?.toUpperCase() };
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 16px", opacity: row.user_marked_handled ? 0.5 : 1, transition: "opacity 0.2s" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+          {category && (
+            <select value={category.id} onChange={(e) => onChangeCategory(e.target.value)} onClick={(e) => e.stopPropagation()} style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: `${category.color}20`, color: category.color, border: `1px solid ${category.color}40`, cursor: "pointer", textTransform: "uppercase" }}>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            </select>
+          )}
+          <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 7px", borderRadius: 4, background: priorityStyle.bg, color: priorityStyle.color, letterSpacing: "0.05em" }}>{priorityStyle.label}</span>
+          {row.needs_response && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#dcfce7", color: "#166534" }}>↩ NEEDS RESPONSE</span>}
+          {row.is_actionable && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#fef3c7", color: "#92400e" }}>⚡ ACTION</span>}
+        </div>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <button onClick={onMarkHandled} title={row.user_marked_handled ? "Mark unhandled" : "Mark handled"} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: row.user_marked_handled ? "#16a34a" : "#94a3b8", fontSize: 12, padding: "3px 8px", cursor: "pointer", fontWeight: 700 }}>{row.user_marked_handled ? "✓" : "◯"}</button>
+          <button onClick={onView} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: "#475569", fontSize: 11, padding: "3px 10px", cursor: "pointer", fontWeight: 600 }}>View</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>{row.subject || "(no subject)"}</div>
+      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{row.sender_name || row.sender_email || "(unknown)"} · {row.thread_received_at ? new Date(row.thread_received_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+      {row.snippet && <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5, marginBottom: 6, fontStyle: "italic" }}>"{row.snippet.slice(0, 200)}"</div>}
+      {row.reasoning && (
+        <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5, padding: "8px 12px", background: "#f8fafc", borderLeft: "3px solid #f59e0b", borderRadius: 6 }}>
+          <strong style={{ color: "#92400e" }}>Atlas:</strong> {row.reasoning}
+          {row.suggested_action && <div style={{ marginTop: 4, fontWeight: 600 }}>→ {row.suggested_action}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TriageDetailModal({ row, category, isMobile, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 720, maxHeight: isMobile ? "100dvh" : "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "20px 24px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 30, height: 30, borderRadius: 8, fontSize: 16, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>📧 Triaged Thread</div>
+          <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{row.subject || "(no subject)"}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{row.sender_name ? `${row.sender_name} <${row.sender_email}>` : row.sender_email}</div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 16 }}>
+            <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Category</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: category?.color || "#0f172a", marginTop: 2 }}>{category?.icon} {category?.name || "(unknown)"}</div>
+            </div>
+            <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Priority</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginTop: 2, textTransform: "capitalize" }}>{row.user_override_priority || row.priority}</div>
+            </div>
+          </div>
+
+          {row.snippet && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Snippet</div>
+              <div style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#475569", lineHeight: 1.6, fontStyle: "italic" }}>"{row.snippet}"</div>
+            </div>
+          )}
+
+          {row.reasoning && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Atlas's Reasoning</div>
+              <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderLeft: "3px solid #f59e0b", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#78350f", lineHeight: 1.6 }}>{row.reasoning}</div>
+            </div>
+          )}
+
+          {row.suggested_action && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Suggested Action</div>
+              <div style={{ background: "#dcfce7", border: "1px solid #bbf7d0", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#166534", lineHeight: 1.6, fontWeight: 600 }}>→ {row.suggested_action}</div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+            {row.needs_response && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>↩ Needs response</span>}
+            {row.is_actionable && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#fef3c7", color: "#92400e" }}>⚡ Actionable</span>}
+            {row.user_marked_handled && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a" }}>✓ Handled</span>}
+          </div>
+
+          <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 14px", fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+            <strong>Triaged:</strong> {row.triaged_at ? new Date(row.triaged_at).toLocaleString() : "—"}<br />
+            <strong>Gmail Thread ID:</strong> <code style={{ fontSize: 10 }}>{row.gmail_thread_id}</code><br />
+            <strong>Received:</strong> {row.thread_received_at ? new Date(row.thread_received_at).toLocaleString() : "—"}
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <a href={`https://mail.google.com/mail/u/0/#all/${row.gmail_thread_id}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", padding: "10px 18px", borderRadius: 8, background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>📧 Open in Gmail</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EmailInboxView({ isMobile, session, gmailConnected, gmailEmail, onConnect, onRefresh, robots }) {
   return <GmailInboxTab isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onConnect} onRefresh={onRefresh} contacts={[]} onAddContact={() => {}} robots={robots} forceMode="email" />;
 }
@@ -7720,6 +7997,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
 
   const sections = [
     { key: "dashboard", icon: "📊", label: "Dashboard", desc: "Overview" },
+    { key: "triage", icon: "🎯", label: "Triage", desc: "Atlas's read of your inbox" },
     { key: "email", icon: "📧", label: "Email", desc: gmailConnected ? gmailEmail : "Connect Gmail" },
     { key: "texts", icon: "💬", label: "Text", desc: "SMS conversations" },
     { key: "calls", icon: "📞", label: "Calls", desc: "Call history" },
@@ -7769,6 +8047,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
         <PageHeader title="Inbox" subtitle="Email, text & calls" isMobile={isMobile} icon="📨" />
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
+          {tab === "triage" && <InboxTriageView isMobile={isMobile} session={session} robots={robots} gmailConnected={gmailConnected} onConnect={onGmailConnect} />}
           {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
           {tab === "email" && <EmailInboxView isMobile={isMobile} session={session} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onConnect={onGmailConnect} onRefresh={onGmailRefresh} robots={robots} />}
           {tab === "texts" && <TextsInboxView isMobile={isMobile} session={session} contacts={contacts} onAddContact={onAddContact} robots={robots} />}
