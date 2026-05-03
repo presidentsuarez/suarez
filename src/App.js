@@ -6589,8 +6589,25 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
 2. Call list_inbox_threads with only_untriaged=true and limit=15 to get the most recent untriaged threads.
 3. For each thread, call get_inbox_thread to read the actual content (do NOT skip this — judging by subject and sender alone misses important context).
 4. For each thread, call triage_inbox_thread with category, priority, needs_response, is_actionable, suggested_action (if any), and 1-2 sentence reasoning.
-5. Be ruthlessly accurate: newsletters/notifications go in those buckets, real client/investor emails go in those buckets, cold pitches go in Spam-ish.
-6. After all threads are triaged, give me a one-paragraph summary of what you found — top priorities, anything I should look at first.`,
+
+═══ TRIAGE RULES (learned from past corrections) ═══
+
+PRIORITY vs ACTIONABILITY are independent — don't conflate them:
+  - "high priority" can still mean is_actionable=false. A credit alert about a new account on Javier's report is HIGH priority (he needs to know) but NO action is required from him (the bank handled it). Same for: account statements posted, investment statements available, security notifications, identity-monitoring alerts. These are urgent-to-know but don't need a reply or task.
+  - Use is_actionable=true ONLY when Javier specifically must DO something: sign, schedule, decide, respond, transfer, approve.
+  - Use needs_response=true ONLY when a human is awaiting a reply from him.
+
+NOTIFICATION vs PROMOTIONAL vs NEWSLETTER — the distinction matters:
+  - Notification = automated informational alert (credit alerts, statements, calendar reminders, security notices, receipts). Often important even when low priority.
+  - Promotional = selling something or driving an action (event signups, "upgrade now," product launches, reminders to buy). Even from companies Javier has a relationship with.
+  - Newsletter = regular informational digest delivering content (industry news, updates, articles). NOT promotional content dressed up as a newsletter.
+  - When in doubt: if the email is trying to sell or drive action, it's Promotional even if it has a newsletter-style format.
+
+SENDER-LEVEL JUDGMENT — read the inbox memories I've loaded. They contain Javier's specific preferences about senders. If a memory says "this sender is X" or "Javier hates emails from Y", honor it. Sender-specific memory overrides generic categorization.
+
+ROUTINE BUSINESS RELATIONSHIPS — vendors who send notifications about Javier's actual business with them (not promotions) belong in Notification. Vendor category is for vendor relationships requiring back-and-forth. Don't mix the two.
+
+5. After all threads are triaged, give me a one-paragraph summary of what you found — top priorities, anything I should look at first.`,
           history: [],
         },
       });
@@ -6936,6 +6953,7 @@ function TriageCard({ row, category, categories, onMarkHandled, onChangeCategory
           </select>
           {row.needs_response && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#dcfce7", color: "#166534" }}>↩ NEEDS RESPONSE</span>}
           {row.is_actionable && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#fef3c7", color: "#92400e" }}>⚡ ACTION</span>}
+          {!row.needs_response && !row.is_actionable && <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 7px", borderRadius: 4, background: "#f1f5f9", color: "#64748b" }}>📋 INFO ONLY</span>}
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           <button onClick={onMarkHandled} title={row.user_marked_handled ? "Mark unhandled" : "Mark handled"} style={{ background: "none", border: "1px solid #e2e8f0", borderRadius: 6, color: row.user_marked_handled ? "#16a34a" : "#94a3b8", fontSize: 12, padding: "3px 8px", cursor: "pointer", fontWeight: 700 }}>{row.user_marked_handled ? "✓" : "◯"}</button>
@@ -7032,6 +7050,7 @@ function TriageDetailModal({ row, category, isMobile, onClose }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
             {row.needs_response && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#dcfce7", color: "#166534" }}>↩ Needs response</span>}
             {row.is_actionable && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#fef3c7", color: "#92400e" }}>⚡ Actionable</span>}
+            {!row.needs_response && !row.is_actionable && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#f1f5f9", color: "#64748b" }}>📋 Info only</span>}
             {row.user_marked_handled && <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 6, background: "#f0fdf4", color: "#16a34a" }}>✓ Handled</span>}
           </div>
 
