@@ -9672,6 +9672,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
     { key: "content", icon: "📝", label: "Content Library", desc: "Past videos & transcripts" },
     { key: "studio", icon: "🎬", label: "Studio Defaults", desc: "Video render settings" },
     { key: "inbox_rules", icon: "⚖️", label: "Inbox Rules", desc: "Auto-categorization rules" },
+    { key: "filter_audit", icon: "🛠️", label: "Filter Audit", desc: "Migrate Gmail filters" },
     { key: "feedback", icon: "📊", label: "Feedback Log", desc: "Audit trail" },
   ];
 
@@ -9721,6 +9722,7 @@ function KnowledgeBaseView({ isMobile, session, robots = [], activeTab, onTabCha
           {tab === "content" && <ContentLibraryTab session={session} isMobile={isMobile} />}
           {tab === "studio" && <StudioDefaultsTab session={session} isMobile={isMobile} />}
           {tab === "inbox_rules" && <InboxRulesTab session={session} isMobile={isMobile} />}
+          {tab === "filter_audit" && <FilterAuditTab session={session} isMobile={isMobile} />}
           {tab === "feedback" && <FeedbackLogTab session={session} isMobile={isMobile} robots={robots} />}
         </div>
       </div>
@@ -9955,6 +9957,256 @@ function ContentLibraryDetailModal({ transcript, isMobile, onClose, onReIngest, 
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* — Filter Audit Tab — migrate existing Gmail filters into Suarez Inbox Rules — */
+const ACTION_TYPE_META = {
+  archive_only:       { label: "Archive only",         icon: "📦", desc: "Skips inbox, keeps in All Mail",                 convertible: true,  recommend: "Convert — these are exactly what Phase 2 auto-archive will do once confirmed.", suggest: "Promotional" },
+  mark_read_archive:  { label: "Mark read + archive",  icon: "📥", desc: "Treats as silent",                                convertible: true,  recommend: "Convert — same pattern as archive_only.",                                       suggest: "Promotional" },
+  category_promo:     { label: "Promotions tab",       icon: "🛍️", desc: "Apply Gmail's Promotions category",                convertible: true,  recommend: "Convert — Suarez Promotional category replaces this cleanly.",                  suggest: "Promotional" },
+  category_other:     { label: "Other Gmail category", icon: "📂", desc: "Apply Gmail's Updates/Forums/Social",              convertible: true,  recommend: "Convert — pick the matching Suarez category.",                                  suggest: "Notification" },
+  apply_custom_label: { label: "Custom label",         icon: "🏷️", desc: "Apply a non-standard Gmail label",                 convertible: true,  recommend: "Convert — pick the matching Suarez category.",                                  suggest: "Newsletter" },
+  trash:              { label: "Auto-trash",           icon: "🗑️", desc: "Outright delete from sender",                       convertible: false, recommend: "KEEP — Suarez has no equivalent. These are explicit \"never see again\" senders." },
+  never_spam:         { label: "Never spam",           icon: "🛡️", desc: "Whitelist senders so they don't go to Spam",       convertible: false, recommend: "KEEP ALL — protects email from Gmail's spam classifier. Suarez can't replace this." },
+  forward:            { label: "Forward",              icon: "↪️", desc: "Forward to another address",                       convertible: false, recommend: "KEEP — Suarez doesn't forward email." },
+  important:          { label: "Mark important",       icon: "⭐", desc: "Apply Important / Star marker",                    convertible: false, recommend: "KEEP — different from category." },
+  star:               { label: "Star",                 icon: "⭐", desc: "Apply Star marker",                                convertible: false, recommend: "KEEP — different from category." },
+  mark_read_only:     { label: "Mark read only",       icon: "👁️", desc: "Mark as read but keep in inbox",                   convertible: false, recommend: "KEEP — Suarez has no equivalent (we don't change read state yet)." },
+  other:              { label: "Other",                icon: "❓", desc: "Mixed/unusual actions",                            convertible: false, recommend: "Review manually in Gmail." },
+};
+
+function FilterAuditTab({ session, isMobile }) {
+  const [filters, setFilters] = useState(null); // null = not loaded, [] = empty
+  const [groups, setGroups] = useState({});
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("");
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState({}); // actionType -> bool
+  const [selectedFilters, setSelectedFilters] = useState(new Set());
+  const [perFilterCategory, setPerFilterCategory] = useState({}); // filter_id -> category name
+
+  React.useEffect(() => {
+    supabase.from("inbox_categories").select("*").eq("user_id", session.user.id).eq("active", true).order("sort_order").then(({ data }) => setCategories(data || []));
+  }, [session.user.id]);
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("gmail-filters", {
+        body: { action: "list", user_id: session.user.id },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+      setFilters(data.all || []);
+      setGroups(data.groups || {});
+      setStatusMsg(`Loaded ${data.total} filters.`);
+      // Initialize per-filter category from suggested
+      const init = {};
+      (data.all || []).forEach((f) => { if (f.suggestedCategory) init[f.id] = f.suggestedCategory; });
+      setPerFilterCategory(init);
+    } catch (err) {
+      setError(`Load failed: ${err.message || String(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSelected = (filterId) => {
+    setSelectedFilters((p) => {
+      const next = new Set(p);
+      if (next.has(filterId)) next.delete(filterId);
+      else next.add(filterId);
+      return next;
+    });
+  };
+
+  const selectAllInGroup = (groupKey) => {
+    const ids = (groups[groupKey] || []).map((f) => f.id);
+    setSelectedFilters((p) => {
+      const next = new Set(p);
+      const allSelected = ids.every((id) => next.has(id));
+      if (allSelected) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const convertSelected = async () => {
+    if (selectedFilters.size === 0) return;
+    if (!window.confirm(`Convert ${selectedFilters.size} Gmail filter(s) to Suarez Inbox Rules and delete the originals from Gmail? This is reversible — Suarez rule will be created first; if anything fails, the Gmail filter stays put.`)) return;
+    setActionInProgress(true);
+    setStatusMsg("Converting…");
+    setError("");
+
+    const items = [];
+    for (const fid of selectedFilters) {
+      const filter = filters.find((f) => f.id === fid);
+      if (!filter || !filter.convertible) continue;
+      const cat = perFilterCategory[fid] || filter.suggestedCategory || "Promotional";
+      items.push({ filter_id: fid, target_category: cat });
+    }
+
+    if (items.length === 0) {
+      setError("No convertible filters selected.");
+      setActionInProgress(false);
+      return;
+    }
+
+    let succeededTotal = 0;
+    let failedTotal = 0;
+    const batchSize = 30;
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      setStatusMsg(`Converting ${i + 1}-${Math.min(i + batchSize, items.length)} of ${items.length}…`);
+      try {
+        const { data } = await supabase.functions.invoke("gmail-filters", {
+          body: { action: "bulk_convert", user_id: session.user.id, items: batch },
+        });
+        succeededTotal += data?.succeeded || 0;
+        failedTotal += data?.failed || 0;
+      } catch (e) {
+        failedTotal += batch.length;
+      }
+    }
+    setStatusMsg(`✓ Converted ${succeededTotal} of ${items.length}${failedTotal > 0 ? ` (${failedTotal} failed)` : ""}. Reloading…`);
+    setSelectedFilters(new Set());
+    await load();
+    setActionInProgress(false);
+  };
+
+  const deleteSelected = async () => {
+    if (selectedFilters.size === 0) return;
+    if (!window.confirm(`Delete ${selectedFilters.size} Gmail filter(s) WITHOUT creating Suarez rules? This is destructive in Gmail.`)) return;
+    setActionInProgress(true);
+    setStatusMsg("Deleting…");
+    const ids = [...selectedFilters];
+    let totalDeleted = 0;
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50);
+      try {
+        const { data } = await supabase.functions.invoke("gmail-filters", {
+          body: { action: "delete", user_id: session.user.id, filter_ids: batch },
+        });
+        totalDeleted += data?.deleted || 0;
+      } catch (e) { /* skip */ }
+    }
+    setStatusMsg(`✓ Deleted ${totalDeleted} of ${ids.length} filters. Reloading…`);
+    setSelectedFilters(new Set());
+    await load();
+    setActionInProgress(false);
+  };
+
+  const orderedGroups = [
+    "archive_only", "mark_read_archive", "category_promo", "category_other", "apply_custom_label",
+    "trash", "never_spam", "forward", "important", "star", "mark_read_only", "other"
+  ];
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      {/* Hero */}
+      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: "18px 22px", marginBottom: 14 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 4px", fontFamily: "'Playfair Display', serif" }}>🛠️ Gmail Filter Audit</h3>
+        <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 10px", lineHeight: 1.6 }}>
+          Pull every Gmail filter you have today, group by what they do, and migrate the categorization-style ones into Suarez Inbox Rules. Each conversion creates the Suarez rule first (we verify it saved), then deletes the Gmail filter — failures don't leave you exposed.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={load} disabled={loading} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: loading ? "#cbd5e1" : "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: loading ? "default" : "pointer" }}>{loading ? "Loading…" : filters === null ? "🔍 Load Gmail filters" : "↻ Reload"}</button>
+          {filters !== null && (
+            <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>{filters.length} total · {filters.filter((f) => f.convertible).length} convertible · {selectedFilters.size} selected</span>
+          )}
+        </div>
+        {statusMsg && <div style={{ marginTop: 10, fontSize: 11, color: "#475569", padding: "8px 12px", background: "#f8fafc", borderRadius: 6 }}>{statusMsg}</div>}
+        {error && <div style={{ marginTop: 10, fontSize: 11, color: "#dc2626", padding: "8px 12px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6 }}>⚠️ {error}</div>}
+      </div>
+
+      {/* Sticky action bar */}
+      {selectedFilters.size > 0 && (
+        <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#1C3820", color: "#fff", padding: "10px 14px", borderRadius: 10, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>{selectedFilters.size} selected</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={convertSelected} disabled={actionInProgress} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: "#D4C08C", color: "#1C3820", fontSize: 11, fontWeight: 700, cursor: actionInProgress ? "default" : "pointer" }}>✨ Convert to Suarez Rules</button>
+            <button onClick={deleteSelected} disabled={actionInProgress} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "#fca5a5", fontSize: 11, fontWeight: 700, cursor: actionInProgress ? "default" : "pointer" }}>🗑 Delete (no rule)</button>
+            <button onClick={() => setSelectedFilters(new Set())} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear</button>
+          </div>
+        </div>
+      )}
+
+      {/* Groups */}
+      {filters !== null && orderedGroups.map((groupKey) => {
+        const groupFilters = groups[groupKey] || [];
+        if (groupFilters.length === 0) return null;
+        const meta = ACTION_TYPE_META[groupKey];
+        const isExpanded = expanded[groupKey];
+        const allInGroupSelected = groupFilters.every((f) => selectedFilters.has(f.id));
+        const someInGroupSelected = !allInGroupSelected && groupFilters.some((f) => selectedFilters.has(f.id));
+
+        return (
+          <div key={groupKey} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "12px 14px", gap: 10, cursor: "pointer", background: meta.convertible ? "#f0fdf4" : "#f8fafc", borderBottom: isExpanded ? "1px solid #e2e8f0" : "none" }} onClick={() => setExpanded((p) => ({ ...p, [groupKey]: !p[groupKey] }))}>
+              <span style={{ fontSize: 18 }}>{meta.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{meta.label}</span>
+                  <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{groupFilters.length}</span>
+                  {meta.convertible ? (
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#16a34a20", color: "#16a34a" }}>CONVERTIBLE</span>
+                  ) : (
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#94a3b820", color: "#64748b" }}>KEEP AS-IS</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{meta.desc}</div>
+              </div>
+              <span style={{ fontSize: 14, color: "#94a3b8" }}>{isExpanded ? "▾" : "▸"}</span>
+            </div>
+
+            {isExpanded && (
+              <>
+                <div style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", background: "#fafbfc", fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
+                  <strong style={{ color: "#1C3820" }}>Recommendation:</strong> {meta.recommend}
+                </div>
+
+                {meta.convertible && (
+                  <div style={{ padding: "8px 14px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={() => selectAllInGroup(groupKey)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{allInGroupSelected ? "Unselect all" : someInGroupSelected ? "Select all (partial)" : "Select all"}</button>
+                    <span style={{ fontSize: 10, color: "#94a3b8" }}>Default category: <strong>{meta.suggest}</strong> — change per-filter below</span>
+                  </div>
+                )}
+
+                <div style={{ maxHeight: 600, overflowY: "auto" }}>
+                  {groupFilters.map((f) => {
+                    const isSelected = selectedFilters.has(f.id);
+                    return (
+                      <div key={f.id} style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 10, borderBottom: "1px solid #f8fafc", background: isSelected ? "#eff6ff" : "#fff" }}>
+                        {meta.convertible && (
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleSelected(f.id)} style={{ accentColor: "#1C3820", cursor: "pointer" }} />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: "#0f172a", fontFamily: "'DM Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.summary}</div>
+                          <div style={{ fontSize: 9, color: "#94a3b8", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>id: {f.id.slice(0, 16)}…</div>
+                        </div>
+                        {meta.convertible && (
+                          <select value={perFilterCategory[f.id] || meta.suggest} onChange={(e) => setPerFilterCategory((p) => ({ ...p, [f.id]: e.target.value }))} style={{ fontSize: 10, fontWeight: 600, padding: "4px 8px", borderRadius: 5, border: "1px solid #e2e8f0", background: "#fff", color: "#1C3820", cursor: "pointer" }}>
+                            {categories.map((c) => <option key={c.id} value={c.name}>{c.icon} {c.name}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
+
+      {filters === null && !loading && (
+        <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 12 }}>Click "Load Gmail filters" to begin.</div>
+      )}
     </div>
   );
 }
