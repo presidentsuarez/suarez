@@ -231,6 +231,147 @@ Deno.serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "reverse_sync") {
+      // Find threads in Gmail with any Suarez/* label and either:
+      //   (a) create a triage row if we don't have one yet (manual triage by user)
+      //   (b) update an existing triage row if user changed the label in Gmail
+      //
+      // This is the workflow: user reads email in Gmail, applies a Suarez/Category
+      // label themselves, system picks it up.
+
+      // Pull our category label IDs
+      const { data: cats } = await supabase.from("inbox_categories")
+        .select("id, name, gmail_label_id, default_priority")
+        .eq("user_id", user_id)
+        .eq("active", true)
+        .not("gmail_label_id", "is", null);
+      if (!cats || cats.length === 0) {
+        return new Response(JSON.stringify({ error: "No Gmail labels configured. Run ensure_setup first." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const labelIdToCategory: Record<string, any> = {};
+      cats.forEach((c: any) => { labelIdToCategory[c.gmail_label_id] = c; });
+      const ourLabelIds = new Set(cats.map((c: any) => c.gmail_label_id));
+
+      // For each Suarez/* label, find threads with that label
+      // Use Gmail's search: label:"Suarez/Investor" — we'll iterate categories
+      let createdCount = 0;
+      let updatedCount = 0;
+      let alreadyCorrect = 0;
+      const created: any[] = [];
+
+      for (const cat of cats) {
+        if (cat.name === "Uncategorized") continue; // skip catch-all category
+        // Search Gmail for threads with this label, max 50 most recent per category
+        const labelQuery = `label:"Suarez/${cat.name}"`;
+        const searchRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads?maxResults=50&q=${encodeURIComponent(labelQuery)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!searchRes.ok) continue;
+        const searchData = await searchRes.json();
+        const threads = searchData.threads || [];
+
+        for (const t of threads) {
+          // Check if we already have a triage row
+          const { data: existing } = await supabase.from("inbox_triage")
+            .select("id, category_id, user_override_category_id, triaged_by_robot_id")
+            .eq("user_id", user_id)
+            .eq("gmail_thread_id", t.id)
+            .maybeSingle();
+
+          // Pull thread metadata for sender/subject if creating new
+          if (!existing) {
+            const tdRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${t.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!tdRes.ok) continue;
+            const td = await tdRes.json();
+            const lastMsg = td.messages?.[td.messages.length - 1];
+            if (!lastMsg) continue;
+            const headers = lastMsg.payload?.headers || [];
+            const fromHdr = (headers.find((h: any) => h.name?.toLowerCase() === "from")?.value) || "";
+            const subjHdr = (headers.find((h: any) => h.name?.toLowerCase() === "subject")?.value) || "";
+            const dateHdr = (headers.find((h: any) => h.name?.toLowerCase() === "date")?.value) || "";
+            const senderMatch = fromHdr.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/);
+            const sender_name = senderMatch ? senderMatch[1].trim() : "";
+            const sender_email = senderMatch ? senderMatch[2].trim() : fromHdr.trim();
+
+            await supabase.from("inbox_triage").insert({
+              user_id,
+              gmail_thread_id: t.id,
+              gmail_message_id: lastMsg.id,
+              category_id: cat.id,
+              priority: cat.default_priority || "normal",
+              reasoning: `Manually triaged by user via Gmail label.`,
+              needs_response: false,
+              is_actionable: false,
+              sender_email, sender_name,
+              subject: subjHdr,
+              snippet: lastMsg.snippet || "",
+              thread_received_at: dateHdr ? new Date(dateHdr).toISOString() : null,
+              triaged_at: new Date().toISOString(),
+              auto_applied: false,
+              user_confirmed: true, // user explicitly applied the label, so it's confirmed
+            });
+            createdCount++;
+            created.push({ thread_id: t.id, category: cat.name, subject: subjHdr });
+          } else {
+            // Existing triage — check if Gmail label disagrees with our category
+            const effectiveCatId = existing.user_override_category_id || existing.category_id;
+            if (effectiveCatId !== cat.id) {
+              // User changed the label in Gmail — record their override + log feedback
+              await supabase.from("inbox_triage").update({
+                user_override_category_id: cat.id,
+                updated_at: new Date().toISOString(),
+              }).eq("id", existing.id);
+
+              // Log feedback so Atlas learns
+              try {
+                await fetch(`${SUPABASE_URL}/functions/v1/feedback-capture`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                  },
+                  body: JSON.stringify({
+                    user_id,
+                    robot_id: existing.triaged_by_robot_id || null,
+                    event_type: "edit",
+                    verdict: "edited",
+                    original_content: `Triage category was: ${effectiveCatId}`,
+                    edited_content: `User changed via Gmail label to: ${cat.name}`,
+                    user_note: `User applied Suarez/${cat.name} label in Gmail directly`,
+                    context: { kind: "inbox_triage_gmail_override", thread_id: t.id },
+                    extract_memory: false,
+                  }),
+                });
+              } catch (_) {}
+              updatedCount++;
+            } else {
+              alreadyCorrect++;
+            }
+          }
+        }
+      }
+
+      // Log the sync run
+      await supabase.from("api_usage_log").insert({
+        user_id,
+        service: "gmail",
+        action: "reverse_sync",
+        tokens_in: 0, tokens_out: 0, cost_estimate: 0,
+        metadata: { created: createdCount, updated: updatedCount, already_correct: alreadyCorrect, success: true },
+      });
+
+      return new Response(JSON.stringify({
+        ok: true,
+        created: createdCount,
+        updated: updatedCount,
+        already_correct: alreadyCorrect,
+        created_samples: created.slice(0, 10),
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

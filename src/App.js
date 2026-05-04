@@ -6560,6 +6560,7 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   const [draftingForId, setDraftingForId] = useState(null);
   const [draftPickedId, setDraftPickedId] = useState(null);
   const [trainingMode, setTrainingMode] = useState(false);
+  const [reverseSyncing, setReverseSyncing] = useState(false);
 
   const atlas = robots.find((r) => r.name === "Atlas") || robots[0];
 
@@ -6749,6 +6750,34 @@ After all threads are triaged, give a one-sentence summary.`,
 
   // Training mode: pull a deeper, randomly-sampled set of untriaged threads (up to 10).
   // Bypasses the 5-min debounce. Goal is to give the user a fast batch to give feedback on.
+  const runReverseSync = async () => {
+    if (!gmailConnected) { setError("Gmail not connected."); return; }
+    setReverseSyncing(true);
+    setError("");
+    setAutoStatus("Pulling Gmail labels you applied manually…");
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("gmail-label-sync", {
+        body: { action: "reverse_sync", user_id: session.user.id },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+      const created = data?.created || 0;
+      const updated = data?.updated || 0;
+      const correct = data?.already_correct || 0;
+      if (created === 0 && updated === 0) {
+        setAutoStatus(`✓ Nothing new — all ${correct} labeled threads already in sync.`);
+      } else {
+        setAutoStatus(`✓ ${created} new triaged from Gmail labels, ${updated} updated, ${correct} already in sync.`);
+      }
+      await loadTriageData();
+    } catch (err) {
+      setAutoStatus("");
+      setError(`Pull from Gmail failed: ${err.message || String(err)}`);
+    } finally {
+      setReverseSyncing(false);
+    }
+  };
+
   const runTrainingMode = async () => {
     if (!atlas || !gmailConnected) {
       setError("Gmail or Atlas not ready.");
@@ -7049,7 +7078,10 @@ After all are triaged, give a one-line summary of how many you handled.`,
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={runTrainingMode} disabled={trainingMode} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid rgba(212,192,140,0.5)", background: trainingMode ? "rgba(212,192,140,0.2)" : "#D4C08C", color: trainingMode ? "#D4C08C" : "#1C3820", fontSize: 12, fontWeight: 700, cursor: trainingMode ? "not-allowed" : "pointer" }}>{trainingMode ? "🎓 Pulling sample…" : "🎓 Training Mode (10 random)"}</button>
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", alignSelf: "center" }}>scans deeper into inbox + random sample</span>
+              <button onClick={runReverseSync} disabled={reverseSyncing} title="Pick up emails you labeled in Gmail directly" style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: reverseSyncing ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: 600, cursor: reverseSyncing ? "not-allowed" : "pointer" }}>{reverseSyncing ? "🔄 Syncing…" : "🔄 Pull Gmail labels"}</button>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.45)" }}>
+              Training: random sample for fast feedback. Pull Gmail labels: import emails you tagged manually with Suarez/* labels.
             </div>
           </>
         )}
@@ -8668,7 +8700,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
       )}
       <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch", minHeight: 0 }}>
         <PageHeader title="Inbox" subtitle="Email, text & calls" isMobile={isMobile} icon="📨" />
-        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 60 : 32 }}>
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? "calc(120px + env(safe-area-inset-bottom))" : 32 }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
           {tab === "triage" && <InboxTriageView isMobile={isMobile} session={session} robots={robots} gmailConnected={gmailConnected} onConnect={onGmailConnect} />}
           {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
