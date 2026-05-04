@@ -2910,7 +2910,7 @@ function InsuranceView({ isMobile, policies, onAdd, onUpdate, onDelete, asTab })
    BUSINESS (Tabbed wrapper: Entities, Contacts, Insurance)
    ═══════════════════════════════════════════════════════════ */
 
-function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, bizGoals, bizMilestones, bizTeam, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, onAddBizGoal, onUpdateBizGoal, onDeleteBizGoal, onAddBizMilestone, onDeleteBizMilestone, onAddTeam, onUpdateTeam, onDeleteTeam, session }) {
+function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactions, companies, policies, reports, bizGoals, bizMilestones, bizTeam, robots, onAddBusiness, onUpdateBusiness, onDeleteBusiness, onAddCompany, onUpdateCompany, onDeleteCompany, onAddPolicy, onUpdatePolicy, onDeletePolicy, onAddReport, onUpdateReport, onDeleteReport, onAddBizGoal, onUpdateBizGoal, onDeleteBizGoal, onAddBizMilestone, onDeleteBizMilestone, onAddTeam, onUpdateTeam, onDeleteTeam, session }) {
   const [selectedBizId, setSelectedBizId] = useState(null);
   const tab = activeTab || "entities";
   const setTab = onTabChange;
@@ -2925,7 +2925,7 @@ function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactio
   if (selectedBizId) {
     const biz = businesses.find((b) => b.id === selectedBizId);
     if (!biz) { setSelectedBizId(null); return null; }
-    return <BusinessDetailView isMobile={isMobile} biz={biz} session={session} reports={reports || []} goals={bizGoals || []} team={bizTeam || []} onBack={() => setSelectedBizId(null)} onUpdate={onUpdateBusiness} onAddReport={onAddReport} onUpdateReport={onUpdateReport} onDeleteReport={onDeleteReport} onAddGoal={onAddBizGoal} onUpdateGoal={onUpdateBizGoal} onDeleteGoal={onDeleteBizGoal} onAddTeam={onAddTeam} onUpdateTeam={onUpdateTeam} onDeleteTeam={onDeleteTeam} />;
+    return <BusinessDetailView isMobile={isMobile} biz={biz} session={session} robots={robots || []} reports={reports || []} goals={bizGoals || []} team={bizTeam || []} onBack={() => setSelectedBizId(null)} onUpdate={onUpdateBusiness} onAddReport={onAddReport} onUpdateReport={onUpdateReport} onDeleteReport={onDeleteReport} onAddGoal={onAddBizGoal} onUpdateGoal={onUpdateBizGoal} onDeleteGoal={onDeleteBizGoal} onAddTeam={onAddTeam} onUpdateTeam={onUpdateTeam} onDeleteTeam={onDeleteTeam} />;
   }
 
   return (
@@ -2939,14 +2939,16 @@ function BusinessView({ isMobile, activeTab, onTabChange, businesses, transactio
 }
 
 /* — Business Detail View — */
-function BusinessDetailView({ isMobile, biz, session, reports, goals, team, onBack, onUpdate, onAddReport, onUpdateReport, onDeleteReport, onAddGoal, onUpdateGoal, onDeleteGoal, onAddTeam, onUpdateTeam, onDeleteTeam }) {
+function BusinessDetailView({ isMobile, biz, session, robots = [], reports, goals, team, onBack, onUpdate, onAddReport, onUpdateReport, onDeleteReport, onAddGoal, onUpdateGoal, onDeleteGoal, onAddTeam, onUpdateTeam, onDeleteTeam }) {
   const [activeTab, setActiveTab] = useState("overview");
   const bizReports = reports.filter((r) => r.business_id === biz.id);
   const bizGoalsList = goals.filter((g) => g.business_id === biz.id);
   const bizTeamList = team.filter((t) => t.business_id === biz.id);
 
+  const hasBuProfile = !!(biz.bu_brief && biz.bu_brief.trim().length > 0);
   const tabs = [
     { key: "overview", label: "Overview" },
+    { key: "bu_profile", label: hasBuProfile ? "🧠 BU Profile" : "🧠 BU Profile (set up)" },
     { key: "goals", label: "🎯 Goals" },
     { key: "reports", label: "📄 Reports" },
     { key: "team", label: "👥 Team" },
@@ -2960,7 +2962,7 @@ function BusinessDetailView({ isMobile, biz, session, reports, goals, team, onBa
         subtitle={biz.description || `${biz.entity_type || ""}${biz.industry ? " · " + biz.industry : ""}`}
         icon={biz.name?.[0]?.toUpperCase()}
         onBack={onBack}
-        pills={[biz.entity_type, biz.state_of_formation && `📍 ${biz.state_of_formation}`].filter(Boolean)}
+        pills={[biz.entity_type, biz.state_of_formation && `📍 ${biz.state_of_formation}`, hasBuProfile ? "🧠 BU Profile" : null].filter(Boolean)}
         stats={[
           { label: "GOALS", value: bizGoalsList.length },
           { label: "REPORTS", value: bizReports.length },
@@ -2970,9 +2972,181 @@ function BusinessDetailView({ isMobile, biz, session, reports, goals, team, onBa
       <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
         <TabBar tabs={tabs} active={activeTab} onChange={setActiveTab} isMobile={isMobile} />
         {activeTab === "overview" && <BizOverview biz={biz} reports={bizReports} goals={bizGoalsList} team={bizTeamList} />}
+        {activeTab === "bu_profile" && <BuProfileTab biz={biz} robots={robots} onUpdate={onUpdate} isMobile={isMobile} />}
         {activeTab === "goals" && <BizGoalsTab isMobile={isMobile} businesses={[biz]} goals={bizGoalsList} onAdd={onAddGoal} onUpdate={onUpdateGoal} onDelete={onDeleteGoal} hideFilter defaultBizId={biz.id} />}
         {activeTab === "reports" && <ReportsTab isMobile={isMobile} businesses={[biz]} reports={bizReports} onAdd={onAddReport} onUpdate={onUpdateReport} onDelete={onDeleteReport} session={session} hideFilter defaultBizId={biz.id} />}
         {activeTab === "team" && <BizTeamTab isMobile={isMobile} bizId={biz.id} team={bizTeamList} onAdd={onAddTeam} onUpdate={onUpdateTeam} onDelete={onDeleteTeam} />}
+      </div>
+    </div>
+  );
+}
+
+/* — BU Profile Tab — Phase 4A: gives each business a clear identity that BU robots will inherit — */
+function BuProfileTab({ biz, robots = [], onUpdate, isMobile }) {
+  const [form, setForm] = useState({
+    bu_brief: biz.bu_brief || "",
+    bu_voice: biz.bu_voice || "",
+    bu_who_matters: Array.isArray(biz.bu_who_matters) ? biz.bu_who_matters : [],
+    bu_q2_success_definition: biz.bu_q2_success_definition || "",
+    bu_priorities: Array.isArray(biz.bu_priorities) ? biz.bu_priorities : [],
+    bu_kpis: Array.isArray(biz.bu_kpis) ? biz.bu_kpis : [],
+    bu_not_in_scope: biz.bu_not_in_scope || "",
+    default_robot_id: biz.default_robot_id || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [newWhoMatters, setNewWhoMatters] = useState("");
+  const [newPriority, setNewPriority] = useState("");
+  const [newKpi, setNewKpi] = useState({ name: "", target: "" });
+
+  const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
+  const labelStyle = { display: "block", fontSize: 11, fontWeight: 700, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" };
+
+  const update = (field, value) => setForm((p) => ({ ...p, [field]: value }));
+
+  const addToList = (field, value, reset) => {
+    const v = (value || "").trim();
+    if (!v) return;
+    setForm((p) => ({ ...p, [field]: [...(p[field] || []), v] }));
+    reset();
+  };
+  const addKpi = () => {
+    const name = (newKpi.name || "").trim();
+    if (!name) return;
+    setForm((p) => ({ ...p, bu_kpis: [...(p.bu_kpis || []), { name, target: newKpi.target.trim() || null }] }));
+    setNewKpi({ name: "", target: "" });
+  };
+  const removeFromList = (field, idx) => setForm((p) => ({ ...p, [field]: p[field].filter((_, i) => i !== idx) }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onUpdate(biz.id, {
+        bu_brief: form.bu_brief || null,
+        bu_voice: form.bu_voice || null,
+        bu_who_matters: form.bu_who_matters,
+        bu_q2_success_definition: form.bu_q2_success_definition || null,
+        bu_priorities: form.bu_priorities,
+        bu_kpis: form.bu_kpis,
+        bu_not_in_scope: form.bu_not_in_scope || null,
+        default_robot_id: form.default_robot_id || null,
+        bu_profile_updated_at: new Date().toISOString(),
+      });
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2200);
+    } catch (e) {
+      alert("Save failed: " + (e?.message || String(e)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const Section = ({ title, subtitle, children }) => (
+    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? 16 : 20, marginBottom: 14 }}>
+      <SectionHeader text={title} />
+      {subtitle && <p style={{ fontSize: 11, color: "#94a3b8", margin: "0 0 14px", lineHeight: 1.5 }}>{subtitle}</p>}
+      {children}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      {/* Sticky save bar */}
+      <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#f8fafc", padding: "8px 0", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, color: savedFlash ? "#16a34a" : "#94a3b8", fontWeight: 600 }}>
+          {savedFlash ? "✓ Profile saved — BU robots will inherit this on next call" : biz.bu_profile_updated_at ? `Last updated: ${new Date(biz.bu_profile_updated_at).toLocaleDateString()}` : "Not yet saved"}
+        </div>
+        <GreenButton small onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "💾 Save Profile"}</GreenButton>
+      </div>
+
+      <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", borderRadius: 14, padding: "16px 20px", marginBottom: 14, color: "#fff" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>🧠 BU PROFILE</div>
+        <div style={{ fontSize: 13, fontFamily: "'Playfair Display', serif", lineHeight: 1.5 }}>
+          The point-of-view that {biz.name}'s BU leader robot will inherit. Filling this out is what makes a BU robot a true expert vs. a generic assistant. Be specific, opinionated, and tight.
+        </div>
+      </div>
+
+      <Section title="📜 Mission Brief" subtitle="One paragraph: what this business does, why it exists, what makes it distinct. The robot reads this every time it speaks for the business.">
+        <textarea value={form.bu_brief} onChange={(e) => update("bu_brief", e.target.value)} rows={4} placeholder={`${biz.name} exists to...`} style={{ ...inputStyle, resize: "vertical", fontFamily: "'DM Sans', sans-serif" }} />
+      </Section>
+
+      <Section title="🎯 Q2 Success Definition" subtitle="One tangible thing that, if true on June 30, would mean this quarter was a win.">
+        <textarea value={form.bu_q2_success_definition} onChange={(e) => update("bu_q2_success_definition", e.target.value)} rows={2} placeholder="By June 30, ..." style={{ ...inputStyle, resize: "vertical" }} />
+      </Section>
+
+      <Section title="👥 Who Matters Most Right Now" subtitle="3-5 contacts, partners, or companies central to this business this quarter. The robot will weight communications from/about these higher.">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {(form.bu_who_matters || []).map((w, i) => (
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 6, background: "#1C382010", color: "#1C3820", border: "1px solid #1C382030" }}>
+              {w}
+              <button onClick={() => removeFromList("bu_who_matters", i)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+          {form.bu_who_matters.length === 0 && <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>(none yet — add 3-5 below)</span>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input value={newWhoMatters} onChange={(e) => setNewWhoMatters(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addToList("bu_who_matters", newWhoMatters, () => setNewWhoMatters("")); } }} placeholder="e.g. John Smith @ Capital Partners, BlackRock relationship..." style={{ ...inputStyle, flex: 1 }} />
+          <button onClick={() => addToList("bu_who_matters", newWhoMatters, () => setNewWhoMatters(""))} disabled={!newWhoMatters.trim()} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: newWhoMatters.trim() ? "#1C3820" : "#cbd5e1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: newWhoMatters.trim() ? "pointer" : "not-allowed" }}>Add</button>
+        </div>
+      </Section>
+
+      <Section title="🪨 Q2 Priorities (Rocks)" subtitle={`We're 7 weeks from June 30. List the 3-5 priorities that matter for ${biz.name} between now and end of quarter.`}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          {(form.bu_priorities || []).map((p, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#fffbeb", borderRadius: 6, border: "1px solid #fde68a" }}>
+              <span style={{ fontSize: 14 }}>🪨</span>
+              <span style={{ flex: 1, fontSize: 12, color: "#78350f" }}>{p}</span>
+              <button onClick={() => removeFromList("bu_priorities", i)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>×</button>
+            </div>
+          ))}
+          {form.bu_priorities.length === 0 && <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>(none yet — add 3-5 priorities below)</span>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input value={newPriority} onChange={(e) => setNewPriority(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addToList("bu_priorities", newPriority, () => setNewPriority("")); } }} placeholder="e.g. Close Q2 LP commitments by June 15..." style={{ ...inputStyle, flex: 1 }} />
+          <button onClick={() => addToList("bu_priorities", newPriority, () => setNewPriority(""))} disabled={!newPriority.trim()} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: newPriority.trim() ? "#1C3820" : "#cbd5e1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: newPriority.trim() ? "pointer" : "not-allowed" }}>Add</button>
+        </div>
+      </Section>
+
+      <Section title="📊 Weekly KPIs" subtitle="3-5 metrics. The ones that, if you saw them moving in the right direction every week, would tell you this business is healthy. Specific is better than vague.">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+          {(form.bu_kpis || []).map((k, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#eff6ff", borderRadius: 6, border: "1px solid #bfdbfe" }}>
+              <span style={{ fontSize: 14 }}>📊</span>
+              <span style={{ flex: 1, fontSize: 12, color: "#1e3a8a" }}>
+                <strong>{k.name}</strong>
+                {k.target && <span style={{ color: "#64748b", marginLeft: 8 }}>→ target: {k.target}</span>}
+              </span>
+              <button onClick={() => removeFromList("bu_kpis", i)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14 }}>×</button>
+            </div>
+          ))}
+          {form.bu_kpis.length === 0 && <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>(none yet — add 3-5 KPIs below)</span>}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr auto", gap: 6 }}>
+          <input value={newKpi.name} onChange={(e) => setNewKpi({ ...newKpi, name: e.target.value })} placeholder="KPI name (e.g. Active deals in pipeline)" style={inputStyle} />
+          <input value={newKpi.target} onChange={(e) => setNewKpi({ ...newKpi, target: e.target.value })} placeholder="Target (optional)" style={inputStyle} />
+          <button onClick={addKpi} disabled={!newKpi.name.trim()} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: newKpi.name.trim() ? "#1C3820" : "#cbd5e1", color: "#fff", fontSize: 12, fontWeight: 700, cursor: newKpi.name.trim() ? "pointer" : "not-allowed" }}>Add</button>
+        </div>
+      </Section>
+
+      <Section title="🚫 What's NOT in Scope" subtitle="What this business explicitly does NOT do. Helps the robot say 'no' confidently and stay focused.">
+        <textarea value={form.bu_not_in_scope} onChange={(e) => update("bu_not_in_scope", e.target.value)} rows={3} placeholder={`${biz.name} does NOT do...`} style={{ ...inputStyle, resize: "vertical" }} />
+      </Section>
+
+      <Section title="🎙️ Voice & Personality" subtitle="How should this BU robot sound? What's its character? (e.g. 'Tech founder energy — fast, opinionated, talks in tradeoffs.')">
+        <textarea value={form.bu_voice} onChange={(e) => update("bu_voice", e.target.value)} rows={3} placeholder="Voice description..." style={{ ...inputStyle, resize: "vertical" }} />
+      </Section>
+
+      <Section title="🤖 Default BU Leader Robot" subtitle="When BU robots roll out (Phase 4E+), which robot leads this business? Leave blank if you'll create a dedicated BU robot later.">
+        <select value={form.default_robot_id} onChange={(e) => update("default_robot_id", e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+          <option value="">-- Not assigned yet --</option>
+          {robots.filter((r) => r.status === "active").map((r) => (
+            <option key={r.id} value={r.id}>{r.name} · {r.role}</option>
+          ))}
+        </select>
+      </Section>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 0 24px" }}>
+        <GreenButton small onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "💾 Save Profile"}</GreenButton>
       </div>
     </div>
   );
@@ -16474,7 +16648,7 @@ export default function SuarezApp() {
     switch (activeNav) {
       case "overview": return <OverviewView isMobile={isMobile} session={session} accounts={accounts} uploads={uploads} assets={assets} transactions={transactions} investments={investments} lifeExpenses={lifeExpenses} homes={homes} utilityBills={utilityBills} policies={policies} monthlyBills={monthlyBills} onNavigate={navigate} />;
       case "finance": return <FinanceView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} transactions={transactions} accounts={accounts} uploads={uploads} lifeExpenses={lifeExpenses} assets={assets} investments={investments} snapshots={snapshots} monthlyBills={monthlyBills} policies={policies} homes={homes} utilityBills={utilityBills} businesses={businesses} funnelPresets={funnelPresets} funnelInflows={funnelInflows} onAddFunnelPreset={handleAddFunnelPreset} onUpdateFunnelPreset={handleUpdateFunnelPreset} onDeleteFunnelPreset={handleDeleteFunnelPreset} onAddFunnelInflow={handleAddFunnelInflow} onUpdateFunnelInflow={handleUpdateFunnelInflow} onDeleteFunnelInflow={handleDeleteFunnelInflow} onAddAccount={handleAddAccount} onToggleAccount={handleToggleAccount} onDeleteAccount={handleDeleteAccount} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} onAddLifeExpense={handleAddLifeExpense} onDeleteLifeExpense={handleDeleteLifeExpense} onUpload={handleUpload} onDeleteUpload={handleDeleteUpload} onAddAsset={handleAddAsset} onUpdateAsset={handleUpdateAsset} onDeleteAsset={handleDeleteAsset} onAddInvestment={handleAddInvestment} onUpdateInvestment={handleUpdateInvestment} onDeleteInvestment={handleDeleteInvestment} onAddSnapshot={handleAddSnapshot} onDeleteSnapshot={handleDeleteSnapshot} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onLogUpload={handleLogUpload} />;
-      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
+      case "business": return <BusinessView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} businesses={businesses} transactions={transactions} companies={companies} policies={policies} reports={businessReports} bizGoals={bizGoals} bizMilestones={bizMilestones} bizTeam={bizTeam} session={session} robots={robots} onAddBusiness={handleAddBusiness} onUpdateBusiness={handleUpdateBusiness} onDeleteBusiness={handleDeleteBusiness} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} onAddPolicy={handleAddPolicy} onUpdatePolicy={handleUpdatePolicy} onDeletePolicy={handleDeletePolicy} onAddReport={handleAddReport} onUpdateReport={handleUpdateReport} onDeleteReport={handleDeleteReport} onAddBizGoal={handleAddBizGoal} onUpdateBizGoal={handleUpdateBizGoal} onDeleteBizGoal={handleDeleteBizGoal} onAddBizMilestone={handleAddBizMilestone} onDeleteBizMilestone={handleDeleteBizMilestone} onAddTeam={handleAddBizTeam} onUpdateTeam={handleUpdateBizTeam} onDeleteTeam={handleDeleteBizTeam} />;
       case "life": return <LifeConsolidatedView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} homes={homes} utilityBills={utilityBills} calendarEvents={calendarEvents} plannerTasks={plannerTasks} monthlyBills={monthlyBills} kids={kids} grades={kidGrades} milestones={kidMilestones} prayers={prayers} session={session} familyMembers={familyMembers} checkins={healthCheckins} supplements={supplements} meals={mealEntries} bloodWork={bloodWork} scorecards={scorecards} doseLogs={doseLogs} bodyLogs={bodyLogs} onAddHome={handleAddHome} onUpdateHome={handleUpdateHome} onDeleteHome={handleDeleteHome} onAddBill={handleAddUtilityBill} onUpdateBill={handleUpdateUtilityBill} onDeleteBill={handleDeleteUtilityBill} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onAddMonthlyBill={handleAddMonthlyBill} onUpdateMonthlyBill={handleUpdateMonthlyBill} onDeleteMonthlyBill={handleDeleteMonthlyBill} onAddKid={handleAddKid} onUpdateKid={handleUpdateKid} onDeleteKid={handleDeleteKid} onAddGrade={handleAddKidGrade} onDeleteGrade={handleDeleteKidGrade} onAddMilestone={handleAddKidMilestone} onUpdateMilestone={handleUpdateKidMilestone} onDeleteMilestone={handleDeleteKidMilestone} onAddPrayer={handleAddPrayer} onUpdatePrayer={handleUpdatePrayer} onDeletePrayer={handleDeletePrayer} onAddMember={handleAddFamilyMember} onAddCheckin={handleAddCheckin} onDeleteCheckin={handleDeleteCheckin} onAddSupplement={handleAddSupplement} onUpdateSupplement={handleUpdateSupplement} onDeleteSupplement={handleDeleteSupplement} onAddMeal={handleAddMeal} onDeleteMeal={handleDeleteMeal} onAddBloodWork={handleAddBloodWork} onDeleteBloodWork={handleDeleteBloodWork} onAddScorecard={handleAddScorecard} onDeleteScorecard={handleDeleteScorecard} onAddDoseLog={handleAddDoseLog} onDeleteDoseLog={handleDeleteDoseLog} onAddBodyLog={handleAddBodyLog} onDeleteBodyLog={handleDeleteBodyLog} savedLinks={savedLinks} onAddLink={handleAddLink} onDeleteLink={handleDeleteLink} goals={goals} onAddGoal={handleAddGoal} onUpdateGoal={handleUpdateGoal} onDeleteGoal={handleDeleteGoal} habits={habits} habitLogs={habitLogs} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} onAddHabitLog={handleAddHabitLog} onDeleteHabitLog={handleDeleteHabitLog} learningItems={learningItems} onAddLearning={handleAddLearning} onUpdateLearning={handleUpdateLearning} onDeleteLearning={handleDeleteLearning} trainers={trainers} onAddTrainer={handleAddTrainer} onUpdateTrainer={handleUpdateTrainer} onDeleteTrainer={handleDeleteTrainer} />;
       case "growth": return <OutreachView isMobile={isMobile} activeTab={activeTab} onTabChange={handleTabChange} companies={companies} onAddCompany={handleAddCompany} onUpdateCompany={handleUpdateCompany} onDeleteCompany={handleDeleteCompany} contacts={contacts} onAddContact={handleAddContact} onUpdateContact={handleUpdateContact} onDeleteContact={handleDeleteContact} session={session} robots={robots} gmailConnected={gmailConnected} gmailEmail={gmailEmail} onGmailConnect={() => {
         supabase.functions.invoke("gmail-auth", { body: { user_id: session.user.id } }).then(({ data }) => { if (data?.url) window.open(data.url, "_blank", "width=600,height=700"); });
