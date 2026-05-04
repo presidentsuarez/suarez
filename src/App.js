@@ -6561,6 +6561,9 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   const [draftPickedId, setDraftPickedId] = useState(null);
   const [trainingMode, setTrainingMode] = useState(false);
   const [reverseSyncing, setReverseSyncing] = useState(false);
+  const [archiveLog, setArchiveLog] = useState([]);
+  const [showArchivedPanel, setShowArchivedPanel] = useState(false);
+  const [undoingId, setUndoingId] = useState(null);
 
   const atlas = robots.find((r) => r.name === "Atlas") || robots[0];
 
@@ -6623,12 +6626,15 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   };
 
   const loadTriageData = React.useCallback(async () => {
-    const [{ data: tRows }, { data: cats }] = await Promise.all([
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [{ data: tRows }, { data: cats }, { data: archived }] = await Promise.all([
       supabase.from("inbox_triage").select("*").eq("user_id", session.user.id).order("thread_received_at", { ascending: false }).limit(200),
       supabase.from("inbox_categories").select("*").eq("user_id", session.user.id).eq("active", true).order("sort_order", { ascending: true }),
+      supabase.from("inbox_auto_archive_log").select("*").eq("user_id", session.user.id).gte("archived_at", since).order("archived_at", { ascending: false }).limit(50),
     ]);
     setTriageRows(tRows || []);
     setCategories(cats || []);
+    setArchiveLog(archived || []);
     setLoading(false);
   }, [session.user.id]);
 
@@ -6750,6 +6756,37 @@ After all threads are triaged, give a one-sentence summary.`,
 
   // Training mode: pull a deeper, randomly-sampled set of untriaged threads (up to 10).
   // Bypasses the 5-min debounce. Goal is to give the user a fast batch to give feedback on.
+  const undoArchive = async (logEntry) => {
+    if (!window.confirm(`Restore "${logEntry.category_name}" thread back to your Gmail Inbox?`)) return;
+    setUndoingId(logEntry.id);
+    try {
+      const { data, error: invErr } = await supabase.functions.invoke("inbox-auto-archive", {
+        body: { action: "undo", user_id: session.user.id, log_id: logEntry.id, reason: "user undo from audit panel" },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+      await loadTriageData();
+    } catch (err) {
+      setError(`Undo failed: ${err.message || String(err)}`);
+    } finally {
+      setUndoingId(null);
+    }
+  };
+
+  const undoAllArchived = async () => {
+    const undoable = archiveLog.filter((e) => !e.unarchived_at);
+    if (undoable.length === 0) return;
+    if (!window.confirm(`Restore ALL ${undoable.length} auto-archived threads back to your Gmail Inbox?`)) return;
+    for (const entry of undoable) {
+      try {
+        await supabase.functions.invoke("inbox-auto-archive", {
+          body: { action: "undo", user_id: session.user.id, log_id: entry.id, reason: "user bulk undo" },
+        });
+      } catch (e) { /* keep going */ }
+    }
+    await loadTriageData();
+  };
+
   const runReverseSync = async () => {
     if (!gmailConnected) { setError("Gmail not connected."); return; }
     setReverseSyncing(true);
@@ -7120,6 +7157,60 @@ After all are triaged, give a one-line summary of how many you handled.`,
           </div>
         </div>
       )}
+
+      {/* Auto-archive audit panel — collapsed by default; lets user undo any auto-archives */}
+      {archiveLog.length > 0 && (() => {
+        const undoableCount = archiveLog.filter((e) => !e.unarchived_at).length;
+        const last24hCount = archiveLog.filter((e) => Date.now() - new Date(e.archived_at).getTime() < 24 * 60 * 60 * 1000).length;
+        return (
+          <div style={{ marginBottom: 10, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+            <div onClick={() => setShowArchivedPanel(!showArchivedPanel)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer", background: "#f8fafc", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 16 }}>📦</span>
+              <div style={{ flex: 1, minWidth: 200, fontSize: 12, color: "#0f172a" }}>
+                <strong>{undoableCount} auto-archived</strong> in the last 7 days
+                {last24hCount > 0 && <span style={{ color: "#64748b" }}> · {last24hCount} today</span>}
+              </div>
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>{showArchivedPanel ? "▾" : "▸"}</span>
+            </div>
+            {showArchivedPanel && (
+              <div style={{ padding: "10px 14px", borderTop: "1px solid #e2e8f0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: "#64748b" }}>Each one shows the rule that fired. Tap ↶ to restore it to your Gmail Inbox.</span>
+                  {undoableCount > 1 && (
+                    <button onClick={undoAllArchived} style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", cursor: "pointer" }}>↶ Undo all {undoableCount}</button>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {archiveLog.map((entry) => {
+                    const isUndone = !!entry.unarchived_at;
+                    const ts = new Date(entry.archived_at);
+                    const hoursAgo = Math.round((Date.now() - ts.getTime()) / 3600000);
+                    const timeStr = hoursAgo < 1 ? "just now" : hoursAgo < 24 ? `${hoursAgo}h ago` : `${Math.round(hoursAgo / 24)}d ago`;
+                    return (
+                      <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: isUndone ? "#f8fafc" : "#fff", border: "1px solid #f1f5f9", borderRadius: 6, opacity: isUndone ? 0.55 : 1 }}>
+                        <span style={{ fontSize: 14 }}>{isUndone ? "↶" : "📦"}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#0f172a" }}>
+                            {entry.category_name}
+                            {entry.rule_name && <span style={{ fontWeight: 400, color: "#64748b" }}> · {entry.rule_name}</span>}
+                          </div>
+                          <div style={{ fontSize: 10, color: "#94a3b8", fontFamily: "'DM Mono', monospace" }}>
+                            {timeStr}
+                            {isUndone && <span style={{ color: "#16a34a" }}> · restored</span>}
+                          </div>
+                        </div>
+                        {!isUndone && (
+                          <button onClick={() => undoArchive(entry)} disabled={undoingId === entry.id} style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 5, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", cursor: undoingId === entry.id ? "default" : "pointer" }}>{undoingId === entry.id ? "…" : "↶ Undo"}</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* List */}
       {triageRows.length === 0 ? (
