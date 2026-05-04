@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
         if (existing) continue;
 
         const isPendingReview = tier === "B";
-        await supabase.from("inbox_triage").insert({
+        const { data: insertedTriage } = await supabase.from("inbox_triage").insert({
           user_id,
           gmail_thread_id: t.thread_id,
           category_id: match.action_category_id,
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
           auto_applied: true,
           user_confirmed: false,
           triaged_at: new Date().toISOString(),
-        });
+        }).select("id").single();
 
         // Sync Gmail label (fire-and-forget; don't block rule processing)
         try {
@@ -160,6 +160,26 @@ Deno.serve(async (req) => {
             }),
           }).catch(() => {});
         } catch (_) {}
+
+        // Auto-archive evaluator (Phase 2 conservative ramp)
+        // Only fires for B-tier+ rules (not pending review) and respects category policy
+        if (insertedTriage?.id && !isPendingReview) {
+          try {
+            fetch(`${SUPABASE_URL}/functions/v1/inbox-auto-archive`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+              },
+              body: JSON.stringify({
+                action: "evaluate",
+                user_id,
+                triage_id: insertedTriage.id,
+              }),
+            }).catch(() => {});
+          } catch (_) {}
+        }
 
         // Bump match count
         await supabase.from("inbox_rules").update({

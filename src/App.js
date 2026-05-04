@@ -6559,6 +6559,7 @@ function InboxTriageView({ isMobile, session, robots = [], gmailConnected, onCon
   const [viewing, setViewing] = useState(null);
   const [draftingForId, setDraftingForId] = useState(null);
   const [draftPickedId, setDraftPickedId] = useState(null);
+  const [trainingMode, setTrainingMode] = useState(false);
 
   const atlas = robots.find((r) => r.name === "Atlas") || robots[0];
 
@@ -6745,6 +6746,88 @@ After all threads are triaged, give a one-sentence summary.`,
       setError(`Auto-triage failed: ${err.message || String(err)}. You can still review existing triage below.`);
     }
   }, [atlas, gmailConnected, session.user.id, triageRows, loadTriageData]);
+
+  // Training mode: pull a deeper, randomly-sampled set of untriaged threads (up to 10).
+  // Bypasses the 5-min debounce. Goal is to give the user a fast batch to give feedback on.
+  const runTrainingMode = async () => {
+    if (!atlas || !gmailConnected) {
+      setError("Gmail or Atlas not ready.");
+      return;
+    }
+    setTrainingMode(true);
+    setError("");
+    setAutoStatus("Pulling 10 untriaged threads from your inbox…");
+    try {
+      // Pull a deeper window — up to 100 inbox threads — so we can sample beyond just the most recent
+      const { data: gmailData, error: gErr } = await supabase.functions.invoke("gmail-proxy", {
+        body: { user_id: session.user.id, action: "list", params: { maxResults: 100, query: "in:inbox" } },
+      });
+      if (gErr) throw gErr;
+      const messages = gmailData?.messages || [];
+      const triagedIds = new Set(triageRows.map((r) => r.gmail_thread_id));
+      const newMessages = messages.filter((m) => !triagedIds.has(m.threadId || m.thread_id || m.id));
+
+      if (newMessages.length === 0) {
+        setAutoStatus("");
+        setError("Nothing new to triage — everything in your inbox has already been triaged. Refresh Gmail or wait for new mail.");
+        setTrainingMode(false);
+        return;
+      }
+
+      // Randomize and take up to 10
+      const shuffled = [...newMessages].sort(() => Math.random() - 0.5);
+      const sample = shuffled.slice(0, 10);
+      const sampleIds = sample.map((m) => m.threadId || m.thread_id || m.id);
+
+      setAutoStatus(`Atlas reading ${sample.length} threads (random sample from ${newMessages.length} untriaged)…`);
+
+      // Tell Atlas to read these specific threads. He has list_inbox_threads + get_inbox_thread + triage_inbox_thread.
+      // Pass thread IDs explicitly so he doesn't fall back to most-recent-only.
+      const idsList = sampleIds.map((id, i) => `${i + 1}. ${id}`).join("\n");
+      const { data, error: invErr } = await supabase.functions.invoke("robot-chat", {
+        body: {
+          robot_id: atlas.id,
+          user_id: session.user.id,
+          message: `Training-mode triage: I picked 10 random untriaged threads from my inbox. Triage all of them.
+
+For EACH of these thread IDs, in order:
+${idsList}
+
+Steps for EACH thread:
+1. Call list_inbox_categories (only on the first thread, you'll have it for the rest).
+2. Call get_inbox_thread with the thread_id to read content.
+3. Call triage_inbox_thread with category, priority, needs_response, is_actionable, suggested_action (if any), and 1-2 sentence reasoning.
+
+═══ TRIAGE RULES ═══
+
+PRIORITY vs ACTIONABILITY are independent:
+  - "high priority" can still mean is_actionable=false. Credit alerts, statements, security notifications are urgent-to-know but don't need action.
+  - is_actionable=true ONLY when Javier must DO something specific (sign, schedule, decide, respond).
+  - needs_response=true ONLY when a human is awaiting his reply.
+
+NOTIFICATION vs PROMOTIONAL vs NEWSLETTER:
+  - Notification = automated info alerts (statements, credit alerts, receipts).
+  - Promotional = selling or driving action (even with newsletter format).
+  - Newsletter = informational digests (industry news, articles).
+
+Honor inbox memories — sender-specific user preferences override generic categorization.
+
+After all are triaged, give a one-line summary of how many you handled.`,
+          history: [],
+        },
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+
+      setAutoStatus("");
+      await loadTriageData();
+    } catch (err) {
+      setAutoStatus("");
+      setError(`Training mode failed: ${err.message || String(err)}`);
+    } finally {
+      setTrainingMode(false);
+    }
+  };
 
   React.useEffect(() => { loadTriageData(); }, [loadTriageData]);
 
@@ -6957,12 +7040,18 @@ After all threads are triaged, give a one-sentence summary.`,
         {!gmailConnected ? (
           <button onClick={onConnect} style={{ marginTop: 14, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(212,192,140,0.5)", background: "#D4C08C", color: "#1C3820", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📧 Connect Gmail to start</button>
         ) : (
-          <div style={{ marginTop: 14, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-            {autoStatus
-              ? <span style={{ color: "#fbbf24" }}>⏳ {autoStatus}</span>
-              : <span><strong style={{ color: "#fff" }}>{activeCount}</strong> active · <strong style={{ color: "#86efac" }}>{needsResponseCount}</strong> need response</span>
-            }
-          </div>
+          <>
+            <div style={{ marginTop: 14, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+              {autoStatus
+                ? <span style={{ color: "#fbbf24" }}>⏳ {autoStatus}</span>
+                : <span><strong style={{ color: "#fff" }}>{activeCount}</strong> active · <strong style={{ color: "#86efac" }}>{needsResponseCount}</strong> need response</span>
+              }
+            </div>
+            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={runTrainingMode} disabled={trainingMode} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid rgba(212,192,140,0.5)", background: trainingMode ? "rgba(212,192,140,0.2)" : "#D4C08C", color: trainingMode ? "#D4C08C" : "#1C3820", fontSize: 12, fontWeight: 700, cursor: trainingMode ? "not-allowed" : "pointer" }}>{trainingMode ? "🎓 Pulling sample…" : "🎓 Training Mode (10 random)"}</button>
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", alignSelf: "center" }}>scans deeper into inbox + random sample</span>
+            </div>
+          </>
         )}
 
         {error && (
@@ -8567,7 +8656,7 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
   );
 
   return (
-    <div style={{ flex: 1, display: "flex", height: "100%", overflow: "hidden", background: "#f8fafc" }}>
+    <div style={{ flex: 1, display: "flex", height: isMobile ? "calc(100dvh - 56px - 70px - env(safe-area-inset-bottom))" : "100%", overflow: "hidden", background: "#f8fafc" }}>
       {isMobile && !sidebarOpen && (
         <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
       )}
@@ -8577,9 +8666,9 @@ function OutreachView({ isMobile, activeTab, onTabChange, companies, onAddCompan
           <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}><Sidebar /></div>
         </>
       )}
-      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch", minHeight: 0 }}>
         <PageHeader title="Inbox" subtitle="Email, text & calls" isMobile={isMobile} icon="📨" />
-        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 100 : 32 }}>
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? 60 : 32 }}>
           {tab === "dashboard" && <OutreachDashboard isMobile={isMobile} />}
           {tab === "triage" && <InboxTriageView isMobile={isMobile} session={session} robots={robots} gmailConnected={gmailConnected} onConnect={onGmailConnect} />}
           {tab === "contacts" && <ContactsTab isMobile={isMobile} contacts={contacts} onAdd={onAddContact} onUpdate={onUpdateContact} onDelete={onDeleteContact} />}
