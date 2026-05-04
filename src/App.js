@@ -6834,8 +6834,7 @@ After all threads are triaged, give a one-sentence summary.`,
       const newMessages = messages.filter((m) => !triagedIds.has(m.threadId || m.thread_id || m.id));
 
       if (newMessages.length === 0) {
-        setAutoStatus("");
-        setError("Nothing new to triage — everything in your inbox has already been triaged. Refresh Gmail or wait for new mail.");
+        setAutoStatus("✓ Inbox zero — every thread in your inbox has been triaged. Drop a Suarez label on something in Gmail or wait for new mail.");
         setTrainingMode(false);
         return;
       }
@@ -7218,11 +7217,33 @@ After all are triaged, give a one-line summary of how many you handled.`,
           <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
           <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>{gmailConnected ? (autoStatus ? "Atlas is reading your inbox now…" : "Nothing new in the last 5 minutes. Refresh the page to check again.") : "Connect Gmail to begin."}</p>
         </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 24, textAlign: "center" }}>
-          <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>Nothing matches those filters{showHandled ? "" : " (try \"Show handled\" to see what's been cleared)"}.</p>
-        </div>
-      ) : (
+      ) : filtered.length === 0 ? (() => {
+        // Distinguish: is everything handled (Inbox Zero!) vs just filter mismatch?
+        const allHandled = triageRows.every((r) => r.user_marked_handled);
+        const usingDefaultFilters = filterCategory === "all" && filterPriority === "all";
+        if (allHandled && usingDefaultFilters && !showHandled) {
+          return (
+            <div style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", borderRadius: 14, border: "1px solid #bbf7d0", padding: isMobile ? 24 : 40, textAlign: "center" }}>
+              <div style={{ fontSize: 48, marginBottom: 10 }}>🎯</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#166534", fontFamily: "'Playfair Display', serif", marginBottom: 6 }}>Inbox zero.</div>
+              <p style={{ color: "#16a34a", fontSize: 13, margin: "0 0 14px", lineHeight: 1.6 }}>
+                You've handled all <strong>{triageRows.length}</strong> triaged threads. No active items, nothing needs response.
+              </p>
+              <p style={{ color: "#15803d", fontSize: 11, margin: "0 0 14px", lineHeight: 1.6, fontStyle: "italic" }}>
+                Atlas will auto-triage new mail as it arrives. Or pull more for training below.
+              </p>
+              <button onClick={() => setShowHandled(true)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #16a34a", background: "#fff", color: "#16a34a", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Show {triageRows.length} handled threads
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div style={{ background: "#fff", borderRadius: 14, border: "1px dashed #e2e8f0", padding: 24, textAlign: "center" }}>
+            <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>Nothing matches those filters{!showHandled ? " (try \"Show handled\" to see what's been cleared)" : ""}.</p>
+          </div>
+        );
+      })() : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map((r) => (
             <TriageCard
