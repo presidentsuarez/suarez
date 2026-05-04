@@ -11506,7 +11506,287 @@ function FeedbackLogTab({ session, isMobile, robots }) {
 
 
 /* — Reports View — Brand audits and other AI-generated reports — */
+/* — Reports View — shell with sidebar (Brand / Business / future categories) — */
 function ReportsView({ isMobile, session, robots = [] }) {
+  const [activeTab, setActiveTab] = useState("brand");
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+
+  const sections = [
+    { key: "brand",    icon: "🔎", label: "Brand",    desc: "Saturday brand audits" },
+    { key: "business", icon: "💼", label: "Business", desc: "Sunday operations snapshot" },
+  ];
+
+  const navigate = (k) => {
+    setActiveTab(k);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const Sidebar = (
+    <div style={{ width: 240, background: "#1C3820", color: "#fff", height: "100%", display: "flex", flexDirection: "column", borderRight: "1px solid rgba(212,192,140,0.15)" }}>
+      <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid rgba(212,192,140,0.12)" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "#D4C08C" }}>📊 Reports</div>
+        <div style={{ fontSize: 9, color: "rgba(212,192,140,0.5)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>AI Intelligence</div>
+      </div>
+      <div style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
+        {sections.map((s) => {
+          const isActive = activeTab === s.key;
+          return (
+            <div key={s.key} onClick={() => navigate(s.key)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", cursor: "pointer", background: isActive ? "rgba(212,192,140,0.12)" : "transparent", borderLeft: `3px solid ${isActive ? "#D4C08C" : "transparent"}` }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: isActive ? "rgba(212,192,140,0.2)" : "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{s.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: isActive ? "#D4C08C" : "#fff" }}>{s.label}</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>{s.desc}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ padding: "10px 14px", borderTop: "1px solid rgba(212,192,140,0.12)", fontSize: 9, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
+        Reports refresh on schedule. Manual run buttons per category.
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, display: "flex", height: isMobile ? "calc(100dvh - 56px - 70px - env(safe-area-inset-bottom))" : "100%", overflow: "hidden", background: "#f8fafc" }}>
+      {isMobile && !sidebarOpen && (
+        <button onClick={() => setSidebarOpen(true)} style={{ position: "fixed", top: 70, left: 14, zIndex: 50, background: "#1C3820", border: "1px solid rgba(212,192,140,0.3)", borderRadius: 8, color: "#D4C08C", padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>☰</button>
+      )}
+      {sidebarOpen && (
+        <>
+          {isMobile && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />}
+          <div style={{ position: isMobile ? "fixed" : "relative", left: 0, top: 0, bottom: 0, zIndex: 45, height: "100%" }}>{Sidebar}</div>
+        </>
+      )}
+      <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch", minHeight: 0 }}>
+        <PageHeader
+          title={activeTab === "brand" ? "Brand Reports" : "Business Reports"}
+          subtitle={activeTab === "brand" ? "Weekly brand audits — Saturday 5am ET" : "Weekly operations snapshot — Sunday 5pm ET"}
+          icon="📊"
+          isMobile={isMobile}
+        />
+        <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: isMobile ? "calc(120px + env(safe-area-inset-bottom))" : 32, maxWidth: 1200, margin: "0 auto" }}>
+          {activeTab === "brand" && <BrandReportsTab isMobile={isMobile} session={session} robots={robots} />}
+          {activeTab === "business" && <BusinessReportsTab isMobile={isMobile} session={session} robots={robots} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* — Business Reports Tab — Sunday weekly snapshot — */
+function BusinessReportsTab({ isMobile, session, robots = [] }) {
+  const [snapshots, setSnapshots] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState("");
+  const [viewing, setViewing] = useState(null);
+
+  const loadSnapshots = React.useCallback(async () => {
+    const { data } = await supabase
+      .from("robot_artifacts")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .in("artifact_type", ["business_snapshot", "business_snapshot_failure"])
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setSnapshots(data || []);
+    setLoading(false);
+  }, [session.user.id]);
+
+  React.useEffect(() => { loadSnapshots(); }, [loadSnapshots]);
+
+  const runSnapshotNow = async () => {
+    setRunning(true);
+    setRunError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("run-business-snapshot", {
+        body: { user_id: session.user.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error + (data.details ? ` — ${typeof data.details === "string" ? data.details : JSON.stringify(data.details).slice(0, 200)}` : ""));
+      await loadSnapshots();
+    } catch (err) {
+      setRunError(err.message || String(err));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const deleteSnapshot = async (id) => {
+    if (!window.confirm("Delete this snapshot?")) return;
+    await supabase.from("robot_artifacts").delete().eq("id", id);
+    setViewing(null);
+    await loadSnapshots();
+  };
+
+  const successful = snapshots.filter((s) => s.artifact_type === "business_snapshot");
+  const latest = successful[0];
+
+  const nextRunLabel = (() => {
+    const now = new Date();
+    const day = now.getUTCDay();
+    let daysUntilSun = (0 - day + 7) % 7;
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysUntilSun, 21, 0, 0));
+    if (daysUntilSun === 0 && now.getUTCHours() >= 21) {
+      next.setUTCDate(next.getUTCDate() + 7);
+    }
+    return next.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }) + " ET";
+  })();
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>;
+
+  return (
+    <>
+      {/* Header card */}
+      <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f2614 100%)", borderRadius: 16, padding: isMobile ? 20 : 28, marginBottom: 18, color: "#fff", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -40, right: -40, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(212,192,140,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>💼 Business Operations</div>
+            <h2 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#fff", fontFamily: "'Playfair Display', serif", margin: 0 }}>Weekly Snapshot</h2>
+            {latest ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: isMobile ? 13 : 15, color: "rgba(255,255,255,0.92)", lineHeight: 1.5, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>
+                  "{latest.payload?.headline || latest.summary}"
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 8 }}>
+                  Generated {new Date(latest.created_at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", margin: "12px 0 0", lineHeight: 1.5 }}>
+                No snapshots yet. Click "Run snapshot now" to generate one immediately, or wait for the next scheduled run.
+              </p>
+            )}
+          </div>
+          <div style={{ textAlign: isMobile ? "left" : "right" }}>
+            <button onClick={runSnapshotNow} disabled={running} style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: running ? "rgba(212,192,140,0.3)" : "#D4C08C", color: "#1C3820", fontSize: 13, fontWeight: 700, cursor: running ? "default" : "pointer", marginBottom: 8 }}>
+              {running ? "🔄 Running…" : "🔎 Run snapshot now"}
+            </button>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>
+              Next scheduled: {nextRunLabel}
+            </div>
+          </div>
+        </div>
+        {runError && (
+          <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)", borderRadius: 8, fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>
+            ⚠️ {runError}
+          </div>
+        )}
+      </div>
+
+      {latest && <BusinessSnapshotDetailCard snapshot={latest} isMobile={isMobile} />}
+
+      {snapshots.length > 1 && (
+        <div style={{ marginTop: 22 }}>
+          <SectionHeader text={`Past Snapshots (${snapshots.length - 1})`} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {snapshots.slice(1).map((s) => (
+              <div key={s.id} className="sz-hover-card" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }} onClick={() => setViewing(s)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.title}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, fontStyle: "italic" }}>{s.summary || (s.payload?.headline) || ""}</div>
+                </div>
+                {s.artifact_type === "business_snapshot_failure" && (
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: "#fef2f2", color: "#dc2626", textTransform: "uppercase" }}>Failed</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewing && <BusinessSnapshotDetailModal snapshot={viewing} isMobile={isMobile} onClose={() => setViewing(null)} onDelete={() => deleteSnapshot(viewing.id)} />}
+    </>
+  );
+}
+
+function BusinessSnapshotDetailCard({ snapshot, isMobile }) {
+  const p = snapshot.payload || {};
+  const Section = ({ title, items, color, icon }) => (!items || items.length === 0) ? null : (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        {icon && <span>{icon}</span>}{title}
+      </div>
+      <div style={{ background: "#fff", borderLeft: `3px solid ${color}`, borderRadius: 8, padding: "12px 14px", border: "1px solid #e2e8f0" }}>
+        {items.map((item, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: i > 0 ? "8px 0 0" : 0, borderTop: i > 0 ? "1px solid #f1f5f9" : "none", marginTop: i > 0 ? 8 : 0 }}>
+            <span style={{ color, fontSize: 11, marginTop: 1 }}>•</span>
+            <span style={{ fontSize: 12, color: "#475569", lineHeight: 1.6, flex: 1 }}>{item}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", padding: isMobile ? 18 : 24 }}>
+      {p.strategic_read && (
+        <div style={{ marginBottom: 18, padding: "14px 18px", background: "linear-gradient(135deg, #fffbeb, #fef3c7)", borderRadius: 10, border: "1px solid #fde68a" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>🧠 Atlas's Strategic Read</div>
+          <div style={{ fontSize: 13, color: "#78350f", lineHeight: 1.7 }}>{p.strategic_read}</div>
+        </div>
+      )}
+
+      <Section title="What moved" items={p.what_moved} color="#16a34a" icon="✓" />
+      <Section title="What stalled" items={p.what_stalled} color="#dc2626" icon="✗" />
+      <Section title="Next week priorities" items={p.next_week_priorities} color="#3b82f6" icon="→" />
+
+      {p.raw_data && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#1C3820", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>📊 By the Numbers</div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
+            {[
+              { label: "Open deals", value: p.raw_data.open_deals, suffix: p.raw_data.pipeline_value > 0 ? `$${(p.raw_data.pipeline_value / 1000).toFixed(0)}K` : null },
+              { label: "Tasks", value: p.raw_data.tasks_total, suffix: p.raw_data.tasks_overdue > 0 ? `${p.raw_data.tasks_overdue} overdue` : null },
+              { label: "Inbox triaged", value: p.raw_data.inbox_triaged, suffix: `${p.raw_data.inbox_handled} handled` },
+              { label: "Posts logged", value: p.raw_data.posts_logged, suffix: p.raw_data.videos_processed ? `${p.raw_data.videos_processed} videos` : null },
+            ].map((s, i) => (
+              <div key={i} style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 12px", border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: 9, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>{s.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", fontFamily: "'Playfair Display', serif", marginTop: 2 }}>{s.value || 0}</div>
+                {s.suffix && <div style={{ fontSize: 9, color: "#64748b", marginTop: 2 }}>{s.suffix}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {Array.isArray(p.data_thin_areas) && p.data_thin_areas.length > 0 && (
+        <div style={{ marginTop: 18, padding: "12px 14px", background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>📋 Data Gaps to Fill</div>
+          {p.data_thin_areas.map((d, i) => (
+            <div key={i} style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>• {d}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BusinessSnapshotDetailModal({ snapshot, isMobile, onClose, onDelete }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: isMobile ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 760, maxHeight: isMobile ? "100dvh" : "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ background: "linear-gradient(135deg, #1C3820, #0f2614)", padding: "20px 24px", color: "#fff", flexShrink: 0, position: "relative" }}>
+          <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer" }}>×</button>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#D4C08C", textTransform: "uppercase", letterSpacing: "0.12em" }}>💼 Business Snapshot</div>
+          <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginTop: 4 }}>{snapshot.title}</div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 18px" : "20px 24px" }}>
+          <BusinessSnapshotDetailCard snapshot={snapshot} isMobile={isMobile} />
+        </div>
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", flexShrink: 0, background: "#f8fafc", gap: 8 }}>
+          <button onClick={onDelete} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Delete</button>
+          <button onClick={onClose} style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#1C3820", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BrandReportsTab({ isMobile, session, robots = [] }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -11589,18 +11869,11 @@ function ReportsView({ isMobile, session, robots = [] }) {
   })();
 
   if (loading) {
-    return (
-      <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-        <PageHeader title="Reports" subtitle="AI-generated business intelligence" icon="📊" isMobile={isMobile} />
-        <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>
-      </div>
-    );
+    return <div style={{ textAlign: "center", padding: 60 }}><Spinner /></div>;
   }
 
   return (
-    <div className="sz-page" style={{ flex: 1, overflow: "auto", background: "#f8fafc" }}>
-      <PageHeader title="Reports" subtitle="Weekly brand audits & AI-generated business intelligence" icon="📊" isMobile={isMobile} />
-      <div style={{ padding: isMobile ? "16px 12px" : "24px 32px", paddingBottom: 60, maxWidth: 1200, margin: "0 auto" }}>
+    <>
 
         {/* Header card: latest score + trend + run button */}
         <div style={{ background: "linear-gradient(135deg, #1C3820 0%, #0f2614 100%)", borderRadius: 16, padding: isMobile ? 20 : 28, marginBottom: 18, color: "#fff", position: "relative", overflow: "hidden" }}>
@@ -11687,8 +11960,7 @@ function ReportsView({ isMobile, session, robots = [] }) {
         )}
 
         {viewing && <BrandAuditDetailModal report={viewing} isMobile={isMobile} onClose={() => setViewing(null)} onDelete={() => deleteReport(viewing.id)} />}
-      </div>
-    </div>
+    </>
   );
 }
 
