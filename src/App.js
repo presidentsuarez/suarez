@@ -15348,11 +15348,14 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
   const [view, setView] = useState({ level: "spaces" });
   const [activeTask, setActiveTask] = useState(null);
   const [listView, setListView] = useState("list");
+  const [hideDone, setHideDone] = useState(true); // default: hide completed tasks
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [expandedSpaces, setExpandedSpaces] = useState({});
   const [expandedFolders, setExpandedFolders] = useState({});
   const [createMenu, setCreateMenu] = useState(null); // {type, parentId}
   const [createValue, setCreateValue] = useState("");
+  const [createTaskStatus, setCreateTaskStatus] = useState("todo");
+  const [createTaskPriority, setCreateTaskPriority] = useState("normal");
 
   const inputStyle = { width: "100%", padding: "10px 14px", fontSize: 14, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 8, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
@@ -15375,8 +15378,10 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
     if (createMenu.type === "space") await onAddSpace({ name: createValue, color: "#1C3820" });
     else if (createMenu.type === "folder") await onAddFolder({ name: createValue, space_id: createMenu.parentId });
     else if (createMenu.type === "list") await onAddList({ name: createValue, folder_id: createMenu.folderId || null, space_id: createMenu.parentId });
-    else if (createMenu.type === "task") await onAddTask({ name: createValue, list_id: createMenu.parentId, status: "todo", priority: "normal", progress: 0 });
+    else if (createMenu.type === "task") await onAddTask({ name: createValue, list_id: createMenu.parentId, status: createTaskStatus, priority: createTaskPriority, progress: 0 });
     setCreateValue("");
+    setCreateTaskStatus("todo");
+    setCreateTaskPriority("normal");
     setCreateMenu(null);
   };
 
@@ -15460,7 +15465,7 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
     if (view.level === "spaces") {
       return (
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
-          <PageHeader title="ClickUp" subtitle="Projects, lists & tasks" isMobile={isMobile} icon="📋" />
+          <PageHeader title="Tasks" subtitle="Projects, lists & tasks · synced from ClickUp" isMobile={isMobile} icon="📋" />
           <div style={{ marginTop: 16 }}>
             {spaces.length === 0 ? (
               <div style={{ background: "#fff", borderRadius: 16, border: "1px dashed #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
@@ -15607,21 +15612,29 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
 
     // List view (tasks grouped by priority)
     if (view.level === "list") {
-      const listTasks = tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id);
+      const allListTasks = tasks.filter((t) => t.list_id === view.listId && !t.parent_task_id);
+      const listTasks = hideDone ? allListTasks.filter((t) => t.status !== "done" && t.status !== "complete") : allListTasks;
+      const doneCount = allListTasks.length - listTasks.length;
       return (
         <div style={{ padding: isMobile ? "16px 12px" : "24px 32px" }}>
           <PageHeader title={list.name} subtitle={folder ? `📁 ${folder.name}` : `${space.name}`} isMobile={isMobile} icon="📄" onBack={() => navigate(folder ? { level: "folder", spaceId: space.id, folderId: folder.id } : { level: "space", spaceId: space.id })} />
           <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 4, background: "#fff", borderRadius: 8, padding: 3, border: "1px solid #e2e8f0" }}>
-              <button onClick={() => setListView("list")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "list" ? "#1C3820" : "transparent", color: listView === "list" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>☰ List</button>
-              <button onClick={() => setListView("board")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "board" ? "#1C3820" : "transparent", color: listView === "board" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>▦ Board</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 4, background: "#fff", borderRadius: 8, padding: 3, border: "1px solid #e2e8f0" }}>
+                <button onClick={() => setListView("list")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "list" ? "#1C3820" : "transparent", color: listView === "list" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>☰ List</button>
+                <button onClick={() => setListView("board")} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: listView === "board" ? "#1C3820" : "transparent", color: listView === "board" ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>▦ Board</button>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#475569", fontWeight: 600, padding: "6px 10px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} style={{ accentColor: "#1C3820", cursor: "pointer" }} />
+                Hide done {doneCount > 0 && <span style={{ color: "#94a3b8", fontWeight: 700 }}>({doneCount})</span>}
+              </label>
             </div>
             <GreenButton small onClick={() => setCreateMenu({ type: "task", parentId: view.listId })}>{Icons.plus} New Task</GreenButton>
           </div>
           {listView === "list" ? (
             <TaskListView tasks={listTasks} allTasks={tasks} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} onDelete={onDeleteTask} isMobile={isMobile} />
           ) : (
-            <TaskBoardView tasks={listTasks} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} />
+            <TaskBoardView tasks={listTasks} hideDone={hideDone} onOpen={(t) => setActiveTask(t)} onUpdate={onUpdateTask} />
           )}
           {activeTask && <TaskDetailModal task={tasks.find((t) => t.id === activeTask.id) || activeTask} allTasks={tasks} onClose={() => setActiveTask(null)} onUpdate={onUpdateTask} onDelete={onDeleteTask} onAddTask={onAddTask} listId={view.listId} />}
         </div>
@@ -15652,8 +15665,30 @@ function ClickUpView({ isMobile, spaces, folders, lists, tasks, onAddSpace, onUp
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 400 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", margin: "0 0 12px", fontFamily: "'Playfair Display', serif" }}>New {createMenu.type.charAt(0).toUpperCase() + createMenu.type.slice(1)}</h3>
             <input value={createValue} onChange={(e) => setCreateValue(e.target.value)} placeholder={`${createMenu.type} name`} onKeyDown={(e) => e.key === "Enter" && handleCreate()} autoFocus style={inputStyle} className="sz-input" />
+            {createMenu.type === "task" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Status</label>
+                  <select value={createTaskStatus} onChange={(e) => setCreateTaskStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                    <option value="todo">To Do</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="review">Review</option>
+                    <option value="done">Done</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#475569", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Priority</label>
+                  <select value={createTaskPriority} onChange={(e) => setCreateTaskPriority(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                    <option value="urgent">🚩 Urgent</option>
+                    <option value="high">🟡 High</option>
+                    <option value="normal">🔵 Normal</option>
+                    <option value="low">⚪ Low</option>
+                  </select>
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-              <button onClick={() => { setCreateMenu(null); setCreateValue(""); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => { setCreateMenu(null); setCreateValue(""); setCreateTaskStatus("todo"); setCreateTaskPriority("normal"); }} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#64748b", cursor: "pointer" }}>Cancel</button>
               <GreenButton small onClick={handleCreate} disabled={!createValue.trim()}>Create</GreenButton>
             </div>
           </div>
@@ -15745,8 +15780,9 @@ function TaskListView({ tasks, allTasks, onOpen, onUpdate, onDelete, isMobile })
 }
 
 /* — Task Board View — */
-function TaskBoardView({ tasks, onOpen, onUpdate }) {
-  const columns = [{ k: "todo", l: "To Do", c: "#94a3b8" }, { k: "in-progress", l: "In Progress", c: "#3b82f6" }, { k: "review", l: "Review", c: "#f59e0b" }, { k: "done", l: "Done", c: "#16a34a" }];
+function TaskBoardView({ tasks, hideDone, onOpen, onUpdate }) {
+  const allColumns = [{ k: "todo", l: "To Do", c: "#94a3b8" }, { k: "in-progress", l: "In Progress", c: "#3b82f6" }, { k: "review", l: "Review", c: "#f59e0b" }, { k: "done", l: "Done", c: "#16a34a" }];
+  const columns = hideDone ? allColumns.filter((c) => c.k !== "done") : allColumns;
   return (
     <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8 }}>
       {columns.map((col) => {
@@ -15780,6 +15816,30 @@ function TaskDetailModal({ task, allTasks, onClose, onUpdate, onDelete, onAddTas
   const [newSubtask, setNewSubtask] = useState("");
   const [newComment, setNewComment] = useState("");
   const [comments, setComments] = useState(task.comments || []);
+  const [commentSaved, setCommentSaved] = useState(false);
+
+  // Re-sync local state when the task prop changes (e.g. re-opening a task,
+  // or another action updating the parent's task list)
+  React.useEffect(() => {
+    setComments(task.comments || []);
+  }, [task.id, task.comments]);
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+    const updated = [...comments, { text: newComment, date: new Date().toISOString() }];
+    setComments(updated);
+    setNewComment("");
+    try {
+      await onUpdate(task.id, { comments: updated });
+      setCommentSaved(true);
+      setTimeout(() => setCommentSaved(false), 1800);
+    } catch (e) {
+      // Roll back if save fails
+      setComments(comments);
+      setNewComment(newComment);
+      alert("Comment save failed: " + (e?.message || String(e)));
+    }
+  };
   const subtasks = allTasks.filter((t) => t.parent_task_id === task.id);
   const inputStyle = { width: "100%", padding: "8px 12px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", border: "1px solid #e2e8f0", borderRadius: 7, outline: "none", background: "#fff", color: "#0f172a", boxSizing: "border-box" };
 
@@ -15789,14 +15849,6 @@ function TaskDetailModal({ task, allTasks, onClose, onUpdate, onDelete, onAddTas
     if (!newSubtask.trim()) return;
     await onAddTask({ name: newSubtask, list_id: listId, parent_task_id: task.id, status: "todo", priority: "normal", progress: 0 });
     setNewSubtask("");
-  };
-
-  const handleAddComment = () => {
-    if (!newComment.trim()) return;
-    const updated = [...comments, { text: newComment, date: new Date().toISOString() }];
-    setComments(updated);
-    onUpdate(task.id, { comments: updated });
-    setNewComment("");
   };
 
   return (
@@ -15844,7 +15896,10 @@ function TaskDetailModal({ task, allTasks, onClose, onUpdate, onDelete, onAddTas
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 6, textTransform: "uppercase" }}>Comments ({comments.length})</label>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <label style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" }}>Comments ({comments.length})</label>
+            {commentSaved && <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", padding: "2px 8px", borderRadius: 4, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>✓ Saved</span>}
+          </div>
           {comments.map((c, i) => (
             <div key={i} style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 12px", marginBottom: 6 }}>
               <div style={{ fontSize: 12, color: "#0f172a" }}>{c.text}</div>
@@ -16389,7 +16444,7 @@ export default function SuarezApp() {
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "business", label: "Business", icon: <span style={{ fontSize: 18 }}>💼</span> },
-    { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
+    { id: "clickup", label: "Tasks", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
     { id: "calendar", label: "Calendar", icon: <span style={{ fontSize: 18 }}>📅</span> },
     { id: "contacts", label: "Contacts", icon: <span style={{ fontSize: 18 }}>📇</span> },
@@ -16409,7 +16464,7 @@ export default function SuarezApp() {
     { id: "life", label: "Life", icon: <span style={{ fontSize: 18 }}>🌳</span> },
     { id: "finance", label: "Finance", icon: <span style={{ fontSize: 18 }}>💰</span> },
     { id: "overview", label: "", featured: true, icon: <span style={{ fontSize: 20 }}>🌍</span> },
-    { id: "clickup", label: "ClickUp", icon: <span style={{ fontSize: 18 }}>📋</span> },
+    { id: "clickup", label: "Tasks", icon: <span style={{ fontSize: 18 }}>📋</span> },
     { id: "growth", label: "Inbox", icon: <span style={{ fontSize: 18 }}>📨</span> },
   ];
 
